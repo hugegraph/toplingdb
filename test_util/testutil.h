@@ -185,6 +185,9 @@ class StringSink : public FSWritableFile {
       last_flush_ = contents_.size();
     }
   }
+  uint64_t GetFileSize(const IOOptions&, IODebugContext*) final {
+    return contents_.size();
+  }
 
  private:
   Slice* reader_contents_;
@@ -280,6 +283,9 @@ class OverwritingStringSink : public FSWritableFile {
   void Drop(size_t bytes) {
     contents_.resize(contents_.size() - bytes);
     if (last_flush_ > contents_.size()) last_flush_ = contents_.size();
+  }
+  uint64_t GetFileSize(const IOOptions&, IODebugContext*) final {
+    return contents_.size();
   }
 
  private:
@@ -569,6 +575,9 @@ class StringFS : public FileSystemWrapper {
     intptr_t FileDescriptor() const final {
       ROCKSDB_DIE("Should not goes here");
       return -1;
+    }
+    uint64_t GetFileSize(const IOOptions&, IODebugContext*) final {
+      return contents_->size();
     }
     void SetFileSize(uint64_t fsize) final { contents_->resize(fsize); }
 
