@@ -24,6 +24,7 @@
 #include <cstring>
 #include <string>
 #include <string_view>  // RocksDB now requires C++17 support
+#include <stdint.h>
 
 #include "rocksdb/cleanable.h"
 #include "preproc.h"
