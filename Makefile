@@ -305,7 +305,13 @@ COMPILER := $(shell set -e; tmpfile=`mktemp -u compiler-XXXXXX`; \
                     ${CXX} ${TOPLING_CORE_DIR}/tools/configure/compiler.cpp -o $${tmpfile}.exe; \
                     ./$${tmpfile}.exe && rm -f $${tmpfile}*)
 UNAME_MachineSystem := $(shell uname -m -s | sed 's:[ /]:-:g')
+MARCH ?= $(shell uname -m)
+ifeq "${MARCH}" "x86_64"
 WITH_BMI2 ?= $(shell bash ${TOPLING_CORE_DIR}/cpu_has_bmi2.sh)
+else
+# not available
+WITH_BMI2 ?= na
+endif
 BUILD_NAME := ${UNAME_MachineSystem}-${COMPILER}-bmi2-${WITH_BMI2}
 BUILD_ROOT := build/${BUILD_NAME}
 ifeq (${DEBUG_LEVEL}, 0)

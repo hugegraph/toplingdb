@@ -4991,9 +4991,16 @@ template<> struct ToplingDB_size_to_uint<4> { typedef unsigned int   type; };
 template<> struct ToplingDB_size_to_uint<8> { typedef unsigned long long type; };
 
 terark_pure_func inline static size_t ThisThreadID() {
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) || !(defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__x86_64) || defined(__amd64__) || defined(__amd64))
+#if defined(__GNUC__) && __GNUC__ * 1000 + __GNUC_MINOR__ >= 8000
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wstrict-aliasing"
+#endif
     auto id = std::this_thread::get_id();
     return (size_t)(ToplingDB_size_to_uint<sizeof(id)>::type&)(id);
+#if defined(__GNUC__) && __GNUC__ * 1000 + __GNUC_MINOR__ >= 8000
+    #pragma GCC diagnostic pop
+#endif
 #else
     // gnu pthread_self impl
     size_t __self;
