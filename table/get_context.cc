@@ -49,7 +49,7 @@ ROCKSDB_ENUM_CLASS(GetContextSampleRead, unsigned char,
   kRandom
 );
 static auto g_how_sampling = enum_value(
-  getenv("TOPLINGDB_GetContext_sampling")?:"", GetContextSampleRead::kRandom);
+  terark::getEnvStr("TOPLINGDB_GetContext_sampling", ""), GetContextSampleRead::kRandom);
 
 GetContext::GetContext(
     const Comparator* ucmp, const MergeOperator* merge_operator, Logger* logger,

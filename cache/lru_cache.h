@@ -90,7 +90,7 @@ struct LRUHandle {
   uint16_t padding;
 
   // Beginning of the key (MUST BE THE LAST FIELD IN THIS STRUCT!)
-  char key_data[0];
+  char key_data[1];
 
   Slice key() const { return Slice(key_data, key_length); }
 
@@ -185,7 +185,7 @@ struct LRUHandle {
           const_cast<void*>(static_cast<const void*>(this)));
 #else
       // This is the size that is used when a new handle is created.
-      return sizeof(LRUHandle) - 1 + key_length;
+      return offsetof(LRUHandle, key_data) + key_length;
 #endif
     }
   }

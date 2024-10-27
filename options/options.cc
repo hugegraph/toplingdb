@@ -128,10 +128,10 @@ ColumnFamilyOptions::ColumnFamilyOptions()
 ColumnFamilyOptions::ColumnFamilyOptions(const Options& options)
     : ColumnFamilyOptions(*static_cast<const ColumnFamilyOptions*>(&options)) {}
 
+extern WBWIFactory* NewCSPP_WBWIForPlain(const std::string& jstr);
 DBOptions::DBOptions() {
   wbwi_factory = SingleSkipListWBWIFactory();
  #if defined(HAS_TOPLING_CSPP_WBWI)
-  extern WBWIFactory* NewCSPP_WBWIForPlain(const std::string& jstr);
   if (auto var = getenv("DefaultWBWIFactory")) {
     if (Slice(var).starts_with("cspp:"))
       wbwi_factory.reset(NewCSPP_WBWIForPlain(var+5));

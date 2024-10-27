@@ -384,10 +384,7 @@ inline uint64_t HostPrefixCache(const Slice& ikey) {
     data = 0;
     memcpy(&data, ikey.data_, ikey.size_ - 8);
   }
-  if (port::kLittleEndian)
-    return __bswap_64(data);
-  else
-    return data;
+  return NativeOfBigEndian64(data);
 }
 
 // The state of a DB at any given time is referred to as a Version.

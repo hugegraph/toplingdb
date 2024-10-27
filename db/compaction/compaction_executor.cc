@@ -99,6 +99,9 @@ static void PrintFileMetaData(const CompactionParams& cp,
 }
 
 std::string CompactionParams::DebugString() const {
+#if defined(_MSC_VER)
+  return "CompactionParams::DebugString(): Not implemented on windows";
+#else
   size_t mem_len = 0;
   char*  mem_buf = nullptr;
   FILE*  fp = open_memstream(&mem_buf, &mem_len);
@@ -139,6 +142,7 @@ std::string CompactionParams::DebugString() const {
   std::string result(mem_buf, mem_len);
   free(mem_buf);
   return result;
+#endif
 }
 
 // res[0] : raw

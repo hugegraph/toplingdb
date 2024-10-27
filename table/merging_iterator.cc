@@ -22,6 +22,10 @@
   #pragma clang diagnostic ignored "-Wshorten-64-to-32"
 #endif
 
+#if defined(_MSC_VER)
+#include <__msvc_int128.hpp>
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 // MergingIterator uses a min/max heap to combine data from point iterators.
 // Range tombstones can be added and keys covered by range tombstones will be
@@ -148,6 +152,7 @@ private:
 
 #if defined(_MSC_VER) /* Visual Studio */
 #define FORCE_INLINE __forceinline
+#define __bswap_64 _byteswap_uint64
 #elif defined(__GNUC__)
 #define FORCE_INLINE inline __attribute__((always_inline))
 #else
@@ -158,10 +163,19 @@ private:
   #define bswap_prefix __bswap_64
   using UintPrefix = uint64_t;
 #else
-  using UintPrefix = unsigned __int128;
   #if defined(__GNUC__) && __GNUC_MINOR__ + 1000 * __GNUC__ > 12000
+    using UintPrefix = unsigned __int128;
     #define bswap_prefix __builtin_bswap128
+  #elif defined(_MSC_VER) && 1
+    using UintPrefix = std::_Unsigned128;
+    FORCE_INLINE UintPrefix bswap_prefix(UintPrefix x) {
+      uint64_t tmp = x._Word[0];
+      x._Word[0] = __bswap_64(x._Word[1]);
+      x._Word[1] = __bswap_64(tmp);
+      return x;
+    }
   #else
+    using UintPrefix = unsigned __int128;
     FORCE_INLINE UintPrefix bswap_prefix(UintPrefix x) {
       return UintPrefix(__bswap_64(uint64_t(x))) << 64 | __bswap_64(uint64_t(x >> 64));
     }
@@ -173,7 +187,11 @@ __always_inline UintPrefix LoadPrefixZeroSuffix(const void* src) {
  #if defined(BOOST_ENDIAN_LITTLE_BYTE)
   if (PrefixLen == 12) { // gcc can not optimize memcpy + memset gracefully
     // gcc can optimize this code better
-    union {
+    union NoAlias {
+     #if defined(_MSC_VER)
+      NoAlias() {}
+      ~NoAlias() {}
+     #endif
       UintPrefix u128;
       uint64_t u64[2];
     } un;
@@ -534,9 +552,11 @@ public:
       children_[i].level = i;
       children_[i].iter.Set(children[i]);
     }
+   #if !defined(_MSC_VER)
     static_assert( // Hot fields should lie in same cache line
       (offsetof(MergingIterTmpl, range_tombstone_iters_)) / CACHE_LINE_SIZE ==
       (offsetof(MergingIterTmpl, comparator_) - 1) / CACHE_LINE_SIZE);
+   #endif
   }
 
   void considerStatus(Status s) {

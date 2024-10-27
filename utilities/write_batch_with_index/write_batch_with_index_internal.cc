@@ -17,6 +17,10 @@
 #include "util/coding.h"
 #include "util/string_util.h"
 
+#if defined(_MSC_VER)
+#pragma warning(disable: 4458) // declaration of 'delta_iterator_' hides class member
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 BaseDeltaIterator::BaseDeltaIterator(ColumnFamilyHandle* column_family,
                                      Iterator* base_iterator,

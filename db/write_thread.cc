@@ -27,7 +27,7 @@ futex(void* uaddr, uint32_t op, uint32_t val, const timespec* timeout = NULL,
   #define TOPLINGDB_HAS_FUTEX 1
 #else
   #define TOPLINGDB_HAS_FUTEX 0
-  #define futex(...)
+  #define futex(...) -1
 #endif
 
 namespace ROCKSDB_NAMESPACE {

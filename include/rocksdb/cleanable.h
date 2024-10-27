@@ -10,6 +10,7 @@
 
 #include "rocksdb/rocksdb_namespace.h"
 #include <stddef.h>
+#include <stdlib.h>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -18,6 +19,7 @@ public:
   void* operator new(size_t size);
   void* operator new(size_t, void* mem) { return mem; } // placement new
   void operator delete(void* p, size_t);
+  void operator delete(void*, void*) { abort(); }  // suppress warn
 };
 
 class Cleanable : public CacheAlignedNewDelete {

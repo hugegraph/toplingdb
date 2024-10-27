@@ -13,6 +13,17 @@
 #include <string>
 #include <vector>
 
+#if defined(_MSC_VER)
+    #include <queue>
+    template<class T, class Cmp>
+    struct MsvcHeap : std::priority_queue<T, std::vector<T>, Cmp> {
+        void clear() {
+            MsvcHeap().swap(*this);
+        }
+        using std::priority_queue<T, std::vector<T>, Cmp>::priority_queue;
+    };
+#endif
+
 #include "db/compaction/compaction_iteration_stats.h"
 #include "db/dbformat.h"
 #include "db/pinned_iterators_manager.h"
@@ -141,6 +152,9 @@ class ForwardRangeDelIterator {
       std::multiset<TruncatedRangeDelIterator*, SeqMaxComparator>;
 
   struct EndKeyMinComparator {
+   #if defined(_MSC_VER)
+    EndKeyMinComparator() {}
+   #endif
     explicit EndKeyMinComparator(const InternalKeyComparator* c) : icmp(c) {}
 
     bool operator()(const ActiveSeqSet::const_iterator& a,
@@ -192,7 +206,11 @@ class ForwardRangeDelIterator {
   const InternalKeyComparator* icmp_;
   size_t unused_idx_;
   ActiveSeqSet active_seqnums_;
+#if defined(_MSC_VER)
+  MsvcHeap<ActiveSeqSet::const_iterator, EndKeyMinComparator> active_iters_;
+#else
   BinaryHeap<ActiveSeqSet::const_iterator, EndKeyMinComparator> active_iters_;
+#endif
   BinaryHeap<TruncatedRangeDelIterator*, StartKeyMinComparator> inactive_iters_;
 };
 
@@ -228,6 +246,9 @@ class ReverseRangeDelIterator {
     const InternalKeyComparator* icmp;
   };
   struct StartKeyMaxComparator {
+   #if defined(_MSC_VER)
+    StartKeyMaxComparator() {}
+   #endif
     explicit StartKeyMaxComparator(const InternalKeyComparator* c) : icmp(c) {}
 
     bool operator()(const ActiveSeqSet::const_iterator& a,
@@ -276,7 +297,11 @@ class ReverseRangeDelIterator {
   const InternalKeyComparator* icmp_;
   size_t unused_idx_;
   ActiveSeqSet active_seqnums_;
+#if defined(_MSC_VER)
+  MsvcHeap<ActiveSeqSet::const_iterator, StartKeyMaxComparator> active_iters_;
+#else
   BinaryHeap<ActiveSeqSet::const_iterator, StartKeyMaxComparator> active_iters_;
+#endif
   BinaryHeap<TruncatedRangeDelIterator*, EndKeyMaxComparator> inactive_iters_;
 };
 

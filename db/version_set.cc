@@ -3316,8 +3316,10 @@ void VersionStorageInfo::GenerateLevelFilesBrief() {
   for (int level = 0; level < num_non_empty_levels_; level++) {
     DoGenerateLevelFilesBrief(&level_files_brief_[level], files_[level],
                               &arena_);
+#if !defined(_MSC_VER)
     if (InitUdfa)
       InitUdfa(&level_files_brief_[level], user_comparator_);
+#endif
   }
 }
 

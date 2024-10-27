@@ -305,7 +305,7 @@ IOStatus WritableFileWriter::Close() {
       (long long)writable_file_->GetFileSize(io_options, nullptr));
   }
   using namespace std::chrono;
-  auto slow_ms = atoi(getenv("WritableFileWriterSlowCloseMS") ?: "5000");
+  auto slow_ms = terark::getEnvLong("WritableFileWriterSlowCloseMS", 5000);
   auto close_tm = finish_ts - start_ts.second;
   if (close_tm > milliseconds(slow_ms)) {
     fprintf(stderr, "WARN: %s: WritableFileWriter::Close(%s): "

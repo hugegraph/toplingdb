@@ -298,6 +298,10 @@ class WinRandomAccessFile
   IOStatus InvalidateCache(size_t offset, size_t length) override;
 
   virtual size_t GetRequiredBufferAlignment() const override;
+
+  intptr_t FileDescriptor() const override {
+    return intptr_t(WinFileData::hFile_);
+  }
 };
 
 // This is a sequential write class. It has been mimicked (as others) after
