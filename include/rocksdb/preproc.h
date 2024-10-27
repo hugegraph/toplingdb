@@ -566,4 +566,8 @@ decltype(ROCKSDB_PP_CAT2(func_on_exit_,__LINE__))> \
          ROCKSDB_PP_CAT2(call_on_exit_,__LINE__)   \
         (ROCKSDB_PP_CAT2(func_on_exit_,__LINE__))
 
+#if defined(_MSC_VER) && !defined(__always_inline)
+  #define __always_inline __forceinline
+#endif
+
 // clang-format on

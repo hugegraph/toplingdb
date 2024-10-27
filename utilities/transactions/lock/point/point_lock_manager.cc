@@ -72,7 +72,10 @@ struct LockMapStripe : private boost::noncopyable {
   KeyStrMap keys;
 #endif
 };
+
+#if !defined(_MSC_VER) // MSVC false fail
 static_assert(sizeof(LockMapStripe) == 128);
+#endif
 
 // Map of #num_stripes LockMapStripes
 struct LockMap : private boost::noncopyable {

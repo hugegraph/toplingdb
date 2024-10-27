@@ -12,6 +12,10 @@
 #include "port/port.h"
 #include "port/likely.h"
 #include <terark/valvec32.hpp>
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4458) // warning C4458: data_ hide member
+#endif
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -211,3 +215,7 @@ class BinaryHeap : private Compare {
 };
 
 }  // namespace ROCKSDB_NAMESPACE
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif

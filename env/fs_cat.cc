@@ -568,7 +568,11 @@ IOStatus CatFileSystem::GetTestDirectory(const IOOptions& options,
                                           IODebugContext* dbg) {
   // copy from ChrootFileSystem::GetTestDirectory
   char buf[256];
+#if defined(_MSC_VER)
+  snprintf(buf, sizeof(buf), "/rocksdbtest-%d", 1001);
+#else
   snprintf(buf, sizeof(buf), "/rocksdbtest-%d", static_cast<int>(geteuid()));
+#endif
   *path = buf;
   return CreateDirIfMissing(*path, options, dbg);
 }

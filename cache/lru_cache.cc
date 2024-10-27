@@ -528,8 +528,8 @@ LRUHandle* LRUCacheShard::CreateHandle(const Slice& key, uint32_t hash,
   // Allocate the memory here outside of the mutex.
   // If the cache is full, we'll have to release it.
   // It shouldn't happen very often though.
-  static_assert(sizeof(LRUHandle) == 64);
-  auto e = static_cast<LRUHandle*>(malloc(sizeof(LRUHandle) + key.size()));
+  static_assert(offsetof(LRUHandle, key_data) == 64);
+  auto e = static_cast<LRUHandle*>(malloc(offsetof(LRUHandle, key_data) + key.size()));
   e->padding = 0; // padding makes key_data aligned better
   e->value = value;
   e->m_flags = 0;

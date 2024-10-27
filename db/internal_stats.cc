@@ -1534,14 +1534,15 @@ bool InternalStats::HandleEstimateOldestKeyTime(uint64_t* value, DBImpl* /*db*/,
   return *value > 0 && *value < std::numeric_limits<uint64_t>::max();
 }
 
+// defined in rockside: builtin_table_factory.cc
+Cache* GetBlockCacheFromAnyTableFactory(TableFactory*);
+
 Cache* InternalStats::GetBlockCacheForStats() {
   auto* table_factory = cfd_->ioptions()->table_factory.get();
   assert(table_factory != nullptr);
 #if 0
   return table_factory->GetOptions<Cache>(TableFactory::kBlockCacheOpts());
 #else
-  // defined in rockside: builtin_table_factory.cc
-  Cache* GetBlockCacheFromAnyTableFactory(TableFactory*);
   return GetBlockCacheFromAnyTableFactory(table_factory);
 #endif
 }

@@ -65,7 +65,10 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
       sequence_(s),
       statistics_(ioptions.stats),
       max_skip_(max_sequential_skip_in_iterations),
-      max_skippable_internal_keys_(read_options.max_skippable_internal_keys?:UINT64_MAX),
+      max_skippable_internal_keys_(
+          read_options.max_skippable_internal_keys
+              ? read_options.max_skippable_internal_keys
+              : UINT64_MAX),
       num_internal_keys_skipped_(0),
       iterate_lower_bound_(read_options.iterate_lower_bound),
       iterate_upper_bound_(read_options.iterate_upper_bound),

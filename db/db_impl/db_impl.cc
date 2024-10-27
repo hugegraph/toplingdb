@@ -114,7 +114,14 @@
 #endif
 
 #include <terark/fstring.hpp>
+#if defined(_MSC_VER)
+  #define TOPLINGDB_WITH_FIBER_AIO 0
+#else
+  #define TOPLINGDB_WITH_FIBER_AIO 1
+#endif
+#if TOPLINGDB_WITH_FIBER_AIO
 #include <terark/thread/fiber_pool.hpp>
+#endif
 #include <terark/util/function.hpp>
 
 namespace ROCKSDB_NAMESPACE {
@@ -124,10 +131,12 @@ const std::string kPersistentStatsColumnFamilyName(
     "___rocksdb_stats_history___");
 void DumpRocksDBBuildVersion(Logger* log);
 
+#if TOPLINGDB_WITH_FIBER_AIO
 // ensure fiber thread locals are constructed first
 // because FiberPool.m_channel must be destructed first
 static ROCKSDB_STATIC_TLS thread_local terark::FiberPool gt_fiber_pool(
     boost::fibers::context::active_pp());
+#endif
 struct ToplingMGetCtx : protected MergeContext {
   MergeContext& merge_context() { return *this; }
   SequenceNumber max_covering_tombstone_seq = 0;
@@ -3274,10 +3283,14 @@ void DBImpl::MultiGet(const ReadOptions& read_options,
            /* timestamps */ nullptr, statuses, sorted_input);
 }
 
+#if TOPLINGDB_WITH_FIBER_AIO
 #if defined(ROCKSDB_UNIT_TEST)
 static bool const g_MultiGetUseFiber = terark::getEnvBool("MultiGetUseFiber", false);
 #else
 static bool const g_MultiGetUseFiber = terark::getEnvBool("MultiGetUseFiber", true);
+#endif
+#else
+static bool constexpr g_MultiGetUseFiber = false;
 #endif
 
 void DBImpl::MultiGet(const ReadOptions& _read_options,
@@ -3358,6 +3371,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
   MultiGetWithCallbackImpl(read_options, column_family, callback, &sorted_keys);
 } else { // topling MultiGet with fiber
 
+#if TOPLINGDB_WITH_FIBER_AIO
   // copy from GetImpl with modify
 
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
@@ -3470,7 +3484,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
 
   std::string* timestamp = nullptr;
   bool* is_blob_index = nullptr;
-  PinnableWideColumns* columns = nullptr;
+  //PinnableWideColumns* columns = nullptr;
   if (!skip_memtable) {
     size_t hits = 0;
     for (size_t i = 0; i < num_keys; i++) {
@@ -3556,6 +3570,8 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
 
   if (!read_options.pinning_tls)
     ReturnAndCleanupSuperVersion(cfd, sv);
+
+#endif // TOPLINGDB_WITH_FIBER_AIO
 } // g_MultiGetUseFiber
 }
 
