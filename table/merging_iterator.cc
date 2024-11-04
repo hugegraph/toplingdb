@@ -218,9 +218,9 @@ FORCE_INLINE UintPrefix HostPrefixCacheUK(const Slice& uk) {
     return bswap_prefix(unaligned_load<UintPrefix>(uk.data_));
   } else {
    #if defined(__AVX512VL__) && defined(__AVX512VBMI2__)
-   #pragma message "__AVX512VL__ && __AVX512VBMI2__, use _mm_maskz_expandloadu_epi8"
+   #pragma message "__AVX512VL__ && __AVX512VBMI2__, use _mm_maskz_loadu_epi8"
     auto mask = uint16_t(~(-1 << uk.size_));
-    return bswap_prefix((UintPrefix)_mm_maskz_expandloadu_epi8(mask, uk.data_));
+    return bswap_prefix((UintPrefix)_mm_maskz_loadu_epi8(mask, uk.data_));
    #else
     return bswap_prefix(LoadPrefixZeroSuffixDynaLen(uk.data_, uk.size_));
    #endif
@@ -236,7 +236,7 @@ FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
   } else {
    #if defined(__AVX512VL__) && defined(__AVX512VBMI2__)
     auto mask = uint16_t(~(-1 << (ik.size_ - 8)));
-    return bswap_prefix((UintPrefix)_mm_maskz_expandloadu_epi8(mask, ik.data_));
+    return bswap_prefix((UintPrefix)_mm_maskz_loadu_epi8(mask, ik.data_));
    #else
     if (LIKELY(8 + 8 == ik.size_)) {
       return bswap_prefix(LoadPrefixZeroSuffix<8>(ik.data_));
