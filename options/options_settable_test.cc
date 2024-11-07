@@ -52,6 +52,7 @@ void FillWithSpecialChar(char* start_ptr, size_t total_size,
   // The second bytes are simply skipped (padding bytes).
   // ccccc[skipped]cccccccc[skiped]cccccccc[skipped]
   for (auto& pair : excluded) {
+    ASSERT_LE(offset, pair.first);
     std::memset(start_ptr + offset, special_char, pair.first - offset);
     offset = pair.first + pair.second;
   }
@@ -69,6 +70,7 @@ int NumUnsetBytes(char* start_ptr, size_t total_size,
     // set (pair.first), and memory spaces that cannot be set (pair.second).
     // Therefore total_unset_bytes_base only agregates bytes set to kSpecialChar
     // in the pair.first bytes, but skips the pair.second bytes (padding bytes).
+    ROCKSDB_ASSERT_LE(offset, pair.first);
     for (char* ptr = start_ptr + offset; ptr < start_ptr + pair.first; ptr++) {
       if (*ptr == kSpecialChar) {
         total_unset_bytes_base++;
@@ -91,6 +93,7 @@ bool CompareBytes(char* start_ptr1, char* start_ptr2, size_t total_size,
                   const OffsetGap& excluded) {
   size_t offset = 0;
   for (auto& pair : excluded) {
+    ROCKSDB_ASSERT_LE(offset, pair.first);
     for (; offset < pair.first; offset++) {
       if (*(start_ptr1 + offset) != *(start_ptr2 + offset)) {
         return false;
