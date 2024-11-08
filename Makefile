@@ -337,6 +337,10 @@ ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test
   OBJ_DIR := $(subst build/,build-ut/,${OBJ_DIR})
 endif
 
+BUILD_PREFIX ?=
+ORIG_OBJ_DIR := ${OBJ_DIR}
+OBJ_DIR := ${BUILD_PREFIX}/${OBJ_DIR}
+
 # 1. we define ROCKSDB_DISABLE_ZSTD=1 on build_detect_platform.
 # 2. zstd lib is included in libterark-zbs
 # 3. we alway use ZSTD
@@ -1645,7 +1649,7 @@ clean-rocks:
 	rm -f ${LIBNAME}*.so* ${LIBNAME}*.a
 	rm -f $(BENCHMARKS) $(TOOLS) $(TESTS) $(PARALLEL_TEST) $(MICROBENCHS)
 	rm -rf $(CLEAN_FILES) ios-x86 ios-arm scan_build_report
-	rm -rf build build-ut
+	rm -rf ${OBJ_DIR}
 	rm -rf sideplugin/topling-dcompact/tools/dcompact/build
 	+$(MAKE) -C ${TOPLING_CORE_DIR} clean
 	$(FIND) . -name "*.[oda]" -exec rm -f {} \;
@@ -2538,7 +2542,7 @@ install-shared: install-headers $(SHARED4) shared_lib
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED1)
 	cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/* $(INSTALL_LIBDIR)
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	cp -a sideplugin/topling-dcompact/tools/dcompact/${OBJ_DIR}/*.exe $(DESTDIR)$(PREFIX)/bin
+	cp -a sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/*.exe $(DESTDIR)$(PREFIX)/bin
 
 install: install-${LIB_MODE}
 
@@ -3181,8 +3185,8 @@ dcompact_worker: ${SHARED1}
 ifeq (${MAKE_UNIT_TEST},1)
 	@echo rocksdb unit test, skip dcompact_worker
 else
-	+make -C sideplugin/topling-dcompact/tools/dcompact ${OBJ_DIR}/dcompact_worker.exe CHECK_TERARK_FSA_LIB_UPDATE=0
-	cp -a sideplugin/topling-dcompact/tools/dcompact/${OBJ_DIR}/dcompact_worker.exe ${OBJ_DIR}
+	+make -C sideplugin/topling-dcompact/tools/dcompact ${ORIG_OBJ_DIR}/dcompact_worker.exe CHECK_TERARK_FSA_LIB_UPDATE=0
+	cp -a sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/dcompact_worker.exe ${OBJ_DIR}
 endif
 endif
 
