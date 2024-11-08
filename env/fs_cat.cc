@@ -4,7 +4,7 @@
 //  (found in the LICENSE.Apache file in the root directory).
 
 #include "fs_cat.h"
-#include <file/file_util.h>
+#include <file/sequence_file_reader.h>
 #include <file/writable_file_writer.h>
 #include <terark/util/function.hpp>
 
@@ -12,17 +12,55 @@ namespace ROCKSDB_NAMESPACE {
 
 IOStatus CopyAcrossFS(FileSystem* dest, FileSystem* src,
                       const std::string& fname, IODebugContext* dbg) {
-  std::unique_ptr<FSWritableFile> dest_file;
-  FileOptions file_opt;
-  IOStatus ios = dest->NewWritableFile(fname, file_opt, &dest_file, dbg);
-  if (ios.ok()) {
-    auto dest_writer = std::make_unique<WritableFileWriter>(
-                   std::move(dest_file), fname, file_opt);
-    ios = CopyFile(src, fname, dest_writer, 0/*filesize*/,
-                   false/*use_fsync*/, nullptr/*io_tracer*/,
-                   Temperature::kWarm);
+  using namespace std;
+  uint64_t size = 0; // file size
+  FileOptions fo; fo.temperature = Temperature::kWarm;
+  std::unique_ptr<FSSequentialFile> srcfile;
+  IOStatus ios = src->NewSequentialFile(fname, fo, &srcfile, nullptr);
+  if (!ios.ok()) {
+    return ios;
   }
-  return ios;
+  // FSSequentialFile::Read does not support short read with result len=0,
+  // so we must get the file size
+  ios = src->GetFileSize(fname, IOOptions(), &size, nullptr);
+  if (!ios.ok()) {
+    return ios;
+  }
+  auto src_reader = make_unique<SequentialFileReader>(move(srcfile), fname);
+  std::unique_ptr<FSWritableFile> dstfile;
+  ios = dest->NewWritableFile(fname, fo, &dstfile, dbg);
+  if (!ios.ok()) {
+    return ios;
+  }
+  auto dest_writer = make_unique<WritableFileWriter>(move(dstfile), fname, fo);
+  const size_t bufsize = 1024 * 1024;
+#if defined(_MSC_VER)
+  char* buffer = (char*)_aligned_malloc(bufsize, 4096);
+  ROCKSDB_SCOPE_EXIT(_aligned_free(buffer));
+#else
+  char* buffer = (char*)std::aligned_alloc(4096, bufsize);
+  ROCKSDB_SCOPE_EXIT(free(buffer));
+#endif
+  Slice slice;
+  while (size > 0) {
+    size_t bytes_to_read = std::min(bufsize, static_cast<size_t>(size));
+    // TODO: rate limit copy file
+    ios = status_to_io_status(
+        src_reader->Read(bytes_to_read, &slice, buffer,
+                         Env::IO_TOTAL /* rate_limiter_priority */));
+    if (!ios.ok()) {
+      return ios;
+    }
+    if (slice.size() == 0) {
+      return IOStatus::Corruption("file too small");
+    }
+    ios = dest_writer->Append(slice);
+    if (!ios.ok()) {
+      return ios;
+    }
+    size -= slice.size();
+  }
+  return dest_writer->Sync(true/*use_fsync*/);
 }
 template<class FileSystemPtr>
 IOStatus CopyAcrossFS(const FileSystemPtr& dest, const FileSystemPtr src,
