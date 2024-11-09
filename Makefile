@@ -248,9 +248,9 @@ CXXFLAGS += -Isideplugin/rockside/3rdparty/rapidyaml \
 # topling-core is topling private
 ifneq (,$(wildcard sideplugin/topling-core))
   TOPLING_CORE_DIR := sideplugin/topling-core
-  CXXFLAGS += -DGITHUB_TOPLING_ZIP='"https://github.com/rockeet/topling-core"'
+  CXXFLAGS += -DGITHUB_TOPLING_ZIP=\"https://github.com/rockeet/topling-core\"
 else
-  CXXFLAGS += -DGITHUB_TOPLING_ZIP='"https://github.com/topling/topling-zip"'
+  CXXFLAGS += -DGITHUB_TOPLING_ZIP=\"https://github.com/topling/topling-zip\"
   # topling-zip is topling public
   ifeq (,$(wildcard sideplugin/topling-zip))
     $(warning sideplugin/topling-zip is not present, clone it from github...)
@@ -490,8 +490,8 @@ endif
 export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
 ifeq (${WITH_TOPLING_ROCKS},1)
 ifneq (,$(wildcard sideplugin/topling-rocks))
-  CXXFLAGS   += -I sideplugin/topling-rocks/src
-  CXXFLAGS   += -D HAS_TOPLING_ROCKS
+  CXXFLAGS   +=  -Isideplugin/topling-rocks/src
+  CXXFLAGS   +=  -DHAS_TOPLING_ROCKS
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
   EXTRA_LIB_SOURCES += \
     $(wildcard sideplugin/topling-rocks/src/table/*.cc) \
@@ -504,22 +504,22 @@ endif
 TOPLING_DCOMPACT_USE_ETCD := 0
 ifneq (,$(wildcard sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/src/libetcd-cpp-api.${PLATFORM_SHARED_EXT}))
 ifneq (,$(wildcard sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto))
-  CXXFLAGS   += -I sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto \
-                -I sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3
-  LDFLAGS    += -L sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/src -letcd-cpp-api
+  CXXFLAGS   +=  -Isideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto \
+                 -Isideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3
+  LDFLAGS    +=  -Lsideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/src -letcd-cpp-api
   export LD_LIBRARY_PATH:=${TOPLING_ROCKS_DIR}/3rdparty/etcd-cpp-apiv3/build/src:${LD_LIBRARY_PATH}
   ifneq (,$(wildcard ../vcpkg/packages/grpc_x64-linux/include))
-    CXXFLAGS   += -I ../vcpkg/packages/grpc_x64-linux/include
+    CXXFLAGS   +=  -I../vcpkg/packages/grpc_x64-linux/include
   else
     $(error NotFound ../vcpkg/packages/grpc_x64-linux/include)
   endif
   ifneq (,$(wildcard ../vcpkg/packages/protobuf_x64-linux/include))
-    CXXFLAGS   += -I ../vcpkg/packages/protobuf_x64-linux/include
+    CXXFLAGS   +=  -I../vcpkg/packages/protobuf_x64-linux/include
   else
     $(error NotFound ../vcpkg/packages/protobuf_x64-linux/include)
   endif
   ifneq (,$(wildcard ../vcpkg/packages/cpprestsdk_x64-linux/include))
-    CXXFLAGS   += -I ../vcpkg/packages/cpprestsdk_x64-linux/include
+    CXXFLAGS   +=  -I../vcpkg/packages/cpprestsdk_x64-linux/include
   else
     $(error NotFound ../vcpkg/packages/cpprestsdk_x64-linux/include)
   endif
@@ -683,7 +683,7 @@ STRIPFLAGS = -X64 -x
 endif
 
 ifeq ($(PLATFORM), OS_SOLARIS)
-	PLATFORM_CXXFLAGS += -D _GLIBCXX_USE_C99
+	PLATFORM_CXXFLAGS += -D_GLIBCXX_USE_C99
 endif
 
 ifeq ($(LIB_MODE),shared)
@@ -1205,6 +1205,11 @@ gen_build_version = sed -e s/@GIT_SHA@/$(git_sha)/ -e s:@GIT_TAG@:"$(git_tag)": 
 util/build_version.cc: $(filter-out $(OBJ_DIR)/util/build_version.o, $(LIB_OBJECTS)) util/build_version.cc.in
 	$(AM_V_GEN)rm -f $@-t
 	$(AM_V_at)$(gen_build_version) > $@
+	$(AM_V_at)sed -i "s^@CPU_ARCH@^$(strip ${CPU_ARCH}^)" $@
+	$(AM_V_at)sed -i "s^@CXXFLAGS@^$(filter-out -D% -I%,$(strip ${CXXFLAGS}))^" $@
+	$(AM_V_at)sed -i "s^@CXXINCS@^$(filter -I%,$(strip ${CXXFLAGS}))^" $@
+	$(AM_V_at)sed -i "s^@CXXDEFS@^$(filter -D%,$(strip ${CXXFLAGS}))^" $@
+	$(AM_V_at)sed -i "s^@LDFLAGS@^$(strip ${LDFLAGS})^" $@
 endif
 CLEAN_FILES += util/build_version.cc
 
@@ -2603,7 +2608,7 @@ endif
 	ROCKSDB_JAR = rocksdbjni-$(ROCKSDB_JAVA_VERSION)-osx.jar
 	SHA256_CMD = openssl sha256 -r
 ifneq ("$(wildcard $(JAVA_HOME)/include/darwin)","")
-	JAVA_INCLUDE = -I$(JAVA_HOME)/include -I $(JAVA_HOME)/include/darwin
+	JAVA_INCLUDE = -I$(JAVA_HOME)/include  -I$(JAVA_HOME)/include/darwin
 else
 	JAVA_INCLUDE = -I/System/Library/Frameworks/JavaVM.framework/Headers/
 endif
@@ -3089,8 +3094,8 @@ ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: LDFLAGS =
 ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}:
 	+make -C ${TOPLING_CORE_DIR} ${TOPLING_ZBS_TARGET} CPU=${CPU_ARCH}
 
-${STATIC_LIBRARY}: ${BUILD_ROOT}/lib_shared/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.a
-${BUILD_ROOT}/lib_shared/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.a:
+${STATIC_LIBRARY}: ${BUILD_ROOT}/lib_static/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.a
+${BUILD_ROOT}/lib_static/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.a:
 	+make -C ${TOPLING_CORE_DIR} core fsa zbs CPU=${CPU_ARCH}
 
 ifeq (${WITH_TOPLING_ROCKS},1)
