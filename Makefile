@@ -705,11 +705,11 @@ endif
 endif
 
 ifeq (${WITH_BMI2},1)
-  CPU_ARCH ?= -march=haswell
+  CPU ?= -march=haswell
 endif
-ifdef CPU_ARCH
-  PLATFORM_CCFLAGS  := ${CPU_ARCH} $(filter-out -march=native -DHAVE_AVX2, $(PLATFORM_CCFLAGS))
-  PLATFORM_CXXFLAGS := ${CPU_ARCH} $(filter-out -march=native -DHAVE_AVX2, $(PLATFORM_CXXFLAGS))
+ifdef CPU
+  PLATFORM_CCFLAGS  := ${CPU} $(filter-out -march=native -DHAVE_AVX2, $(PLATFORM_CCFLAGS))
+  PLATFORM_CXXFLAGS := ${CPU} $(filter-out -march=native -DHAVE_AVX2, $(PLATFORM_CXXFLAGS))
 endif
 
 # ASAN doesn't work well with jemalloc. If we're compiling with ASAN, we should use regular malloc.
@@ -1205,7 +1205,7 @@ gen_build_version = sed -e s/@GIT_SHA@/$(git_sha)/ -e s:@GIT_TAG@:"$(git_tag)": 
 util/build_version.cc: $(filter-out $(OBJ_DIR)/util/build_version.o, $(LIB_OBJECTS)) util/build_version.cc.in
 	$(AM_V_GEN)rm -f $@-t
 	$(AM_V_at)$(gen_build_version) > $@
-	$(AM_V_at)sed -i "s^@CPU_ARCH@^$(strip ${CPU_ARCH}^)" $@
+	$(AM_V_at)sed -i "s^@CPU_ARCH@^$(strip ${CPU}^)" $@
 	$(AM_V_at)sed -i "s^@CXXFLAGS@^$(filter-out -D% -I%,$(strip ${CXXFLAGS}))^" $@
 	$(AM_V_at)sed -i "s^@CXXINCS@^$(filter -I%,$(strip ${CXXFLAGS}))^" $@
 	$(AM_V_at)sed -i "s^@CXXDEFS@^$(filter -D%,$(strip ${CXXFLAGS}))^" $@
@@ -3092,17 +3092,17 @@ ${SHARED4}: ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}
 ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: CXXFLAGS =
 ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: LDFLAGS =
 ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}:
-	+make -C ${TOPLING_CORE_DIR} ${TOPLING_ZBS_TARGET} CPU=${CPU_ARCH}
+	+make -C ${TOPLING_CORE_DIR} ${TOPLING_ZBS_TARGET} CPU=${CPU}
 
 ${STATIC_LIBRARY}: ${BUILD_ROOT}/lib_static/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.a
 ${BUILD_ROOT}/lib_static/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.a:
-	+make -C ${TOPLING_CORE_DIR} core fsa zbs CPU=${CPU_ARCH}
+	+make -C ${TOPLING_CORE_DIR} core fsa zbs CPU=${CPU}
 
 ifeq (${WITH_TOPLING_ROCKS},1)
 ifneq (,$(wildcard sideplugin/topling-rocks))
 sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}: \
   $(shell find sideplugin/topling-rocks/{src,tools} -name '*.cc' -o -name '*.h')
-	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC} CPU=${CPU_ARCH}
+	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC} CPU=${CPU}
 endif
 endif
 
@@ -3110,27 +3110,27 @@ ifneq (,$(wildcard sideplugin/cspp-memtable))
 sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}: \
   sideplugin/cspp-memtable/cspp_memtable.cc \
   sideplugin/cspp-memtable/Makefile
-	+make -C sideplugin/cspp-memtable ${CSPP_MEMTABLE_GIT_VER_SRC} CPU=${CPU_ARCH}
+	+make -C sideplugin/cspp-memtable ${CSPP_MEMTABLE_GIT_VER_SRC} CPU=${CPU}
 endif
 ifneq (,$(wildcard sideplugin/cspp-wbwi))
 sideplugin/cspp-wbwi/${CSPP_WBWI_GIT_VER_SRC}: \
   sideplugin/cspp-wbwi/cspp_wbwi.cc \
   sideplugin/cspp-wbwi/Makefile
-	+make -C sideplugin/cspp-wbwi ${CSPP_WBWI_GIT_VER_SRC} CPU=${CPU_ARCH}
+	+make -C sideplugin/cspp-wbwi ${CSPP_WBWI_GIT_VER_SRC} CPU=${CPU}
 endif
 ifneq (,$(wildcard sideplugin/topling-sst/src/table))
 sideplugin/topling-sst/${TOPLING_SST_GIT_VER_SRC}: \
   $(wildcard sideplugin/topling-sst/src/table/*.h) \
   $(wildcard sideplugin/topling-sst/src/table/*.cc) \
   sideplugin/topling-sst/Makefile
-	+make -C sideplugin/topling-sst ${TOPLING_SST_GIT_VER_SRC} CPU=${CPU_ARCH}
+	+make -C sideplugin/topling-sst ${TOPLING_SST_GIT_VER_SRC} CPU=${CPU}
 endif
 ifneq (,$(wildcard sideplugin/topling-zip_table_reader/src/table))
 sideplugin/topling-zip_table_reader/${TOPLING_ZIP_TABLE_READER_GIT_VER_SRC}: \
   $(wildcard sideplugin/topling-zip_table_reader/src/table/*.h) \
   $(wildcard sideplugin/topling-zip_table_reader/src/table/*.cc) \
   sideplugin/topling-zip_table_reader/Makefile
-	+make -C sideplugin/topling-zip_table_reader ${TOPLING_ZIP_TABLE_READER_GIT_VER_SRC} CPU=${CPU_ARCH}
+	+make -C sideplugin/topling-zip_table_reader ${TOPLING_ZIP_TABLE_READER_GIT_VER_SRC} CPU=${CPU}
 endif
 ifneq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
 sideplugin/topling-dcompact/${TOPLING_DCOMPACT_GIT_VER_SRC}: \
@@ -3138,13 +3138,13 @@ sideplugin/topling-dcompact/${TOPLING_DCOMPACT_GIT_VER_SRC}: \
   $(wildcard sideplugin/topling-dcompact/src/dcompact/*.cc) \
   $(wildcard sideplugin/topling-dcompact/tools/dcompact/*.cpp) \
   sideplugin/topling-dcompact/Makefile
-	+make -C sideplugin/topling-dcompact ${TOPLING_DCOMPACT_GIT_VER_SRC} CPU=${CPU_ARCH}
+	+make -C sideplugin/topling-dcompact ${TOPLING_DCOMPACT_GIT_VER_SRC} CPU=${CPU}
 .PHONY: dcompact_worker
 dcompact_worker: ${SHARED1}
 ifeq (${MAKE_UNIT_TEST},1)
 	@echo rocksdb unit test, skip dcompact_worker
 else
-	+make -C sideplugin/topling-dcompact/tools/dcompact ${ORIG_OBJ_DIR}/dcompact_worker.exe CHECK_TERARK_FSA_LIB_UPDATE=0 CPU=${CPU_ARCH}
+	+make -C sideplugin/topling-dcompact/tools/dcompact ${ORIG_OBJ_DIR}/dcompact_worker.exe CHECK_TERARK_FSA_LIB_UPDATE=0 CPU=${CPU}
 	cp -a sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/dcompact_worker.exe ${OBJ_DIR}
 endif
 endif
