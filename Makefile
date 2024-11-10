@@ -1214,7 +1214,13 @@ else
 	git_mod  := $(shell git diff-index HEAD --quiet 2>/dev/null; echo $$?)
 	git_date := $(shell git log -1 --date=format:"%Y-%m-%d %T" --format="%ad" 2>/dev/null)
 endif
-gen_build_version = sed -e s/@GIT_SHA@/$(git_sha)/ -e s:@GIT_TAG@:"$(git_tag)": -e s/@GIT_MOD@/"$(git_mod)"/ -e s/@BUILD_DATE@/"$(build_date)"/ -e s/@GIT_DATE@/"$(git_date)"/ -e s/@ROCKSDB_PLUGIN_BUILTINS@/'$(ROCKSDB_PLUGIN_BUILTINS)'/ -e s/@ROCKSDB_PLUGIN_EXTERNS@/"$(ROCKSDB_PLUGIN_EXTERNS)"/ util/build_version.cc.in
+gen_build_version = sed -e s/@GIT_SHA@/$(git_sha)/ -e s:@GIT_TAG@:"$(git_tag)": -e s/@GIT_MOD@/"$(git_mod)"/ -e s/@BUILD_DATE@/"$(build_date)"/ -e s/@GIT_DATE@/"$(git_date)"/ -e s/@ROCKSDB_PLUGIN_BUILTINS@/'$(ROCKSDB_PLUGIN_BUILTINS)'/ -e s/@ROCKSDB_PLUGIN_EXTERNS@/"$(ROCKSDB_PLUGIN_EXTERNS)"/ \
+    -e "s^@CPU_ARCH@^$(strip ${CPU}^)" \
+    -e "s^@CXXFLAGS@^$(filter-out -D% -I%,$(strip ${CXXFLAGS}))^" \
+    -e "s^@CXXINCS@^$(filter -I%,$(strip ${CXXFLAGS}))^" \
+    -e "s^@CXXDEFS@^$(filter -D%,$(strip ${CXXFLAGS}))^" \
+    -e "s^@LDFLAGS@^$(strip ${LDFLAGS})^" \
+    util/build_version.cc.in
 
 # Record the version of the source that we are compiling.
 # We keep a record of the git revision in this file.  It is then built
@@ -1224,11 +1230,6 @@ gen_build_version = sed -e s/@GIT_SHA@/$(git_sha)/ -e s:@GIT_TAG@:"$(git_tag)": 
 util/build_version.cc: $(filter-out $(OBJ_DIR)/util/build_version.o, $(LIB_OBJECTS)) util/build_version.cc.in
 	$(AM_V_GEN)rm -f $@-t
 	$(AM_V_at)$(gen_build_version) > $@
-	$(AM_V_at)sed -i "s^@CPU_ARCH@^$(strip ${CPU}^)" $@
-	$(AM_V_at)sed -i "s^@CXXFLAGS@^$(filter-out -D% -I%,$(strip ${CXXFLAGS}))^" $@
-	$(AM_V_at)sed -i "s^@CXXINCS@^$(filter -I%,$(strip ${CXXFLAGS}))^" $@
-	$(AM_V_at)sed -i "s^@CXXDEFS@^$(filter -D%,$(strip ${CXXFLAGS}))^" $@
-	$(AM_V_at)sed -i "s^@LDFLAGS@^$(strip ${LDFLAGS})^" $@
 endif
 CLEAN_FILES += util/build_version.cc
 
