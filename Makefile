@@ -319,9 +319,10 @@ ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test
   OBJ_DIR := $(subst build/,build-ut/,${OBJ_DIR})
 endif
 
-BUILD_PREFIX ?=
+#BUILD_PREFIX default is not defined, thus empty
+#BUILD_PREFIX ?=
 ORIG_OBJ_DIR := ${OBJ_DIR}
-OBJ_DIR := ${BUILD_PREFIX}/${OBJ_DIR}
+OBJ_DIR := ${BUILD_PREFIX}${OBJ_DIR}
 
 # 1. we define ROCKSDB_DISABLE_ZSTD=1 on build_detect_platform.
 # 2. zstd lib is included in libterark-zbs
