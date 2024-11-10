@@ -303,6 +303,15 @@ else
   TOPLING_CORE_DIR := sideplugin/topling-zip
 endif
 
+ifneq ($(origin WITH_BMI2),undefined)
+ifneq ($(origin WITH_BMI2),environment)
+  # WITH_BMI2 will pass through to sub make for sideplugins & topling core lib
+  # so if it is   defined, it must be defined by environment
+  #    if it is undefined, it will be auto detected both in this Makefile and sub makes
+  $(error WITH_BMI2=${WITH_BMI2} is defined by $(origin WITH_BMI2), it must keep undefined or define by environment)
+endif
+endif
+
 COMPILER := $(shell set -e; tmpfile=`mktemp -u compiler-XXXXXX`; \
                     ${CXX} ${TOPLING_CORE_DIR}/tools/configure/compiler.cpp -o $${tmpfile}.exe; \
                     ./$${tmpfile}.exe && rm -f $${tmpfile}*)
