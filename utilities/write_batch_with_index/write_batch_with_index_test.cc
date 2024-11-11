@@ -2796,8 +2796,8 @@ int main(int argc, char** argv) {
     return ret;
   }
   g_fac.reset(NewCSPP_WBWIForPlain("{}"));
-  ReverseBytewiseComparator_p = BytewiseComparator();
-  g_test_rev_cmp_iter = false;
+  //ReverseBytewiseComparator_p = BytewiseComparator();
+  //g_test_rev_cmp_iter = false;
   g_test_with_ts = false;
   fprintf(stderr, "Testing CSPP_WBWI...\n");
  #endif
