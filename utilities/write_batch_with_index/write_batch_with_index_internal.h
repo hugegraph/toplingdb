@@ -86,7 +86,9 @@ class BaseDeltaIterator final : public Iterator {
   void Prev() override;
   Slice key() const override;
   Slice value() const override { return value_; }
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   const WideColumns& columns() const override { return columns_; }
+#endif
   Slice timestamp() const override;
   Status status() const override;
   Status Refresh(const Snapshot*, bool keep_iter_pos) override;
@@ -142,7 +144,9 @@ class BaseDeltaIterator final : public Iterator {
   MergeContext merge_context_;
   std::string merge_result_;
   Slice value_;
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   WideColumns columns_;
+#endif
 };
 
 // Key used by skip list, as the binary searchable index of WriteBatchWithIndex.

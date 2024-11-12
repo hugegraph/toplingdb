@@ -22,6 +22,11 @@
 #pragma warning(disable: 4458) // declaration of 'delta_iterator_' hides class member
 #endif
 
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+#else
+  #define columns_ kNoWideColumns
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 BaseDeltaIterator::BaseDeltaIterator(ColumnFamilyHandle* column_family,
                                      Iterator* base_iterator,
@@ -371,7 +376,9 @@ inline void BaseDeltaIterator::AdvanceBase(bool const_forward) {
 
 void BaseDeltaIterator::ResetValueAndColumns() {
   value_.clear();
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   columns_.clear();
+#endif
 }
 
 void BaseDeltaIterator::SetValueAndColumnsFromBase() {
@@ -381,7 +388,9 @@ void BaseDeltaIterator::SetValueAndColumnsFromBase() {
   assert(columns_.empty());
 
   value_ = base_iterator_->value();
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   columns_ = base_iterator_->columns();
+#endif
 }
 
 void BaseDeltaIterator::SetValueAndColumnsFromDelta() {
@@ -395,6 +404,7 @@ void BaseDeltaIterator::SetValueAndColumnsFromDelta() {
   if (merge_context_.GetNumOperands() == 0) {
     if (delta_entry.type == kPutRecord) {
       value_ = delta_entry.value;
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
       columns_.emplace_back(kDefaultWideColumnName, value_);
     } else if (delta_entry.type == kPutEntityRecord) {
       Slice value_copy(delta_entry.value);
@@ -407,6 +417,7 @@ void BaseDeltaIterator::SetValueAndColumnsFromDelta() {
       if (WideColumnsHelper::HasDefaultColumn(columns_)) {
         value_ = WideColumnsHelper::GetDefaultColumn(columns_);
       }
+#endif
     }
 
     return;
@@ -455,6 +466,7 @@ void BaseDeltaIterator::SetValueAndColumnsFromDelta() {
     return;
   }
 
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   if (result_type == kTypeWideColumnEntity) {
     Slice entity(merge_result_);
 
@@ -469,11 +481,14 @@ void BaseDeltaIterator::SetValueAndColumnsFromDelta() {
 
     return;
   }
+#endif
 
   assert(result_type == kTypeValue);
 
   value_ = merge_result_;
+#if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   columns_.emplace_back(kDefaultWideColumnName, value_);
+#endif
 }
 
 inline bool BaseDeltaIterator::BaseValid() const {
