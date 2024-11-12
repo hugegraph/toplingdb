@@ -361,6 +361,7 @@ IOStatus WritableFileWriter::Flush(Env::IOPriority op_rate_limiter_priority) {
       }
     }
     if (!s.ok()) {
+      fprintf(stderr, "WritableFileWriter::Flush: Write %zd = %s\n", buf_.CurrentSize(), s.ToString().c_str());
       set_seen_error();
       return s;
     }
@@ -376,6 +377,9 @@ IOStatus WritableFileWriter::Flush(Env::IOPriority op_rate_limiter_priority) {
         WritableFileWriter::DecideRateLimiterPriority(
             writable_file_->GetIOPriority(), op_rate_limiter_priority);
     s = writable_file_->Flush(io_options, nullptr);
+    if (!s.ok())
+      fprintf(stderr, "WritableFileWriter::Flush: Flush %zd = %s\n", buf_.CurrentSize(), s.ToString().c_str());
+
     if (ShouldNotifyListeners()) {
       auto finish_ts = std::chrono::steady_clock::now();
       NotifyOnFileFlushFinish(start_ts, finish_ts, s);
@@ -612,6 +616,7 @@ IOStatus WritableFileWriter::WriteBuffered(
           // returning error, the file may end up with two duplicate pieces of
           // data. Therefore, clear the buf_ at the WritableFileWriter layer
           // and let caller determine error handling.
+          fprintf(stderr, "%d: Append %zd = %s\n", __LINE__, allowed, s.ToString().c_str());
           buf_.Size(0);
           buffered_data_crc32c_checksum_ = 0;
         }

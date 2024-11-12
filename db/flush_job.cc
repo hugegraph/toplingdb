@@ -1039,6 +1039,7 @@ UseBuildTable:
       s = output_file_directory_->FsyncWithDirOptions(
           IOOptions(), nullptr,
           DirFsyncOptions(DirFsyncOptions::FsyncReason::kNewFileSynced));
+      TERARK_ASSERT_S(s.ok(), "FsyncWithDirOptions(): %s", s.ToString());
     }
     TEST_SYNC_POINT_CALLBACK("FlushJob::WriteLevel0Table", &mems_);
 
