@@ -2423,6 +2423,7 @@ io_tracer_parser_test: $(OBJ_DIR)/tools/io_tracer_parser_test.o $(OBJ_DIR)/tools
 	$(AM_LINK)
 
 io_tracer_parser: $(OBJ_DIR)/tools/io_tracer_parser.o $(TOOLS_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
 #--------------------------------------------------
 ifndef ROCKSDB_USE_LIBRADOS
   AUTO_ALL_EXCLUDE_SRC += utilities/env_librados_test.cc
@@ -2570,6 +2571,9 @@ install-shared: install-headers $(SHARED4) shared_lib
 	cp -a sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/*.exe $(DESTDIR)$(PREFIX)/bin
 
 install: install-${LIB_MODE}
+
+install-tools: install tools
+	install -C -m 755 ${TOOLS} $(DESTDIR)$(PREFIX)/bin
 
 # Generate the pkg-config file
 gen-pc:
