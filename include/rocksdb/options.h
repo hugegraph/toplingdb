@@ -2102,6 +2102,8 @@ struct IngestExternalFileOptions {
 
   // ToplingDB: sync file can be optional
   bool sync_file = true;
+
+  uint32_t override_cf_id = INT32_MAX;
 };
 
 ROCKSDB_ENUM_PLAIN(TraceFilterType, uint64_t,
