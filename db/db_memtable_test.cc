@@ -79,18 +79,8 @@ class MockMemTableRep : public MemTableRep {
   int num_insert_with_hint_;
 };
 
-static auto g_cspp_fac = []()-> std::shared_ptr<MemTableRepFactory> {
-  const char* memtab_opt = getenv("MemTableRepFactory");
-  if (memtab_opt && strncmp(memtab_opt, "cspp:", 5) == 0) {
-   #ifdef HAS_TOPLING_CSPP_MEMTABLE
-    extern MemTableRepFactory* NewCSPPMemTabForPlain(const std::string&);
-    return std::shared_ptr<MemTableRepFactory>(NewCSPPMemTabForPlain(memtab_opt + 5));
-   #else
-    fprintf(stderr, "env MemTableRepFactory is cspp but HAS_TOPLING_CSPP_MEMTABLE is not defined\n");
-   #endif
-  }
-  return nullptr;
-}();
+extern MemTableRepFactory* NewCSPPMemTabForPlain(const std::string&);
+static std::shared_ptr<MemTableRepFactory> g_cspp_fac;
 
 class MockMemTableRepFactory : public MemTableRepFactory {
  public:
@@ -114,6 +104,7 @@ class MockMemTableRepFactory : public MemTableRepFactory {
         auto rep = g_cspp_fac->CreateMemTableRep
           (level0_dir, mcfo, cmp, allocator, transform, logger, column_family_id);
         mock_rep_ = new MockMemTableRep(allocator, rep);
+        printf("CSPPMemTable, cmp = %s\n", ucmp->Name());
         return mock_rep_;
       }
       fprintf(stderr, "MemTableTest skip %s\n", ucmp->Name());
@@ -392,5 +383,23 @@ TEST_F(DBMemTableTest, ColumnFamilyId) {
 int main(int argc, char** argv) {
   ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
+  int ret = RUN_ALL_TESTS(); // default MemTableRep
+  const char* memtab_opt = getenv("MemTableRepFactory");
+  if (nullptr == memtab_opt) {
+    memtab_opt = R"(cspp:{"chunk_size":4})"; // default cspp conf
+  }
+  if (strncmp(memtab_opt, "cspp:", 5) == 0) {
+    using namespace ROCKSDB_NAMESPACE;
+   #ifdef HAS_TOPLING_CSPP_MEMTABLE
+    g_cspp_fac.reset(NewCSPPMemTabForPlain(memtab_opt + 5));
+    fprintf(stderr, "MemTableTest: %s\n", memtab_opt);
+   #else
+    fprintf(stderr, "env MemTableRepFactory is cspp but HAS_TOPLING_CSPP_MEMTABLE is not defined\n");
+    return ret;
+   #endif
+  }
+  else {
+    return ret;
+  }
   return RUN_ALL_TESTS();
 }
