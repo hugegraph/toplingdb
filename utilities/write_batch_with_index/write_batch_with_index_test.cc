@@ -33,8 +33,6 @@ namespace ROCKSDB_NAMESPACE {
 
 namespace {
 static auto g_fac = SingleSkipListWBWIFactory();
-static auto ReverseBytewiseComparator_p = ReverseBytewiseComparator();
-static bool g_test_rev_cmp_iter = true;
 static bool g_test_with_ts = true;
 
 class ColumnFamilyHandleImplDummy : public ColumnFamilyHandleImpl {
@@ -602,7 +600,7 @@ TEST_F(WBWIKeepTest, TestValueAsSecondaryIndex) {
 
 TEST_P(WriteBatchWithIndexTest, TestComparatorForCF) {
   ColumnFamilyHandleImplDummy cf1(6, nullptr);
-  ColumnFamilyHandleImplDummy reverse_cf(66, ReverseBytewiseComparator_p);
+  ColumnFamilyHandleImplDummy reverse_cf(66, ReverseBytewiseComparator());
   ColumnFamilyHandleImplDummy cf2(88, BytewiseComparator());
 
   ASSERT_OK(batch_->Put(&cf1, "ddd", ""));
@@ -652,7 +650,6 @@ TEST_P(WriteBatchWithIndexTest, TestComparatorForCF) {
     ASSERT_TRUE(!iter->Valid());
   }
 
-  if (g_test_rev_cmp_iter)
   {
     std::unique_ptr<WBWIIterator> iter(batch_->NewIterator(&reverse_cf));
     iter->Seek("");
@@ -689,7 +686,7 @@ TEST_P(WriteBatchWithIndexTest, TestComparatorForCF) {
 
 TEST_F(WBWIOverwriteTest, TestOverwriteKey) {
   ColumnFamilyHandleImplDummy cf1(6, nullptr);
-  ColumnFamilyHandleImplDummy reverse_cf(66, ReverseBytewiseComparator_p);
+  ColumnFamilyHandleImplDummy reverse_cf(66, ReverseBytewiseComparator());
   ColumnFamilyHandleImplDummy cf2(88, BytewiseComparator());
 
   ASSERT_OK(batch_->Merge(&cf1, "ddd", ""));
@@ -755,7 +752,6 @@ TEST_F(WBWIOverwriteTest, TestOverwriteKey) {
     ASSERT_TRUE(!iter->Valid());
   }
 
-  if (g_test_rev_cmp_iter)
   {
     std::unique_ptr<WBWIIterator> iter(batch_->NewIterator(&reverse_cf));
     iter->Seek("");
@@ -1099,11 +1095,8 @@ TEST_P(WriteBatchWithIndexTest, TestIteraratorWithBase) {
 }
 
 TEST_P(WriteBatchWithIndexTest, TestIteraratorWithBaseReverseCmp) {
-  if (!g_test_rev_cmp_iter) {
-    return;
-  }
-  ColumnFamilyHandleImplDummy cf1(6, ReverseBytewiseComparator_p);
-  ColumnFamilyHandleImplDummy cf2(2, ReverseBytewiseComparator_p);
+  ColumnFamilyHandleImplDummy cf1(6, ReverseBytewiseComparator());
+  ColumnFamilyHandleImplDummy cf2(2, ReverseBytewiseComparator());
 
   // Test the case that there is one element in the write batch
   ASSERT_OK(batch_->Put(&cf2, "zoo", "bar"));
@@ -2428,6 +2421,7 @@ TEST_P(WriteBatchWithIndexTest, ColumnFamilyWithTimestamp) {
   }
 
   ASSERT_OK(OpenDB());
+
   ColumnFamilyHandleImplDummy cf2(2,
                                   test::BytewiseComparatorWithU64TsWrapper());
 
@@ -2808,8 +2802,6 @@ int main(int argc, char** argv) {
     return ret;
   }
   g_fac.reset(NewCSPP_WBWIForPlain("{}"));
-  //ReverseBytewiseComparator_p = BytewiseComparator();
-  //g_test_rev_cmp_iter = false;
   g_test_with_ts = false;
   fprintf(stderr, "Testing CSPP_WBWI...\n");
  #endif
