@@ -2525,25 +2525,29 @@ install-headers: gen-pc
 	cp -ar ${TOPLING_CORE_DIR}/boost-include/boost  $(DESTDIR)/$(PREFIX)/include
 	install -C -m 644 rocksdb.pc $(INSTALL_LIBDIR)/pkgconfig/rocksdb.pc
 
-install-static: install-headers $(LIBRARY) static_lib
+install-static: $(LIBRARY) static_lib
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(LIBRARY) $(INSTALL_LIBDIR)
 	cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_static/* $(INSTALL_LIBDIR)
 
-install-shared: install-headers $(SHARED4) shared_lib
+install-shared: $(SHARED4) shared_lib
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(SHARED4) $(INSTALL_LIBDIR)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED2)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED1)
-	cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/* $(INSTALL_LIBDIR)
-	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	cp -a sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/*.exe $(DESTDIR)$(PREFIX)/bin
+	install -C -m 644 ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/* $(INSTALL_LIBDIR)
 
 install: install-${LIB_MODE}
 
+install-dev-static: install-headers install-static
+install-dev-shared: install-headers install-shared
+install-dev: install-dev-${LIB_MODE}
+
 install-tools: install tools
+	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	install -C -m 755 ${TOOLS} $(DESTDIR)$(PREFIX)/bin
+	install -C -m 755 sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/*.exe $(DESTDIR)$(PREFIX)/bin
 
 # Generate the pkg-config file
 gen-pc:
