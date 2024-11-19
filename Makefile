@@ -2569,7 +2569,7 @@ install-shared: $(SHARED4) shared_lib
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED2)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED1)
-	install -C -m 644 ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/* $(INSTALL_LIBDIR)
+	cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/* $(INSTALL_LIBDIR)
 
 install: install-${LIB_MODE}
 
