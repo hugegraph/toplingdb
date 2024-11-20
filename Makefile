@@ -2579,6 +2579,9 @@ install-dev-static: install-headers install-static
 install-dev-shared: install-headers install-shared
 install-dev: install-dev-${LIB_MODE}
 
+install-dcompact: install dcompact_worker
+	install -C -m 755 sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/dcompact_worker.exe $(DESTDIR)$(PREFIX)/bin
+
 install-tools: install tools
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	install -C -m 755 ${TOOLS} $(DESTDIR)$(PREFIX)/bin
