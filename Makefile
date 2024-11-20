@@ -1643,6 +1643,9 @@ rocksdb.h rocksdb.cc: build_tools/amalgamate.py Makefile $(LIB_SOURCES) unity.cc
 
 clean: clean-ext-libraries-all clean-rocks clean-rocksjava
 
+clean-topling-zip_table_reader:
+	rm -rf $(OBJ_DIR)/sideplugin/topling-zip_table_reader
+
 clean-not-downloaded: clean-ext-libraries-bin clean-rocks clean-not-downloaded-rocksjava
 
 clean-rocks:
@@ -2545,6 +2548,7 @@ install-dev-shared: install-headers install-shared
 install-dev: install-dev-${LIB_MODE}
 
 install-dcompact: install dcompact_worker
+	install -d $(DESTDIR)$(PREFIX)/bin
 	install -C -m 755 sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/dcompact_worker.exe $(DESTDIR)$(PREFIX)/bin
 
 install-tools: install tools
