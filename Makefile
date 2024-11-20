@@ -502,6 +502,7 @@ else
   $(warning NotFound sideplugin/topling-zip_table_reader, this is ok, only Topling Open SST(s) are disabled)
 endif
 
+ifeq (${WITH_TOPLINGDB_FS},1)
 ifeq (,$(wildcard sideplugin/toplingdb-fs/src))
   dummy := $(shell set -e -x; \
     cd sideplugin; \
@@ -524,6 +525,7 @@ ifneq (,$(wildcard sideplugin/toplingdb-fs/src))
                        sideplugin/toplingdb-fs/${TOPLINGDB_FS_GIT_VER_SRC}
 else
   $(warning NotFound sideplugin/toplingdb-fs, this is ok, only toplingdb-fs is disabled)
+endif
 endif
 
 ifeq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
