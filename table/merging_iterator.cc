@@ -11,7 +11,7 @@
 
 #include "db/arena_wrapped_db_iter.h"
 
-#if defined(__AVX512VL__) && defined(__AVX512VBMI2__)
+#if defined(__AVX512VL__) && defined(__AVX512BW__)
   #include <immintrin.h>
 #endif
 
@@ -217,8 +217,8 @@ FORCE_INLINE UintPrefix HostPrefixCacheUK(const Slice& uk) {
   if (LIKELY(uk.size_ >= sizeof(UintPrefix))) {
     return bswap_prefix(unaligned_load<UintPrefix>(uk.data_));
   } else {
-   #if defined(__AVX512VL__) && defined(__AVX512VBMI2__)
-   #pragma message "__AVX512VL__ && __AVX512VBMI2__, use _mm_maskz_loadu_epi8"
+   #if defined(__AVX512VL__) && defined(__AVX512BW__)
+   #pragma message "__AVX512VL__ && __AVX512BW__, use _mm_maskz_loadu_epi8"
     auto mask = uint16_t(~(-1 << uk.size_));
     return bswap_prefix((UintPrefix)_mm_maskz_loadu_epi8(mask, uk.data_));
    #else
@@ -234,7 +234,7 @@ FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
   if (LIKELY(ik.size_ >= sizeof(UintPrefix) + 8)) {
     return bswap_prefix(unaligned_load<UintPrefix>(ik.data_));
   } else {
-   #if defined(__AVX512VL__) && defined(__AVX512VBMI2__)
+   #if defined(__AVX512VL__) && defined(__AVX512BW__)
     auto mask = uint16_t(~(-1 << (ik.size_ - 8)));
     return bswap_prefix((UintPrefix)_mm_maskz_loadu_epi8(mask, ik.data_));
    #else
