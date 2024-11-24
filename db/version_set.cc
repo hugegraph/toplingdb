@@ -127,7 +127,7 @@ size_t FindFileInRangeTmpl(Cmp cmp, const LevelFilesBrief& brief,
   }
   return lo;
 
-  while (lo < hi) {
+  do {
     mid = (lo + hi) / 2;
   exact_search:
     __builtin_prefetch(a[mid].largest_key.data_);
@@ -135,7 +135,7 @@ size_t FindFileInRangeTmpl(Cmp cmp, const LevelFilesBrief& brief,
       lo = mid + 1;
     else
       hi = mid;
-  }
+  } while (lo < hi);
   return lo;
 }
 
