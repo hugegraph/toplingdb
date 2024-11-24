@@ -27,6 +27,10 @@
 #include "table/unique_id_impl.h"
 #include "util/autovector.h"
 
+#if defined(__AVX512VL__) && defined(__AVX512BW__)
+  #include <immintrin.h> // for _mm_maskz_loadu_epi8 in HostPrefixCache
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 // Tag numbers for serialized VersionEdit.  These numbers are written to
@@ -397,8 +401,16 @@ inline uint64_t HostPrefixCache(const Slice& ikey) {
   if (LIKELY(ikey.size_ >= 16)) {
     memcpy(&data, ikey.data_, 8);
   } else {
+   #if defined(__AVX512VL__) && defined(__AVX512BW__)
+    //#pragma message "__AVX512VL__ && __AVX512BW__, use _mm_maskz_loadu_epi8"
+    // load 128 bits, keep low 64 bits, discard high 64 bits
+    auto mask = uint16_t(~(-1 << (ikey.size_ - 8)));
+    auto m128 = _mm_maskz_loadu_epi8(mask, ikey.data_);
+    data = (uint64_t)_mm_extract_epi64(m128, 0);
+   #else
     data = 0;
     memcpy(&data, ikey.data_, ikey.size_ - 8);
+   #endif
   }
   return NativeOfBigEndian64(data);
 }
