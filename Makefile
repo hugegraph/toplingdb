@@ -2553,6 +2553,7 @@ install-dcompact: install dcompact_worker
 
 install-tools: install tools
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
+	install -C -m 644 ${SHARED_TOOLS_LIBRARY} $(INSTALL_LIBDIR)
 	install -C -m 755 ${TOOLS} $(DESTDIR)$(PREFIX)/bin
 	install -C -m 755 sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/*.exe $(DESTDIR)$(PREFIX)/bin
 
