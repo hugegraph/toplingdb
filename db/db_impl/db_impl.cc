@@ -3518,6 +3518,12 @@ Status DBImpl::CreateColumnFamilies(
   return s;
 }
 
+void DB_UpdateMaxColumnFamily(DB* db, uint32_t max_cf_id) {
+  DBImpl* impl = static_cast_with_check<DBImpl>(db->GetRootDB());
+  auto cfset = impl->GetVersionSet()->GetColumnFamilySet();
+  cfset->UpdateMaxColumnFamily(max_cf_id);
+}
+
 Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
                                       const std::string& column_family_name,
                                       ColumnFamilyHandle** handle) {

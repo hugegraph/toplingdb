@@ -46,7 +46,6 @@ Status ExternalSstFileIngestionJob::Prepare(
 
     if (file_to_ingest.cf_id !=
             TablePropertiesCollectorFactory::Context::kUnknownColumnFamily &&
-        ingestion_options_.override_cf_id >= INT32_MAX &&
         file_to_ingest.cf_id != cfd_->GetID()) {
       return Status::InvalidArgument(
           "External file column family id don't match");
@@ -856,11 +855,7 @@ Status ExternalSstFileIngestionJob::GetIngestedFileInfo(
     }
   }
 
-  if (ingestion_options_.override_cf_id >= INT32_MAX) {
-    file_to_ingest->cf_id = static_cast<uint32_t>(props->column_family_id);
-  } else {
-    file_to_ingest->cf_id = ingestion_options_.override_cf_id;
-  }
+  file_to_ingest->cf_id = static_cast<uint32_t>(props->column_family_id);
 
   file_to_ingest->table_properties = *props;
 
