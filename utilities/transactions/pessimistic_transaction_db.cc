@@ -480,6 +480,14 @@ Status PessimisticTransactionDB::CreateColumnFamily(
   return s;
 }
 
+bool MyToplingHas_DYNAMIC_CREATE_CF() {
+#if defined(ROCKSDB_DYNAMIC_CREATE_CF)
+  return true;
+#else
+  return false;
+#endif
+}
+
 Status PessimisticTransactionDB::CreateColumnFamilies(
     const ColumnFamilyOptions& options,
     const std::vector<std::string>& column_family_names,
