@@ -88,10 +88,12 @@ struct TestHandler : public WriteBatch::Handler {
 };
 
 using KVMap = std::map<std::string, std::string>;
+using KVMapRev = std::map<std::string, std::string, std::greater<std::string> >;
 
-class KVIter : public Iterator {
+template<class KVMapT>
+class KVIterT : public Iterator {
  public:
-  explicit KVIter(const KVMap* map) : map_(map), iter_(map_->end()) {}
+  explicit KVIterT(const KVMapT* map) : map_(map), iter_(map_->end()) {}
   bool Valid() const override { return iter_ != map_->end(); }
   void SeekToFirst() override { iter_ = map_->begin(); }
   void SeekToLast() override {
@@ -121,9 +123,10 @@ class KVIter : public Iterator {
   Status status() const override { return Status::OK(); }
 
  private:
-  const KVMap* const map_;
-  KVMap::const_iterator iter_;
+  const KVMapT* const map_;
+  typename KVMapT::const_iterator iter_;
 };
+using KVIter = KVIterT<KVMap>;
 
 static std::string PrintContents(WriteBatchWithIndex* batch,
                                  ColumnFamilyHandle* column_family,
@@ -321,6 +324,8 @@ class WriteBatchWithIndexTest : public WBWIBaseTest,
                                 public testing::WithParamInterface<bool> {
  public:
   WriteBatchWithIndexTest() : WBWIBaseTest(GetParam()) {}
+  template<class KVMapT>
+  void TestRandomIteraratorWithBaseBy(const Comparator*);
 };
 
 void TestValueAsSecondaryIndexHelper(std::vector<Entry> entries,
@@ -761,14 +766,21 @@ TEST_P(WriteBatchWithIndexTest, TestWBWIIterator) {
 }
 
 TEST_P(WriteBatchWithIndexTest, TestRandomIteraratorWithBase) {
+  TestRandomIteraratorWithBaseBy<KVMap>(BytewiseComparator());
+}
+TEST_P(WriteBatchWithIndexTest, TestRandomIteraratorWithBaseRev) {
+  TestRandomIteraratorWithBaseBy<KVMapRev>(ReverseBytewiseComparator());
+}
+template<class KVMapT>
+void WriteBatchWithIndexTest::TestRandomIteraratorWithBaseBy(const Comparator* cmp) {
   std::vector<std::string> source_strings = {"a", "b", "c", "d", "e",
                                              "f", "g", "h", "i", "j"};
   for (int rand_seed = 301; rand_seed < 366; rand_seed++) {
     Random rnd(rand_seed);
 
-    ColumnFamilyHandleImplDummy cf1(6, BytewiseComparator());
-    ColumnFamilyHandleImplDummy cf2(2, BytewiseComparator());
-    ColumnFamilyHandleImplDummy cf3(8, BytewiseComparator());
+    ColumnFamilyHandleImplDummy cf1(6, cmp);
+    ColumnFamilyHandleImplDummy cf2(2, cmp);
+    ColumnFamilyHandleImplDummy cf3(8, cmp);
     batch_->Clear();
 
     if (rand_seed % 2 == 0) {
@@ -778,8 +790,8 @@ TEST_P(WriteBatchWithIndexTest, TestRandomIteraratorWithBase) {
       ASSERT_OK(batch_->Put(&cf3, "zoo", "bar"));
     }
 
-    KVMap map;
-    KVMap merged_map;
+    KVMapT map;
+    KVMapT merged_map;
     for (auto key : source_strings) {
       std::string value = key + key;
       int type = rnd.Uniform(6);
@@ -818,8 +830,8 @@ TEST_P(WriteBatchWithIndexTest, TestRandomIteraratorWithBase) {
     }
 
     std::unique_ptr<Iterator> iter(
-        batch_->NewIteratorWithBase(&cf1, new KVIter(&map)));
-    std::unique_ptr<Iterator> result_iter(new KVIter(&merged_map));
+        batch_->NewIteratorWithBase(&cf1, new KVIterT<KVMapT>(&map)));
+    std::unique_ptr<Iterator> result_iter(new KVIterT<KVMapT>(&merged_map));
 
     bool is_valid = false;
     for (int i = 0; i < 128; i++) {
