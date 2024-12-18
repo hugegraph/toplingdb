@@ -95,6 +95,9 @@ class BaseDeltaIterator final : public Iterator {
   using Iterator::Refresh;
   void Invalidate(Status s);
   bool PrepareValue() override;
+  std::unique_ptr<Iterator>& GetBaseIter() { return base_iterator_; }
+  std::unique_ptr<WBWIIterator>& GetDeltaIter() { return delta_iterator_; }
+  const Comparator* GetComparator() const { return comparator_; }
 
  private:
   void AssertInvariants();

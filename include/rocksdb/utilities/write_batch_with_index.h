@@ -297,7 +297,6 @@ class WriteBatchWithIndex : public WriteBatchBase {
   void SetMaxBytes(size_t max_bytes) override;
   virtual size_t GetDataSize() const;
 
- private:
   friend class PessimisticTransactionDB;
   friend class WritePreparedTxn;
   friend class WriteUnpreparedTxn;
@@ -308,7 +307,6 @@ class WriteBatchWithIndex : public WriteBatchBase {
   // last sub-batch.
   virtual size_t SubBatchCnt();
 
-protected:
   static
   void MergeAcrossBatchAndDB(ColumnFamilyHandle* column_family,
                              const Slice& key,
@@ -324,6 +322,7 @@ protected:
                               const size_t num_keys, const Slice* keys,
                               PinnableSlice* values, Status* statuses,
                               bool sorted_input, ReadCallback* callback);
+protected:
   struct Rep;
   std::unique_ptr<Rep> rep;
 

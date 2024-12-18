@@ -450,7 +450,7 @@ ifneq (,$(wildcard sideplugin/cspp-wbwi))
   # now we have cspp-wbwi
   CXXFLAGS   += -DHAS_TOPLING_CSPP_WBWI
   CSPP_WBWI_GIT_VER_SRC = ${BUILD_ROOT}/git-version-cspp_wbwi.cc
-  EXTRA_LIB_SOURCES += sideplugin/cspp-wbwi/cspp_wbwi.cc \
+  EXTRA_LIB_SOURCES += $(wildcard sideplugin/cspp-wbwi/*.cc) \
                        sideplugin/cspp-wbwi/${CSPP_WBWI_GIT_VER_SRC}
 else
   $(warning NotFound sideplugin/cspp-wbwi, this is ok, only Topling CSPP WBWI(WriteBatchWithIndex) is disabled)
@@ -3194,7 +3194,7 @@ sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}: \
 endif
 ifneq (,$(wildcard sideplugin/cspp-wbwi))
 sideplugin/cspp-wbwi/${CSPP_WBWI_GIT_VER_SRC}: \
-  sideplugin/cspp-wbwi/cspp_wbwi.cc \
+  $(wildcard sideplugin/cspp-wbwi/*.cc) \
   sideplugin/cspp-wbwi/Makefile
 	+make -C sideplugin/cspp-wbwi ${CSPP_WBWI_GIT_VER_SRC}
 endif
