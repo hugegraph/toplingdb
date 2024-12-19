@@ -2528,18 +2528,20 @@ install-headers: gen-pc
 	cp -ar ${TOPLING_CORE_DIR}/boost-include/boost  $(DESTDIR)/$(PREFIX)/include
 	install -C -m 644 rocksdb.pc $(INSTALL_LIBDIR)/pkgconfig/rocksdb.pc
 
+install-static: TOPLING_LIB_STATIC_FILES := $(shell echo ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_static/libterark-{core,fsa,zbs}-${COMPILER}-${BUILD_TYPE_SIG}.a)
 install-static: $(LIBRARY) static_lib
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(LIBRARY) $(INSTALL_LIBDIR)
-	cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_static/* $(INSTALL_LIBDIR)
+	cp -a ${TOPLING_LIB_STATIC_FILES} $(INSTALL_LIBDIR)
 
+install-shared: TOPLING_LIB_SHARED_FILES := $(shell echo ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/libterark-{core,fsa,zbs}-${COMPILER}-${BUILD_TYPE_SIG}.${PLATFORM_SHARED_EXT})
 install-shared: $(SHARED4) shared_lib
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(SHARED4) $(INSTALL_LIBDIR)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED2)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED1)
-	cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/* $(INSTALL_LIBDIR)
+	cp -a ${TOPLING_LIB_SHARED_FILES} $(INSTALL_LIBDIR)
 
 install: install-${LIB_MODE}
 
