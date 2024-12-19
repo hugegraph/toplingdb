@@ -3661,6 +3661,14 @@ bool ShouldChangeFileTemperature(const ImmutableOptions& ioptions,
 }
 
 
+static const bool LEVEL_SCORE_BY_RAW_SIZE = terark::getEnvBool(
+    "LEVEL_SCORE_BY_RAW_SIZE",
+  #if defined(ROCKSDB_UNIT_TEST)
+    false // default
+  #else
+    true  // default
+  #endif
+);
 
 #ifndef __attribute_const__
 #define __attribute_const__
@@ -3672,8 +3680,7 @@ __attribute_const__ inline auto GetProps(const TableReader* rd) {
 __attribute_const__
 inline uint64_t FileSizeForScore(const FileMetaData* f) {
   auto fsize = f->fd.GetFileSize();
- #if !defined(ROCKSDB_UNIT_TEST)
-  if (auto rd = f->fd.table_reader) {
+  if (auto rd = f->fd.table_reader; rd && LEVEL_SCORE_BY_RAW_SIZE) {
     // 1. raw size is stable between compressed level and uncompressed level
     // 2. We plan to mmap WAL log file and extract abstract interface for WAL
     //    and realize mmap WAL as BlobFile to be ref'ed by L0 sst, in this
@@ -3682,20 +3689,17 @@ inline uint64_t FileSizeForScore(const FileMetaData* f) {
     auto props = GetProps(rd);
     return std::max(fsize, props->raw_key_size + props->raw_value_size);
   }
- #endif
   return fsize;
 }
 __attribute_const__
 inline uint64_t CompensatedFileSizeForScore(const FileMetaData* f) {
- #if !defined(ROCKSDB_UNIT_TEST)
-  if (auto rd = f->fd.table_reader) {
+  if (auto rd = f->fd.table_reader; rd && LEVEL_SCORE_BY_RAW_SIZE) {
     // raw size is stable between compressed level and uncompressed level
     auto fsize = f->fd.GetFileSize();
     auto props = GetProps(rd);
     auto bytes = std::max(fsize, props->raw_key_size + props->raw_value_size);
     return uint64_t(f->compensated_file_size * double(bytes) / fsize);
   }
- #endif
   return f->compensated_file_size;
 }
 
