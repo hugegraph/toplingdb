@@ -424,7 +424,7 @@ class StackableDB : public DB {
     return db_->DisableFileDeletions();
   }
 
-  virtual Status EnableFileDeletions(bool force) override {
+  virtual Status EnableFileDeletions(bool force = true) override {
     return db_->EnableFileDeletions(force);
   }
 

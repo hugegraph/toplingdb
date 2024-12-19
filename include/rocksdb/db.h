@@ -1707,7 +1707,7 @@ class DB : public CacheAlignedNewDelete {
   // enabling the two methods to be called by two threads concurrently without
   // synchronization -- i.e., file deletions will be enabled only after both
   // threads call EnableFileDeletions()
-  virtual Status EnableFileDeletions(bool force) = 0;
+  virtual Status EnableFileDeletions(bool force = true) = 0;
 
   // Retrieves the creation time of the oldest file in the DB.
   // This API only works if max_open_files = -1, if it is not then
