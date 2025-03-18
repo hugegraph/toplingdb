@@ -755,6 +755,8 @@ class ColumnFamilySet {
 
   WriteController* write_controller() { return write_controller_; }
 
+  const ImmutableDBOptions* db_options() const { return db_options_; }
+
  private:
   friend class ColumnFamilyData;
   // helper function that gets called from cfd destructor
@@ -886,6 +888,10 @@ class ColumnFamilyMemTablesImpl : public ColumnFamilyMemTables {
   // REQUIRES: use this function of DBImpl::column_family_memtables_ should be
   //           under a DB mutex OR from a write thread
   virtual ColumnFamilyData* current() override { return current_; }
+
+  const ImmutableDBOptions* GetImmutableDBOptions() override {
+    return column_family_set_->db_options();
+  }
 
  private:
   ColumnFamilySet* column_family_set_;
