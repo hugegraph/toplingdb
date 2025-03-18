@@ -1702,6 +1702,9 @@ DEFINE_uint64(stats_persist_period_sec,
 DEFINE_bool(persist_stats_to_disk,
             ROCKSDB_NAMESPACE::Options().persist_stats_to_disk,
             "whether to persist stats to disk");
+DEFINE_bool(memtable_as_log_index,
+            ROCKSDB_NAMESPACE::Options().memtable_as_log_index,
+            "whether to use memtable_as_log_index");
 DEFINE_uint64(stats_history_buffer_size,
               ROCKSDB_NAMESPACE::Options().stats_history_buffer_size,
               "Max number of stats snapshots to keep in memory");
@@ -4231,6 +4234,7 @@ class Benchmark {
     options.stats_persist_period_sec =
         static_cast<unsigned int>(FLAGS_stats_persist_period_sec);
     options.persist_stats_to_disk = FLAGS_persist_stats_to_disk;
+    options.memtable_as_log_index = FLAGS_memtable_as_log_index;
     options.stats_history_buffer_size =
         static_cast<size_t>(FLAGS_stats_history_buffer_size);
     options.avoid_flush_during_recovery = FLAGS_avoid_flush_during_recovery;

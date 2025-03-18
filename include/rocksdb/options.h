@@ -924,6 +924,8 @@ struct DBOptions {
   // Default: false
   bool persist_stats_to_disk = false;
 
+  bool memtable_as_log_index = false;
+
   // if not zero, periodically take stats snapshots and store in memory, the
   // memory size for stats snapshots is capped at stats_history_buffer_size
   // Default: 1MB

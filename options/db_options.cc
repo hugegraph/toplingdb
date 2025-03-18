@@ -324,6 +324,10 @@ static std::unordered_map<std::string, OptionTypeInfo>
          {offsetof(struct ImmutableDBOptions, persist_stats_to_disk),
           OptionType::kBoolean, OptionVerificationType::kNormal,
           OptionTypeFlags::kNone}},
+        {"memtable_as_log_index",
+         {offsetof(struct ImmutableDBOptions, memtable_as_log_index),
+          OptionType::kBoolean, OptionVerificationType::kNormal,
+          OptionTypeFlags::kNone}},
         {"fail_if_options_file_error",
          {offsetof(struct ImmutableDBOptions, fail_if_options_file_error),
           OptionType::kBoolean, OptionVerificationType::kNormal,
@@ -759,6 +763,7 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       atomic_flush(options.atomic_flush),
       avoid_unnecessary_blocking_io(options.avoid_unnecessary_blocking_io),
       persist_stats_to_disk(options.persist_stats_to_disk),
+      memtable_as_log_index(options.memtable_as_log_index),
       write_dbid_to_manifest(options.write_dbid_to_manifest),
       log_readahead_size(options.log_readahead_size),
       file_checksum_gen_factory(options.file_checksum_gen_factory),
@@ -926,6 +931,8 @@ void ImmutableDBOptions::Dump(Logger* log) const {
                    avoid_unnecessary_blocking_io);
   ROCKS_LOG_HEADER(log, "                Options.persist_stats_to_disk: %u",
                    persist_stats_to_disk);
+  ROCKS_LOG_HEADER(log, "                Options.memtable_as_log_index: %u",
+                   memtable_as_log_index);
   ROCKS_LOG_HEADER(log, "                Options.write_dbid_to_manifest: %d",
                    write_dbid_to_manifest);
   ROCKS_LOG_HEADER(

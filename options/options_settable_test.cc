@@ -337,6 +337,7 @@ TEST_F(OptionsSettableTest, DBOptionsAllFieldsSettable) {
                              "stats_dump_period_sec=70127;"
                              "stats_persist_period_sec=54321;"
                              "persist_stats_to_disk=true;"
+                             "memtable_as_log_index=true;"
                              "stats_history_buffer_size=14159;"
                              "allow_fallocate=true;"
                              "allow_mmap_reads=false;"
