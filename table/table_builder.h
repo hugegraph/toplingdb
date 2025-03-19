@@ -156,6 +156,10 @@ struct TableBuilderOptions {
   bool skip_filters = false;
 
   const uint64_t cur_file_num;
+
+  // for ConvertToSST
+  std::function<void(class BlobFileAddition)> add_blob_file;
+  std::function<uint64_t()> generate_file_no;
 };
 
 // TableBuilder provides the interface used to build a Table

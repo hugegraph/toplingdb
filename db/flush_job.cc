@@ -969,6 +969,12 @@ Status FlushJob::WriteLevel0Table() {
         meta_.num_range_deletions = 0;
         meta_.raw_key_size = memtable->raw_key_size();
         meta_.raw_value_size = memtable->raw_value_size();
+        tboptions.generate_file_no = [this]() {
+          return versions_->NewFileNumber();
+        };
+        tboptions.add_blob_file = [&](BlobFileAddition b) {
+          blob_file_additions.push_back(std::move(b));
+        };
         s = memtable->ConvertToSST(&meta_, tboptions);
         if (!s.ok()) {
           ROCKS_LOG_BUFFER(log_buffer_,
