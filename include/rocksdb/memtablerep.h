@@ -293,6 +293,8 @@ class MemTableRep : public CacheAlignedNewDelete {
   virtual bool NeedsUserKeyCompareInGet() const { return true; }
 
   virtual void FinishHint(void*);
+  virtual void InitSetMemTableAsLogIndex(bool) {}
+  virtual bool SupportMemTableAsLogIndex() const { return false; }
   virtual bool SupportConvertToSST() const { return false; }
   virtual Status ConvertToSST(struct FileMetaData*, const struct TableBuilderOptions&);
 

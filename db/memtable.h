@@ -51,6 +51,7 @@ struct ImmutableMemTableOptions {
   uint32_t memtable_prefix_bloom_bits;
   size_t memtable_huge_page_size;
   bool allow_merge_memtables;
+  bool memtable_as_log_index;
   bool memtable_whole_key_filtering;
   bool inplace_update_support;
   size_t inplace_update_num_locks;
@@ -277,7 +278,7 @@ class MemTable : public CacheAlignedNewDelete {
   // in the memtable and `MemTableRepFactory::CanHandleDuplicatedKey()` is true.
   // The next attempt should try a larger value for `seq`.
   Status Add(SequenceNumber seq, ValueType type, const Slice& key,
-             const Slice& value, const ProtectionInfoKVOS64* kv_prot_info,
+             Slice value, const ProtectionInfoKVOS64* kv_prot_info,
              bool allow_concurrent = false,
              MemTablePostProcessInfo* post_process_info = nullptr,
              void** hint = nullptr);
@@ -343,7 +344,7 @@ class MemTable : public CacheAlignedNewDelete {
   // REQUIRES: external synchronization to prevent simultaneous
   // operations on the same MemTable.
   Status Update(SequenceNumber seq, ValueType value_type, const Slice& key,
-                const Slice& value, const ProtectionInfoKVOS64* kv_prot_info);
+                Slice value, const ProtectionInfoKVOS64* kv_prot_info);
 
   // If `key` exists in current memtable with type `kTypeValue` and the existing
   // value is at least as large as the new value, updates it in-place. Otherwise
@@ -659,6 +660,8 @@ class MemTable : public CacheAlignedNewDelete {
   bool flush_in_progress_;  // started the flush
   bool flush_completed_;    // finished the flush
   bool needs_user_key_cmp_in_get_;
+  bool support_convert_to_sst_;
+  bool reject_memtable_as_log_index_;
   uint64_t file_number_;    // filled up after flush is complete
 
   // The updates to be applied to the transaction log when this

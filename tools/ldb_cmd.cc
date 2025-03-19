@@ -2745,6 +2745,7 @@ void DumpWalFile(Options options, std::string wal_file, bool print_header,
     }
     log::Reader reader(options.info_log, std::move(wal_file_reader), &reporter,
                        true /* checksum */, log_number);
+    reader.InitSetMemTableAsLogIndex(options.memtable_as_log_index);
     std::string scratch;
     WriteBatch batch;
     Slice record;

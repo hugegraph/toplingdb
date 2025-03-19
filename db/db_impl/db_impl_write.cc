@@ -189,6 +189,9 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
          write_options.protection_bytes_per_key == 0 ||
          write_options.protection_bytes_per_key ==
              my_batch->GetProtectionBytesPerKey());
+  if (immutable_db_options_.memtable_as_log_index) {
+    const_cast<bool&>(write_options.disableWAL) = false;
+  }
   if (my_batch == nullptr) {
     return Status::InvalidArgument("Batch is nullptr!");
   } else if (!disable_memtable &&
@@ -1283,6 +1286,15 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
   return status;
 }
 
+static size_t BatchSizeWAL(const WriteBatch* batch, bool first) {
+  const SavePoint& end = batch->GetWalTerminationPoint();
+  size_t endpos = !end.is_cleared() ? end.size : batch->GetDataSize();
+  if (first)
+    return endpos;
+  else
+    return endpos - WriteBatchInternal::kHeader;
+}
+
 Status DBImpl::MergeBatch(const WriteThread::WriteGroup& write_group,
                           WriteBatch* tmp_batch, WriteBatch** merged_batch,
                           size_t* write_with_wal,
@@ -1308,6 +1320,7 @@ Status DBImpl::MergeBatch(const WriteThread::WriteGroup& write_group,
     // We could avoid copying here with an iov-like AddRecord
     // interface
     *merged_batch = tmp_batch;
+    uint64_t offset = 0;
     for (auto writer : write_group) {
       if (!writer->CallbackFailed()) {
         Status s = WriteBatchInternal::Append(*merged_batch, writer->batch,
@@ -1321,11 +1334,28 @@ Status DBImpl::MergeBatch(const WriteThread::WriteGroup& write_group,
           *to_be_cached_state = writer->batch;
         }
         (*write_with_wal)++;
+        offset += BatchSizeWAL(writer->batch, 0 == offset);
+        ROCKSDB_ASSERT_EQ(offset, (*merged_batch)->GetDataSize());
       }
     }
   }
   // return merged_batch;
   return Status::OK();
+}
+
+static void WriteGroupSetWAL(const WriteThread::WriteGroup& write_group,
+                             const WriteBatch& merged_batch) {
+  uint64_t offset = 0;
+  for (auto writer : write_group) {
+    if (!writer->CallbackFailed()) {
+      writer->batch->SetWAL(merged_batch, offset);
+      offset += BatchSizeWAL(writer->batch, 0 == offset);
+    }
+  }
+  if (offset)
+    ROCKSDB_VERIFY_EQ(merged_batch.GetDataSize(), offset);
+  else
+    ROCKSDB_VERIFY_EQ(merged_batch.GetDataSize(), WriteBatchInternal::kHeader);
 }
 
 // When two_write_queues_ is disabled, this function is called from the only
@@ -1361,6 +1391,9 @@ IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
   if (!io_s.ok()) {
     return io_s;
   }
+  merged_batch.SetWAL(log_writer->mmap_reader(),
+                      log_writer->get_log_number(),
+                      log_writer->get_log_offset());
   io_s = log_writer->AddRecord(log_entry, rate_limiter_priority);
 
   if (UNLIKELY(needs_locking)) {
@@ -1407,6 +1440,7 @@ IOStatus DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
   io_s = WriteToWAL(*merged_batch, log_writer, log_used, &log_size,
                     write_group.leader->rate_limiter_priority,
                     log_file_number_size);
+  WriteGroupSetWAL(write_group, *merged_batch);
   if (to_be_cached_state) {
     cached_recoverable_state_ = *to_be_cached_state;
     cached_recoverable_state_empty_ = false;
@@ -1512,6 +1546,7 @@ IOStatus DBImpl::ConcurrentWriteToWAL(
   io_s = WriteToWAL(*merged_batch, log_writer, log_used, &log_size,
                     write_group.leader->rate_limiter_priority,
                     log_file_number_size);
+  WriteGroupSetWAL(write_group, *merged_batch);
   if (to_be_cached_state) {
     cached_recoverable_state_ = *to_be_cached_state;
     cached_recoverable_state_empty_ = false;

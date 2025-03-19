@@ -274,4 +274,32 @@ DirFsyncOptions::DirFsyncOptions(FsyncReason fsync_reason) {
   assert(fsync_reason != kFileRenamed);
   reason = fsync_reason;
 }
+
+ReadonlyFileMmap::ReadonlyFileMmap() = default;
+ReadonlyFileMmap::~ReadonlyFileMmap() = default;
+
+std::shared_ptr<ReadonlyFileMmap> ReadonlyFileMmap::New
+(IOStatus* ios, FileSystem& fs, size_t fileno, const std::string& fname)
+{
+  IODebugContext dbg;
+  FileOptions fopt;
+  fopt.use_mmap_reads = true;
+  uint64_t fsize = 0;
+  *ios = fs.GetFileSize(fname, fopt.io_options, &fsize, &dbg);
+  if (!ios->ok() || 0 == fsize) {
+    if (ios->ok()) {
+      *ios = IOStatus::InvalidArgument("Empty File");
+    }
+    return nullptr;
+  }
+  auto fmap = std::make_shared<ReadonlyFileMmap>();
+  *ios = fs.NewRandomAccessFile(fname, fopt, &fmap->file_, &dbg);
+  if (ios->ok()) {
+    auto fp = fmap->file_.get();
+    *ios = fp->Read(0, fsize, fopt.io_options, fmap.get(), nullptr, &dbg);
+  }
+  fmap->fileno = fileno;
+  return fmap;
+}
+
 }  // namespace ROCKSDB_NAMESPACE

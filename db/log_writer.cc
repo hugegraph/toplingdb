@@ -17,6 +17,8 @@
 #include "util/coding.h"
 #include "util/crc32c.h"
 #include "util/udt_util.h"
+#include "util/xxhash.h"
+#include "rocksdb/write_batch.h"
 
 namespace ROCKSDB_NAMESPACE {
 namespace log {
@@ -35,11 +37,14 @@ Writer::Writer(std::unique_ptr<WritableFileWriter>&& dest, uint64_t log_number,
     char t = static_cast<char>(i);
     type_crc_[i] = crc32c::Value(&t, 1);
   }
+  log_offset_ = 0;
+  memtable_as_log_index_ = false;
 }
 
 Writer::~Writer() {
   if (dest_) {
     WriteBuffer().PermitUncheckedError();
+    Close().PermitUncheckedError();
   }
   if (compress_) {
     delete compress_;
@@ -56,16 +61,49 @@ IOStatus Writer::WriteBuffer() {
 IOStatus Writer::Close() {
   IOStatus s;
   if (dest_) {
+    if (memtable_as_log_index_) {
+      if (log_offset_) {
+        RawRecHeader header{}; // EOF mark
+        s = dest_->Append(Slice((char*)&header, sizeof(RawRecHeader)),
+                          0 /* crc32c_checksum */, Env::IO_TOTAL);
+        log_offset_ += sizeof(RawRecHeader);
+        // fault_injection_fs: TestFSWritableFile::Flush dose not flush
+        // internal buffer, which flush internal buffer is `Sync`
+        s = dest_->Sync(true); // Flush + Sync
+      }
+      else {
+        // File is empty, do not add EOF mark
+      }
+      s = dest_->writable_file()->Truncate(log_offset_, IOOptions(), nullptr);
+    }
     s = dest_->Close();
     dest_.reset();
   }
   return s;
 }
 
+void Writer::TruncateForMmap(FileSystem& fs, size_t file_size) {
+  auto& fname = dest_->file_name();
+  auto wfile = dest_->writable_file();
+  auto s = wfile->Truncate(file_size, IOOptions(), nullptr);
+  TERARK_VERIFY_S(s.ok(), "truncate %s, %s", fname, s.ToString());
+  mmap_reader_ = ReadonlyFileMmap::New(&s, fs, log_number_, fname);
+  TERARK_VERIFY_S(s.ok(), "make mmap %s, %s", fname, s.ToString());
+  TERARK_VERIFY_EQ(mmap_reader_->size_, file_size);
+}
+
 IOStatus Writer::AddRecord(const Slice& slice,
                            Env::IOPriority rate_limiter_priority) {
   const char* ptr = slice.data();
   size_t left = slice.size();
+
+  if (memtable_as_log_index_) {
+    IOStatus s = EmitPhysicalRecord(kFullType, ptr, left, rate_limiter_priority);
+    if (!manual_flush_ && s.ok()) {
+      s = dest_->Flush();
+    }
+    return s;
+  }
 
   // Header size varies depending on whether we are recycling or not.
   const int header_size =
@@ -163,6 +201,10 @@ IOStatus Writer::AddCompressionTypeRecord() {
   // Should be the first record
   assert(block_offset_ == 0);
 
+  if (memtable_as_log_index_) {
+    return IOStatus::OK();
+  }
+
   if (compression_type_ == kNoCompression) {
     // No need to add a record
     return IOStatus::OK();
@@ -227,6 +269,21 @@ bool Writer::BufferIsEmpty() { return dest_->BufferIsEmpty(); }
 
 IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
                                     Env::IOPriority rate_limiter_priority) {
+  if (memtable_as_log_index_) {
+    ROCKSDB_VERIFY(!recycle_log_files_);
+    ROCKSDB_VERIFY(!dest_->use_direct_io()); // must not use direct io
+    RawRecHeader header;
+    header.checksum = crc32c::Value(ptr, n);
+    header.length = n;
+    header.rec_type = t;
+    IOStatus s = dest_->Append(Slice((char*)&header, sizeof(RawRecHeader)),
+                               0 /* crc32c_checksum */, rate_limiter_priority);
+    if (s.ok()) {
+      s = dest_->Append(Slice(ptr, n), header.checksum, rate_limiter_priority);
+      log_offset_ += sizeof(RawRecHeader) + n;
+    }
+    return s;
+  }
   assert(n <= 0xffff);  // Must fit in two bytes
 
   size_t header_size;

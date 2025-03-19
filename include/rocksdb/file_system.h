@@ -1920,6 +1920,21 @@ class FSDirectoryWrapper : public FSDirectory {
   FSDirectory* target_;
 };
 
+class ReadonlyFileMmap : public std::enable_shared_from_this<ReadonlyFileMmap>, public Slice {
+  std::unique_ptr<FSRandomAccessFile> file_;
+public:
+  ReadonlyFileMmap();
+  ~ReadonlyFileMmap();
+  static std::shared_ptr<ReadonlyFileMmap>
+  New(IOStatus* s, FileSystem& fs, size_t fileno, const std::string& fname);
+  static std::pair<std::shared_ptr<ReadonlyFileMmap>, IOStatus>
+  New(FileSystem& fs, size_t fileno, const std::string& fname) {
+    IOStatus ios;
+    return {New(&ios, fs, fileno, fname), ios};
+  }
+  uint32_t fileno;
+};
+
 // A utility routine: write "data" to the named file.
 extern IOStatus WriteStringToFile(FileSystem* fs, const Slice& data,
                                   const std::string& fname,

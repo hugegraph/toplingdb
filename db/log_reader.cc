@@ -59,6 +59,73 @@ Reader::~Reader() {
   }
 }
 
+RecordType
+Reader::ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode) {
+  assert(memtable_as_log_index_);
+  constexpr size_t MinBufMem = TERARK_IF_DEBUG(32, kBlockSize);
+  auto& bufmem = uncompressed_record_;
+  if (buffer_.size() < sizeof(RawRecHeader)) {
+    size_t old_remain = buffer_.size();
+    memmove(bufmem.data(), buffer_.data(), old_remain);
+    if (bufmem.size() < MinBufMem) {
+      bufmem.resize(MinBufMem);
+    }
+    auto ptr = bufmem.data() + old_remain;
+    auto len = bufmem.size() - old_remain;
+    buffer_.clear();
+    Status status = file_->Read(len, &buffer_, ptr, Env::IO_TOTAL);
+    end_of_buffer_offset_ += buffer_.size();
+    buffer_ = Slice(bufmem.data(), old_remain + buffer_.size());
+  }
+  if (buffer_.size() < sizeof(RawRecHeader)) {
+    this->eof_ = true;
+    this->eof_offset_ = end_of_buffer_offset_;
+    return kZeroType; // fail
+  }
+  RawRecHeader header;
+  memcpy(&header, buffer_.data(), sizeof(RawRecHeader));
+  if (0 == header.length) { // EOF record
+    this->eof_ = true;
+    this->eof_offset_ = end_of_buffer_offset_;
+    return kZeroType; // fail
+  }
+  size_t pack_len = sizeof(RawRecHeader) + header.length;
+  if (pack_len > buffer_.size()) {
+    if (buffer_.data() > bufmem.data()) {
+      memmove(bufmem.data(), buffer_.data(), buffer_.size());
+    }
+    if (bufmem.size() < pack_len) {
+      bufmem.resize(pack_len); // a huge record
+    }
+    auto cur = buffer_.size();
+    auto len = bufmem.size() - cur;
+    auto ptr = bufmem.data() + cur;
+    buffer_.clear();
+    Status status = file_->Read(len, &buffer_, ptr, Env::IO_TOTAL);
+    end_of_buffer_offset_ += buffer_.size();
+    buffer_ = Slice(bufmem.data(), cur + buffer_.size());
+    if (pack_len > buffer_.size()) {
+      this->eof_ = true;
+      this->eof_offset_ = end_of_buffer_offset_;
+      return kZeroType; // fail
+    }
+  }
+  *record = buffer_.substr(sizeof(RawRecHeader), header.length);
+  buffer_.remove_prefix(pack_len);
+  auto computed_checksum = crc32c::Value(record->data(), record->size());
+  if (computed_checksum != header.checksum) {
+    if (wal_recovery_mode == WALRecoveryMode::kAbsoluteConsistency ||
+        wal_recovery_mode == WALRecoveryMode::kPointInTimeRecovery) {
+      ReportCorruption(record->size(), "error reading trailing data");
+    } else {
+      ReportCorruption(record->size(), "checksum mismatch");
+    }
+  }
+  // LastRecordEnd() is end_of_buffer_offset_ - buffer_.size_
+  last_record_offset_ = end_of_buffer_offset_ - buffer_.size_ - header.length;
+  return RecordType(header.rec_type);
+}
+
 // For kAbsoluteConsistency, on clean shutdown we don't expect any error
 // in the log files.  For other modes, we can ignore only incomplete records
 // in the last log file, which are presumably due to a write in progress
@@ -69,6 +136,33 @@ Reader::~Reader() {
 bool Reader::ReadRecord(Slice* record, std::string* scratch,
                         WALRecoveryMode wal_recovery_mode,
                         uint64_t* record_checksum) {
+  if (memtable_as_log_index_) {
+    RecordType t;
+    while ((t = ReadRawRec(record, wal_recovery_mode)) == kUserDefinedTimestampSizeType) {
+      UserDefinedTimestampSizeRecord ts_record;
+      Status s = ts_record.DecodeFrom(record);
+      if (!s.ok()) {
+        ReportCorruption(record->size(),
+            "could not decode user-defined timestamp size record");
+      } else {
+        s = UpdateRecordedTimestampSize(
+            ts_record.GetUserDefinedTimestampSize());
+        if (!s.ok()) {
+          ReportCorruption(record->size(), s.getState());
+        }
+      }
+    }
+    if (t == kZeroType) {
+      record->clear(); // to fast fail user code
+      return false;
+    }
+    assert(!record->empty());
+    ROCKSDB_ASSERT_EQ(t, kFullType);
+    if (record_checksum != nullptr) {
+      *record_checksum = XXH3_64bits(record->data(), record->size());
+    }
+    return true;
+  }
   scratch->clear();
   record->clear();
   if (record_checksum != nullptr) {
@@ -332,6 +426,9 @@ void Reader::UnmarkEOF() {
   }
   eof_ = false;
   if (eof_offset_ == 0) {
+    return;
+  }
+  if (memtable_as_log_index_) {
     return;
   }
   UnmarkEOFInternal();
@@ -623,8 +720,11 @@ Status Reader::UpdateRecordedTimestampSize(
 }
 
 bool FragmentBufferedReader::ReadRecord(Slice* record, std::string* scratch,
-                                        WALRecoveryMode /*unused*/,
-                                        uint64_t* /* checksum */) {
+                                        WALRecoveryMode mode,
+                                        uint64_t* checksum) {
+  if (memtable_as_log_index_) {
+    return Reader::ReadRecord(record, scratch, mode, checksum);
+  }
   assert(record != nullptr);
   assert(scratch != nullptr);
   record->clear();
@@ -786,6 +886,9 @@ void FragmentBufferedReader::UnmarkEOF() {
     return;
   }
   eof_ = false;
+  if (memtable_as_log_index_) {
+    return;
+  }
   UnmarkEOFInternal();
 }
 

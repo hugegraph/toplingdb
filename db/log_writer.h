@@ -25,6 +25,7 @@
 namespace ROCKSDB_NAMESPACE {
 
 class WritableFileWriter;
+class ReadonlyFileMmap;
 
 namespace log {
 
@@ -103,6 +104,12 @@ class Writer {
   const WritableFileWriter* file() const { return dest_.get(); }
 
   uint64_t get_log_number() const { return log_number_; }
+  uint64_t get_log_offset() const {
+    return log_offset_ + sizeof(RawRecHeader);
+  }
+  void InitSetMemTableAsLogIndex(bool b) { memtable_as_log_index_ = b; }
+  void TruncateForMmap(FileSystem& fs, size_t file_size);
+  auto& mmap_reader() const { return mmap_reader_; }
 
   IOStatus WriteBuffer();
 
@@ -111,9 +118,12 @@ class Writer {
   bool BufferIsEmpty();
 
  private:
+  std::shared_ptr<ReadonlyFileMmap> mmap_reader_;
   std::unique_ptr<WritableFileWriter> dest_;
   size_t block_offset_;  // Current offset in block
   uint64_t log_number_;
+  uint64_t log_offset_;
+  bool memtable_as_log_index_;
   bool recycle_log_files_;
 
   // crc32c values for all supported record types.  These are

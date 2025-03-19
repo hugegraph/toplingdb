@@ -56,6 +56,7 @@ ImmutableMemTableOptions::ImmutableMemTableOptions(
           8u),
       memtable_huge_page_size(mutable_cf_options.memtable_huge_page_size),
       allow_merge_memtables(mutable_cf_options.allow_merge_memtables),
+      memtable_as_log_index(ioptions.memtable_as_log_index),
       memtable_whole_key_filtering(
           mutable_cf_options.memtable_whole_key_filtering),
       inplace_update_support(ioptions.inplace_update_support),
@@ -124,6 +125,13 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       memtable_max_range_deletions_(
           mutable_cf_options.memtable_max_range_deletions) {
   needs_user_key_cmp_in_get_ = table_->NeedsUserKeyCompareInGet();
+  table_->InitSetMemTableAsLogIndex(moptions_.memtable_as_log_index);
+  support_convert_to_sst_ = table_->SupportConvertToSST();
+  reject_memtable_as_log_index_ = moptions_.memtable_as_log_index
+                               && !table_->SupportMemTableAsLogIndex();
+  if (table_->SupportMemTableAsLogIndex()) {
+    ROCKSDB_VERIFY(table_->SupportConvertToSST());
+  }
   UpdateFlushState();
   // something went wrong if we need to flush before inserting anything
   assert(!ShouldScheduleFlush());
@@ -673,10 +681,17 @@ Status MemTable::VerifyEncodedEntry(Slice ikey, Slice value,
 ROCKSDB_FLATTEN
 Status MemTable::Add(SequenceNumber s, ValueType type,
                      const Slice& key, /* user key */
-                     const Slice& value,
+                     Slice value,
                      const ProtectionInfoKVOS64* kv_prot_info,
                      bool allow_concurrent,
                      MemTablePostProcessInfo* post_process_info, void** hint) {
+  if (reject_memtable_as_log_index_) {
+    auto kv_pmt = (const KeyValuePassMemTable*)value.data_;
+    ROCKSDB_ASSERT_EQ(sizeof(KeyValuePassMemTable), value.size_);
+    ROCKSDB_ASSERT_EQ(kv_pmt->key_len, key.size_);
+    ROCKSDB_ASSERT_NE(kv_pmt->wal_file, nullptr);
+    value = kv_pmt->value; // not supportted, use orig value
+  }
   std::unique_ptr<MemTableRep>& table =
       type == kTypeRangeDeletion ? range_del_table_ : table_;
   Slice key_slice((char*)memcpy(alloca(key.size_ + 8), key.data_, key.size_),
@@ -1462,11 +1477,16 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
 }
 
 Status MemTable::Update(SequenceNumber seq, ValueType value_type,
-                        const Slice& key, const Slice& value,
+                        const Slice& key, Slice value,
                         const ProtectionInfoKVOS64* kv_prot_info) {
   assert(moptions_.inplace_update_support);
   LookupKey lkey(key, seq);
 
+  if (reject_memtable_as_log_index_) {
+    ROCKSDB_ASSERT_EQ(sizeof(KeyValuePassMemTable), value.size_);
+    auto kv_pmt = (const KeyValuePassMemTable*)value.data_;
+    value = kv_pmt->value; // not supportted, use orig value
+  }
   std::unique_ptr<MemTableRep::Iterator> iter(
       table_->GetDynamicPrefixIterator());
   iter->Seek(lkey.internal_key(), lkey.memtable_key_data());

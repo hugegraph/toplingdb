@@ -47,6 +47,10 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
     result.env = Env::Default();
   }
 
+  if (result.memtable_as_log_index) {
+    result.recycle_log_file_num = 0;
+  }
+
   // result.max_open_files means an "infinite" open files.
   if (result.max_open_files != -1) {
     int max_max_open_files = port::GetMaxOpenFiles();
@@ -1196,6 +1200,14 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
     // large sequence numbers).
     log::Reader reader(immutable_db_options_.info_log, std::move(file_reader),
                        &reporter, true /*checksum*/, wal_number);
+    std::shared_ptr<ReadonlyFileMmap> fmap;
+    if (immutable_db_options_.memtable_as_log_index) {
+      reader.InitSetMemTableAsLogIndex(true);
+      IOStatus ios;
+      fmap = ReadonlyFileMmap::New(&ios, *fs_, wal_number, fname);
+      if (!ios.ok() && ios.ToString() != "Invalid argument: Empty File")
+        return Status(ios);
+    }
 
     // Determine if we should tolerate incomplete records at the tail end of the
     // Read all the records and add to a memtable
@@ -1290,6 +1302,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       // we just ignore the update.
       // That's why we set ignore missing column families to true
       bool has_valid_writes = false;
+      batch_to_use->SetWAL(fmap, wal_number, reader.LastRecordOffset());
       status = WriteBatchInternal::InsertInto(
           batch_to_use, column_family_memtables_.get(), &flush_scheduler_,
           &trim_history_scheduler_, true, wal_number, this,
@@ -1903,6 +1916,10 @@ IOStatus DBImpl::CreateWAL(uint64_t log_file_num, uint64_t recycle_log_number,
   std::string wal_dir = immutable_db_options_.GetWalDir();
   std::string log_fname = LogFileName(wal_dir, log_file_num);
 
+  if (immutable_db_options_.memtable_as_log_index) {
+    ROCKSDB_VERIFY(!opt_file_options.use_direct_writes);
+  }
+
   if (recycle_log_number) {
     ROCKS_LOG_INFO(immutable_db_options_.info_log,
                    "reusing log %" PRIu64 " from recycle list\n",
@@ -1931,6 +1948,10 @@ IOStatus DBImpl::CreateWAL(uint64_t log_file_num, uint64_t recycle_log_number,
                                immutable_db_options_.recycle_log_file_num > 0,
                                immutable_db_options_.manual_wal_flush,
                                immutable_db_options_.wal_compression);
+    if (immutable_db_options_.memtable_as_log_index) {
+      (*new_log)->InitSetMemTableAsLogIndex(true);
+      (*new_log)->TruncateForMmap(*fs_, 2 * GetMaxTotalWalSize());
+    }
     io_s = (*new_log)->AddCompressionTypeRecord();
   }
   return io_s;

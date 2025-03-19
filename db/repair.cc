@@ -401,6 +401,13 @@ class Repairer {
     std::string scratch;
     Slice record;
     WriteBatch batch;
+    if (db_options_.memtable_as_log_index) {
+      reader.InitSetMemTableAsLogIndex(true);
+      auto [fmap, ios] = ReadonlyFileMmap::New(*fs, log, logname);
+      if (!ios.ok() && ios.ToString() != "Invalid argument: Empty File")
+        return Status(ios);
+      batch.SetWAL(fmap, log, 0);
+    }
 
     int counter = 0;
     while (reader.ReadRecord(&record, &scratch)) {
@@ -417,6 +424,7 @@ class Repairer {
             &batch, running_ts_sz, record_ts_sz,
             TimestampSizeConsistencyMode::kVerifyConsistency);
         if (record_status.ok()) {
+          batch.SetOffsetOfWAL(reader.LastRecordOffset());
           record_status =
               WriteBatchInternal::InsertInto(&batch, cf_mems, nullptr, nullptr);
         }

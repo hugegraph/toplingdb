@@ -496,6 +496,12 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
     return Status::Corruption("Invalid start/end bounds for Iterate");
   }
   assert(begin <= end);
+  KeyValuePassMemTable kv_pmt;
+  kv_pmt.fileno = wb->wal_file_no_;
+  kv_pmt.wal_file = wb->wal_file_mmap_.get();
+  const uint64_t wal_file_offset = wb->wal_file_offset_;
+  const bool is_write_memtable = wb->is_write_memtable_;
+  const char* base_ptr = wb->rep_.data();
   Slice input(wb->rep_.data() + begin, static_cast<size_t>(end - begin));
   bool whole_batch =
       (begin == WriteBatchInternal::kHeader) && (end == wb->rep_.size());
@@ -539,6 +545,14 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
       }
       last_was_try_again = true;
       s = Status::OK();
+    }
+
+    if (is_write_memtable) {
+      kv_pmt.value = value;
+      kv_pmt.key_len = key.size();
+      kv_pmt.key_pos = wal_file_offset + (key.data() - base_ptr);
+      kv_pmt.val_pos = wal_file_offset + (value.data() - base_ptr);
+      value = {(char*)&kv_pmt, sizeof(kv_pmt)};
     }
 
     switch (tag) {
@@ -2928,7 +2942,10 @@ Status WriteBatchInternal::InsertInto(
     SetSequence(w->batch, inserter.sequence());
     inserter.set_log_number_ref(w->log_ref);
     inserter.set_prot_info(w->batch->prot_info_.get());
+    auto& idbo = *memtables->GetImmutableDBOptions();
+    w->batch->is_write_memtable_ = idbo.memtable_as_log_index;
     w->status = w->batch->Iterate(&inserter);
+    w->batch->is_write_memtable_ = false;
     if (!w->status.ok()) {
       return w->status;
     }
@@ -2958,7 +2975,10 @@ Status WriteBatchInternal::InsertInto(
   SetSequence(writer->batch, sequence);
   inserter.set_log_number_ref(writer->log_ref);
   inserter.set_prot_info(writer->batch->prot_info_.get());
+  auto& idbo = *memtables->GetImmutableDBOptions();
+  writer->batch->is_write_memtable_ = idbo.memtable_as_log_index;
   Status s = writer->batch->Iterate(&inserter);
+  writer->batch->is_write_memtable_ = false;
   assert(!seq_per_batch || batch_cnt != 0);
   assert(!seq_per_batch || inserter.sequence() - sequence == batch_cnt);
   if (concurrent_memtable_writes) {
@@ -2979,7 +2999,10 @@ Status WriteBatchInternal::InsertInto(
                             ignore_missing_column_families, log_number, db,
                             concurrent_memtable_writes, batch->prot_info_.get(),
                             has_valid_writes, seq_per_batch, batch_per_txn);
+  auto& idbo = *memtables->GetImmutableDBOptions();
+  batch->is_write_memtable_ = idbo.memtable_as_log_index;
   Status s = batch->Iterate(&inserter);
+  batch->is_write_memtable_ = false;
   if (next_seq != nullptr) {
     *next_seq = inserter.sequence();
   }

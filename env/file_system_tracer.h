@@ -113,6 +113,8 @@ class FileSystemPtr {
     }
   }
 
+  FileSystem& operator*() const { return *get(); }
+
   /* Returns the underlying File System pointer */
   FileSystem* get() const {
     if (io_tracer_ && io_tracer_->is_tracing_enabled()) {

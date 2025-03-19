@@ -42,6 +42,16 @@ class Slice;
 class ColumnFamilyHandle;
 struct SavePoints;
 struct SliceParts;
+class ReadonlyFileMmap;
+
+struct KeyValuePassMemTable {
+  Slice    value;
+  uint64_t key_pos;
+  uint64_t val_pos;
+  uint32_t key_len;
+  uint32_t fileno;
+  const ReadonlyFileMmap* wal_file;
+};
 
 struct SavePoint {
   size_t size;     // size of rep_
@@ -459,6 +469,20 @@ class WriteBatch : public WriteBatchBase {
   struct ProtectionInfo;
   size_t GetProtectionBytesPerKey() const;
 
+  void SetOffsetOfWAL(uint64_t offset) { wal_file_offset_ = offset; }
+  void SetWAL(const std::shared_ptr<ReadonlyFileMmap>& f,
+              uint32_t fileno, uint64_t offset) const {
+    wal_file_mmap_ = f;
+    wal_file_no_ = fileno;
+    wal_file_offset_ = offset;
+  }
+
+  void SetWAL(const WriteBatch& src, uint64_t start) {
+    wal_file_mmap_ = src.wal_file_mmap_;
+    wal_file_no_ = src.wal_file_no_;
+    wal_file_offset_ = src.wal_file_offset_ + start;
+  }
+
  private:
   friend class WriteBatchInternal;
   friend class LocalSavePoint;
@@ -491,6 +515,11 @@ class WriteBatch : public WriteBatchBase {
   // True if the write batch contains at least one key from a column family
   // that enables user-defined timestamp.
   bool has_key_with_ts_ = false;
+
+  mutable bool is_write_memtable_ = false;
+  mutable uint64_t wal_file_no_ = UINT64_MAX;
+  mutable uint64_t wal_file_offset_ = UINT64_MAX;
+  mutable std::shared_ptr<ReadonlyFileMmap> wal_file_mmap_;
 
   // For HasXYZ.  Mutable to allow lazy computation of results
 #if 0

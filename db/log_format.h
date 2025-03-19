@@ -13,9 +13,19 @@
 #pragma once
 
 #include "rocksdb/rocksdb_namespace.h"
+#include <stdint.h>
 
 namespace ROCKSDB_NAMESPACE {
 namespace log {
+
+#pragma pack(push, 1)
+struct RawRecHeader {
+  uint64_t length;
+  uint32_t checksum; // crc32c
+  uint8_t  rec_type; // kFullType or kUserDefinedTimestampSizeType
+};
+#pragma pack(pop)
+static_assert(sizeof(RawRecHeader) == 13);
 
 enum RecordType {
   // Zero is reserved for preallocated files
