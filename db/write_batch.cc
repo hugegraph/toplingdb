@@ -550,7 +550,6 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
     if (is_write_memtable) {
       kv_pmt.value = value;
       kv_pmt.key_len = key.size();
-      kv_pmt.key_pos = wal_file_offset + (key.data() - base_ptr);
       kv_pmt.val_pos = wal_file_offset + (value.data() - base_ptr);
       value = {(char*)&kv_pmt, sizeof(kv_pmt)};
     }
