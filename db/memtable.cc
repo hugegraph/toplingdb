@@ -685,7 +685,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
                      const ProtectionInfoKVOS64* kv_prot_info,
                      bool allow_concurrent,
                      MemTablePostProcessInfo* post_process_info, void** hint) {
-  if (reject_memtable_as_log_index_) {
+  if (reject_memtable_as_log_index_ && value.size_) {
     auto kv_pmt = (const KeyValuePassMemTable*)value.data_;
     ROCKSDB_ASSERT_EQ(sizeof(KeyValuePassMemTable), value.size_);
     ROCKSDB_ASSERT_EQ(kv_pmt->key_len, key.size_);
@@ -1482,7 +1482,7 @@ Status MemTable::Update(SequenceNumber seq, ValueType value_type,
   assert(moptions_.inplace_update_support);
   LookupKey lkey(key, seq);
 
-  if (reject_memtable_as_log_index_) {
+  if (reject_memtable_as_log_index_ && value.size_) {
     ROCKSDB_ASSERT_EQ(sizeof(KeyValuePassMemTable), value.size_);
     auto kv_pmt = (const KeyValuePassMemTable*)value.data_;
     value = kv_pmt->value; // not supportted, use orig value
