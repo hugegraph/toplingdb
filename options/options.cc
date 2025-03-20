@@ -130,6 +130,7 @@ ColumnFamilyOptions::ColumnFamilyOptions(const Options& options)
     : ColumnFamilyOptions(*static_cast<const ColumnFamilyOptions*>(&options)) {}
 
 extern WBWIFactory* NewCSPP_WBWIForPlain(const std::string& jstr);
+bool g_memtable_as_log_index = terark::getEnvBool("MEMTABLE_AS_LOG_INDEX");
 DBOptions::DBOptions() {
   wbwi_factory = SingleSkipListWBWIFactory();
  #if defined(HAS_TOPLING_CSPP_WBWI)
@@ -138,6 +139,7 @@ DBOptions::DBOptions() {
       wbwi_factory.reset(NewCSPP_WBWIForPlain(var+5));
   }
  #endif
+  memtable_as_log_index = g_memtable_as_log_index;
 }
 DBOptions::DBOptions(const Options& options)
     : DBOptions(*static_cast<const DBOptions*>(&options)) {}
