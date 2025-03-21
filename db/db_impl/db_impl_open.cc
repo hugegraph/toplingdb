@@ -47,6 +47,10 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
     result.env = Env::Default();
   }
 
+  if (result.allow_2pc) {
+    result.memtable_as_log_index = false;
+  }
+
   if (result.memtable_as_log_index) {
     result.recycle_log_file_num = 0;
   }
