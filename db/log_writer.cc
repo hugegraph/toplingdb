@@ -62,17 +62,13 @@ IOStatus Writer::Close() {
   IOStatus s;
   if (dest_) {
     if (memtable_as_log_index_) {
-      if (log_offset_) {
-        RawRecHeader header{}; // EOF mark
-        s = dest_->Append(Slice((char*)&header, sizeof(RawRecHeader)),
-                          0 /* crc32c_checksum */, Env::IO_TOTAL);
-        log_offset_ += sizeof(RawRecHeader);
-        // fault_injection_fs: TestFSWritableFile::Flush dose not flush
-        // internal buffer, which flush internal buffer is `Sync`
-        s = dest_->Sync(true); // Flush + Sync
-      }
-      else {
-        // File is empty, do not add EOF mark
+      // fault_injection_fs: TestFSWritableFile::Flush dose not flush
+      // internal buffer, which flush internal buffer is `Sync`
+      s = dest_->Sync(true); // Flush + Sync
+      if (!s.ok()) {
+        fprintf(stderr, "ERR: %s:%d: Writer::Close.Sync(%s) = %s\n",
+                __FILE__, __LINE__, dest_->file_name().c_str(),
+                s.ToString().c_str());
       }
       s = dest_->writable_file()->Truncate(log_offset_, IOOptions(), nullptr);
     }
