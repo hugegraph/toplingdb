@@ -229,6 +229,10 @@ Status FlushJob::Run(LogsWithPrepTracker* prep_tracker, FileMetaData* file_meta,
   double mempurge_threshold =
       mutable_cf_options_.experimental_mempurge_threshold;
 
+  if (db_options_.memtable_as_log_index) {
+    mempurge_threshold = 0; // not supported
+  }
+
   AutoThreadOperationStageUpdater stage_run(ThreadStatus::STAGE_FLUSH_RUN);
   if (mems_.empty()) {
     ROCKS_LOG_BUFFER(log_buffer_, "[%s] Nothing in memtable to flush",
