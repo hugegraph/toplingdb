@@ -81,11 +81,18 @@ IOStatus Writer::Close() {
 void Writer::TruncateForMmap(FileSystem& fs, size_t file_size) {
   auto& fname = dest_->file_name();
   auto wfile = dest_->writable_file();
+  // wfile->Truncate will change wfile->GetFileSize() which is really the
+  // current offset of wfile, wfile->Append() also update it, this is not
+  // like posix fs api: ftruncate does not affect file offset!
+  // So we use fs.Truncate(fname) which will not affect GetFileSize(), but
+  // fs.Truncate is "NotImplemented", so we call SetFileSize() at the end.
+  // auto s = fs.Truncate(fname, file_size, IOOptions(), nullptr);
   auto s = wfile->Truncate(file_size, IOOptions(), nullptr);
   TERARK_VERIFY_S(s.ok(), "truncate %s, %s", fname, s.ToString());
   mmap_reader_ = ReadonlyFileMmap::New(&s, fs, log_number_, fname);
   TERARK_VERIFY_S(s.ok(), "make mmap %s, %s", fname, s.ToString());
   TERARK_VERIFY_EQ(mmap_reader_->size_, file_size);
+  wfile->SetFileSize(0); // this is just File Offset for Append
 }
 
 IOStatus Writer::AddRecord(const Slice& slice,
