@@ -142,10 +142,15 @@ class MemFile {
   void Truncate(size_t size, const IOOptions& /*options*/,
                 IODebugContext* /*dbg*/) {
     MutexLock lock(&mutex_);
-    if (size < size_) {
-      data_.resize(size);
-      size_ = size;
+    data_.resize(size);
+    size_ = size;
+  }
+
+  void SetWriteOffset(size_t offset) {
+    if (offset > data_.size()) {
+      data_.resize(offset);
     }
+    size_ = offset;
   }
 
   void CorruptBuffer() {
@@ -174,7 +179,7 @@ class MemFile {
       }
     }
     MutexLock lock(&mutex_);
-    const uint64_t available = Size() - std::min(Size(), offset);
+    const uint64_t available = data_.size() - std::min(data_.size(), offset);
     size_t offset_ = static_cast<size_t>(offset);
     if (n > available) {
       n = static_cast<size_t>(available);
@@ -208,8 +213,11 @@ class MemFile {
   IOStatus Append(const Slice& data, const IOOptions& /*options*/,
                   IODebugContext* /*dbg*/) {
     MutexLock lock(&mutex_);
-    data_.append(data.data(), data.size());
-    size_ = data_.size();
+    if (size_ + data.size_ > data_.size()) {
+      data_.resize(size_ + data.size_);
+    }
+    memcpy(data_.data() + size_, data.data_, data.size_);
+    size_ += data.size_;
     modified_time_ = Now();
     return IOStatus::OK();
   }
@@ -431,8 +439,7 @@ class MockWritableFile : public FSWritableFile {
       return -1;
     }
     void SetFileSize(uint64_t fsize) final {
-      //file_->Truncate(fsize, IOOptions(), nullptr);
-      // ignore
+      file_->SetWriteOffset(fsize);
     }
 
  private:
