@@ -2050,6 +2050,8 @@ class MemTableInserter : public WriteBatch::Handler {
     } else {
       assert(!concurrent_memtable_writes_);
       assert(value_type == kTypeValue);
+      ROCKSDB_VERIFY_F(!moptions->memtable_as_log_index,
+                       "not support inplace update callback");
       ret_status = mem->UpdateCallback(sequence_, key, value, kv_prot_info);
       if (ret_status.IsNotFound()) {
         // key not found in memtable. Do sst get, update, add
@@ -2488,6 +2490,7 @@ class MemTableInserter : public WriteBatch::Handler {
     // DB mutex and cause deadlock, as DB mutex is already held.
     // So we disable merge in recovery
     if (moptions->max_successive_merges > 0 && db_ != nullptr &&
+        moptions->memtable_as_log_index == false &&
         recovering_log_number_ == 0) {
       assert(!concurrent_memtable_writes_);
       LookupKey lkey(key, sequence_);
