@@ -87,6 +87,15 @@ void Writer::TruncateForMmap(FileSystem& fs, size_t file_size) {
   // So we use fs.Truncate(fname) which will not affect GetFileSize(), but
   // fs.Truncate is "NotImplemented", so we call SetFileSize() at the end.
   // auto s = fs.Truncate(fname, file_size, IOOptions(), nullptr);
+  if (file_size > (8ull<<40)) {
+    fprintf(stderr,
+      "WARN: Writer::TruncateForMmap: file_size %.6f TiB, reset to 32 GiB\n",
+      file_size / double(1ull<<40));
+    file_size = 32ull << 30; // 32G
+  }
+  if (0 == file_size) {
+    file_size = size_t(1) << 30; // 1G
+  }
   auto s = wfile->Truncate(file_size, IOOptions(), nullptr);
   TERARK_VERIFY_S(s.ok(), "truncate %s, %s", fname, s.ToString());
   mmap_reader_ = ReadonlyFileMmap::New(&s, fs, log_number_, fname);
