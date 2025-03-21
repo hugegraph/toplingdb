@@ -40,6 +40,7 @@ Transaction* OptimisticTransactionDBImpl::BeginTransaction(
 Status OptimisticTransactionDB::Open(const Options& options,
                                      const std::string& dbname,
                                      OptimisticTransactionDB** dbptr) {
+  const_cast<bool&>(options.memtable_as_log_index) = false;
   DBOptions db_options(options);
   ColumnFamilyOptions cf_options(options);
   std::vector<ColumnFamilyDescriptor> column_families;
@@ -74,6 +75,7 @@ Status OptimisticTransactionDB::Open(
     const std::vector<ColumnFamilyDescriptor>& column_families,
     std::vector<ColumnFamilyHandle*>* handles,
     OptimisticTransactionDB** dbptr) {
+  const_cast<bool&>(db_options.memtable_as_log_index) = false;
   Status s;
   DB* db;
 
