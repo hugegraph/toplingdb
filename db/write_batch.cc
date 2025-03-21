@@ -2343,6 +2343,15 @@ class MemTableInserter : public WriteBatch::Handler {
 
   Status DeleteRangeCF(uint32_t column_family_id, const Slice& begin_key,
                        const Slice& end_key) override {
+    Slice real_end_key(nullptr, 0);
+    if (cf_mems_->GetImmutableDBOptions() && end_key.size_) {
+      auto kv_pmt = (const KeyValuePassMemTable*)end_key.data_;
+      ROCKSDB_ASSERT_EQ(sizeof(KeyValuePassMemTable), end_key.size_);
+      ROCKSDB_ASSERT_EQ(kv_pmt->key_len, begin_key.size_);
+      ROCKSDB_ASSERT_NE(kv_pmt->wal_file, nullptr);
+      real_end_key = kv_pmt->value; // not supportted, use orig value
+    }
+
     const auto* kv_prot_info = NextProtectionInfo();
     // optimize for non-recovery mode
     if (UNLIKELY(write_after_commit_ && rebuilding_trx_ != nullptr)) {
@@ -2389,8 +2398,8 @@ class MemTableInserter : public WriteBatch::Handler {
             cfd->ioptions()->table_factory->Name() + " in CF " +
             cfd->GetName());
       }
-      int cmp =
-          cfd->user_comparator()->CompareWithoutTimestamp(begin_key, end_key);
+      auto ucmp = cfd->user_comparator();
+      int cmp = ucmp ->CompareWithoutTimestamp(begin_key, real_end_key);
       if (cmp > 0) {
         // TODO(ajkr): refactor `SeekToColumnFamily()` so it returns a `Status`.
         ret_status.PermitUncheckedError();
