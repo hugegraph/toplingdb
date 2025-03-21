@@ -2343,8 +2343,8 @@ class MemTableInserter : public WriteBatch::Handler {
 
   Status DeleteRangeCF(uint32_t column_family_id, const Slice& begin_key,
                        const Slice& end_key) override {
-    Slice real_end_key(nullptr, 0);
-    if (cf_mems_->GetImmutableDBOptions() && end_key.size_) {
+    Slice real_end_key = end_key;
+    if (cf_mems_->GetImmutableDBOptions()->memtable_as_log_index && end_key.size_) {
       auto kv_pmt = (const KeyValuePassMemTable*)end_key.data_;
       ROCKSDB_ASSERT_EQ(sizeof(KeyValuePassMemTable), end_key.size_);
       ROCKSDB_ASSERT_EQ(kv_pmt->key_len, begin_key.size_);
