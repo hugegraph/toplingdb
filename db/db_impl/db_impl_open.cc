@@ -53,6 +53,7 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
 
   if (result.memtable_as_log_index) {
     result.recycle_log_file_num = 0;
+    result.manual_wal_flush = false;
   }
 
   // result.max_open_files means an "infinite" open files.
