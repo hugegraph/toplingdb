@@ -214,7 +214,7 @@ class PosixFileSystem : public FileSystem {
   IOStatus NewRandomAccessFile(const std::string& fname,
                                const FileOptions& options,
                                std::unique_ptr<FSRandomAccessFile>* result,
-                               IODebugContext* /*dbg*/) override {
+                               IODebugContext* dbg) override {
     result->reset();
     IOStatus s = IOStatus::OK();
     int fd;
@@ -242,8 +242,12 @@ class PosixFileSystem : public FileSystem {
       // kills performance when storage is fast.
       // Use mmap when virtual address-space is plentiful.
       uint64_t size;
-      IOOptions opts;
-      s = GetFileSize(fname, opts, &size, nullptr);
+      if (0 == options.mmap_size) {
+        s = GetFileSize(fname, options.io_options, &size, dbg);
+      } else {
+        // for future read when mmap_size is larger than file size
+        size = options.mmap_size;
+      }
       if (s.ok()) {
         void* base = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
         if (base != MAP_FAILED) {

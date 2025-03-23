@@ -147,10 +147,18 @@ class MemFile {
   }
 
   void SetWriteOffset(size_t offset) {
+    MutexLock lock(&mutex_);
     if (offset > data_.size()) {
       data_.resize(offset);
     }
     size_ = offset;
+  }
+
+  void ReserveMemory(size_t cap) {
+    MutexLock lock(&mutex_);
+    if (cap > data_.size()) {
+      data_.resize(cap);
+    }
   }
 
   void CorruptBuffer() {
@@ -333,6 +341,7 @@ class MockRandomAccessFile : public FSRandomAccessFile {
       : file_(file),
         use_direct_io_(opts.use_direct_reads),
         use_mmap_read_(opts.use_mmap_reads) {
+    file_->ReserveMemory(opts.mmap_size);
     file_->Ref();
   }
 
