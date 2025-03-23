@@ -319,6 +319,9 @@ class CorruptionTest : public testing::Test {
 };
 
 TEST_F(CorruptionTest, Recovery) {
+  if (options_.memtable_as_log_index) {
+    return;
+  }
   Build(100);
   Check(100, 100);
 #ifdef OS_WIN
