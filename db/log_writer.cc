@@ -105,27 +105,11 @@ IOStatus Writer::Close() {
     s = dest_->Close();
     dest_.reset();
   }
-  if (memtable_as_log_index_) {
-    assert(fs_ != nullptr);
-    s = fs_->Truncate(fname_, *log_offset_, IOOptions(), nullptr);
-    if (!s.ok()) {
-      // For MockFileSystem, file fname may have been deleted
-      fprintf(stderr, "ERR: %s:%d: Writer::Close truncate %s = %s\n",
-              __FILE__, __LINE__, fname_.c_str(), s.ToString().c_str());
-    }
-  }
   return s;
 }
 
 void Writer::TruncateForMmap(FileSystem& fs, size_t file_size) {
   auto& fname = dest_->file_name();
-  auto wfile = dest_->writable_file();
-  // wfile->Truncate will change wfile->GetFileSize() which is really the
-  // current offset of wfile, wfile->Append() also update it, this is not
-  // like posix fs api: ftruncate does not affect file offset!
-  // So we use fs.Truncate(fname) which will not affect GetFileSize(), but
-  // fs.Truncate is "NotImplemented", so we call SetFileSize() at the end.
-  // auto s = fs.Truncate(fname, file_size, IOOptions(), nullptr);
   if (file_size > (8ull<<40)) {
     fprintf(stderr,
       "WARN: Writer::TruncateForMmap: file_size %.6f TiB, reset to 32 GiB\n",
@@ -135,12 +119,10 @@ void Writer::TruncateForMmap(FileSystem& fs, size_t file_size) {
   if (0 == file_size) {
     file_size = size_t(1) << 30; // 1G
   }
-  auto s = wfile->Truncate(file_size, IOOptions(), nullptr);
-  TERARK_VERIFY_S(s.ok(), "truncate %s, %s", fname, s.ToString());
-  mmap_reader_ = ReadonlyFileMmap::New(&s, fs, log_number_, fname);
-  TERARK_VERIFY_S(s.ok(), "make mmap %s, %s", fname, s.ToString());
-  TERARK_VERIFY_EQ(mmap_reader_->size_, file_size);
-  wfile->SetFileSize(0); // this is just File Offset for Append
+  IOStatus s;
+  mmap_reader_ = ReadonlyFileMmap::New(&s, fs, log_number_, fname, file_size);
+  TERARK_VERIFY_S(s.ok(), "mmap size %zd for %s, %s", file_size, fname, s.ToString());
+  TERARK_VERIFY_GE(mmap_reader_->size_, file_size);
   fname_ = fname;
   fs_ = &fs;
   log_offset_ = std::make_shared<uint64_t>(0);
