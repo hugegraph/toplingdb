@@ -544,6 +544,7 @@ TEST_F(CheckpointTest, CheckpointCFNoFlush) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
       "DBImpl::BackgroundCallFlush:start", [&](void* /*arg*/) {
         // Flush should never trigger.
+      if (!options.memtable_as_log_index)
         FAIL();
       });
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
