@@ -302,6 +302,9 @@ std::shared_ptr<ReadonlyFileMmap> ReadonlyFileMmap::New
     auto fp = fmap->file_.get();
     *ios = fp->Read(0, mmap_size, fopt.io_options, fmap.get(), nullptr, &dbg);
   }
+  else {
+    return nullptr;
+  }
   fmap->fileno = fileno;
   return fmap;
 }
