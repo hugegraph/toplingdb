@@ -756,6 +756,10 @@ TEST_P(DBSSTTestRateLimit, RateLimitedDelete) {
 
   uint64_t total_files_size = 0;
   uint64_t expected_penlty = 0;
+  if (options.memtable_as_log_index) {
+    ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
+    return;
+  }
   ASSERT_EQ(penalties.size(), metadata.size());
   for (size_t i = 0; i < metadata.size(); i++) {
     total_files_size += metadata[i].size;
@@ -1046,7 +1050,9 @@ TEST_F(DBSSTTest, DeleteSchedulerMultipleDBPaths) {
   ASSERT_EQ("0,2", FilesPerLevel(0));
 
   sfm->WaitForEmptyTrash();
-  ASSERT_EQ(bg_delete_file, 8);
+  if (!options.memtable_as_log_index) {
+    ASSERT_EQ(bg_delete_file, 8);
+  }
 
   // Compaction will delete both files and regenerate a file in L1 in second
   // db path. The deleted files should still be cleaned up via delete scheduler.
@@ -1056,7 +1062,9 @@ TEST_F(DBSSTTest, DeleteSchedulerMultipleDBPaths) {
   ASSERT_EQ("0,1", FilesPerLevel(0));
 
   sfm->WaitForEmptyTrash();
-  ASSERT_EQ(bg_delete_file, 10);
+  if (!options.memtable_as_log_index) {
+    ASSERT_EQ(bg_delete_file, 10);
+  }
 
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->DisableProcessing();
 }

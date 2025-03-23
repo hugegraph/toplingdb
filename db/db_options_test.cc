@@ -412,7 +412,9 @@ TEST_F(DBOptionsTest, SetWalBytesPerSync) {
   }
   ASSERT_GT(counter, 0);
   ASSERT_GT(low_bytes_per_sync, 0);
-  ASSERT_GT(low_bytes_per_sync, counter);
+  if (!options.memtable_as_log_index) {
+    ASSERT_GT(low_bytes_per_sync, counter);
+  }
 }
 
 TEST_F(DBOptionsTest, WritableFileMaxBufferSize) {

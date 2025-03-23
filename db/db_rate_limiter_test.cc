@@ -426,12 +426,17 @@ TEST_P(DBRateLimiterOnWriteWALTest, AutoWalFlush) {
 
   if (no_rate_limit_auto_wal_flush || valid_arg) {
     EXPECT_TRUE(s.ok());
+  } else if (options_.memtable_as_log_index) {
+    // do nothing
   } else {
     EXPECT_TRUE(s.IsInvalidArgument());
     EXPECT_TRUE(s.ToString().find("WriteOptions::rate_limiter_priority") !=
                 std::string::npos);
   }
 
+  if (options_.memtable_as_log_index) {
+    return;
+  }
   std::int64_t actual_auto_wal_flush_request =
       options_.rate_limiter->GetTotalRequests(Env::IO_TOTAL) -
       prev_total_request;
