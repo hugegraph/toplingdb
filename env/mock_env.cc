@@ -143,7 +143,7 @@ class MemFile {
                 IODebugContext* /*dbg*/) {
     MutexLock lock(&mutex_);
     data_.resize(size);
-    size_ = size;
+    size_ = size; // be same behavior of PosixWritableFile
   }
 
   void SetWriteOffset(size_t offset) {
@@ -216,7 +216,7 @@ class MemFile {
     if (size_ + data.size_ > data_.size()) {
       data_.resize(size_ + data.size_);
     }
-    memcpy(data_.data() + size_, data.data_, data.size_);
+    memmove(data_.data() + size_, data.data_, data.size_);
     size_ += data.size_;
     modified_time_ = Now();
     return IOStatus::OK();
