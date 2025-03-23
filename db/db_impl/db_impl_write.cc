@@ -1351,7 +1351,24 @@ static void WriteGroupSetWAL(const WriteThread::WriteGroup& write_group,
   uint64_t offset = 0;
   for (auto writer : write_group) {
     if (!writer->CallbackFailed()) {
-      writer->batch->SetWAL(merged_batch, offset);
+      uint64_t logical_offset;
+      if (offset) {
+        // beginning at second batch, the header was stripped in merged_batch,
+        // but such batch will be written to memtable in each thread which has
+        // the header, so the logical_offset need to substract the header size
+        ROCKSDB_VERIFY_GE(offset, WriteBatchInternal::kHeader);
+        logical_offset = offset - WriteBatchInternal::kHeader;
+      } else {
+        logical_offset = 0;
+      }
+      writer->batch->SetWAL(merged_batch, logical_offset);
+     #if !defined(NDEBUG)
+      auto len = BatchSizeWAL(writer->batch, false);
+      auto cur = writer->batch->Data().data() + WriteBatchInternal::kHeader;
+      auto all = merged_batch.Data().data() + WriteBatchInternal::kHeader
+                                            + logical_offset;
+      assert(memcmp(cur, all, len) == 0);
+     #endif
       offset += BatchSizeWAL(writer->batch, 0 == offset);
     }
   }
