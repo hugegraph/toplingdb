@@ -59,11 +59,20 @@ Reader::~Reader() {
   }
 }
 
+std::shared_ptr<uint64_t>
+GetLogWriterFileOffset(FileSystem& fs, const std::string& fname);
+
+void Reader::InitSetMemTableAsLogIndex(FileSystem& fs) {
+  memtable_as_log_index_ = true;
+  wal_writer_offset_ = GetLogWriterFileOffset(fs, file_->file_name());
+}
+
 RecordType
 Reader::ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode) {
   assert(memtable_as_log_index_);
   constexpr size_t MinBufMem = TERARK_IF_DEBUG(32, kBlockSize);
   auto& bufmem = uncompressed_record_;
+  auto writer_pos = wal_writer_offset_ ? * wal_writer_offset_ : UINT64_MAX;
   if (buffer_.size() < sizeof(RawRecHeader)) {
     size_t old_remain = buffer_.size();
     memmove(bufmem.data(), buffer_.data(), old_remain);
@@ -72,6 +81,9 @@ Reader::ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode) {
     }
     auto ptr = bufmem.data() + old_remain;
     auto len = bufmem.size() - old_remain;
+    if (end_of_buffer_offset_ + len > writer_pos) {
+      len = writer_pos - end_of_buffer_offset_;
+    }
     buffer_.clear();
     Status status = file_->Read(len, &buffer_, ptr, Env::IO_TOTAL);
     end_of_buffer_offset_ += buffer_.size();
@@ -115,6 +127,9 @@ Reader::ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode) {
     auto cur = buffer_.size();
     auto len = bufmem.size() - cur;
     auto ptr = bufmem.data() + cur;
+    if (end_of_buffer_offset_ + len > writer_pos) {
+      len = writer_pos - end_of_buffer_offset_;
+    }
     buffer_.clear();
     Status status = file_->Read(len, &buffer_, ptr, Env::IO_TOTAL);
     end_of_buffer_offset_ += buffer_.size();
@@ -135,6 +150,10 @@ Reader::ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode) {
     } else {
       ReportCorruption(record->size(), "checksum mismatch");
     }
+  }
+  if (end_of_buffer_offset_ == writer_pos) {
+    this->eof_ = true;
+    this->eof_offset_ = end_of_buffer_offset_;
   }
   // LastRecordEnd() is end_of_buffer_offset_ - buffer_.size_
   last_record_offset_ = end_of_buffer_offset_ - buffer_.size_ - header.length;

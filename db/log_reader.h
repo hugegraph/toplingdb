@@ -120,7 +120,7 @@ class Reader {
   bool IsCompressedAndEmptyFile() {
     return !first_record_read_ && compression_type_record_read_;
   }
-  void InitSetMemTableAsLogIndex(bool b) { memtable_as_log_index_ = b; }
+  void InitSetMemTableAsLogIndex(FileSystem&);
 
  protected:
   std::shared_ptr<Logger> info_log_;
@@ -134,6 +134,7 @@ class Reader {
   bool eof_;         // Last Read() indicated EOF by returning < kBlockSize
   bool read_error_;  // Error occurred while reading from file
   bool memtable_as_log_index_ = false;
+  std::shared_ptr<uint64_t> wal_writer_offset_;
   RecordType ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode);
 
   // Offset of the file position indicator within the last block when an

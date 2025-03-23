@@ -23,6 +23,41 @@
 namespace ROCKSDB_NAMESPACE {
 namespace log {
 
+class Writer::WriterKeyCompare {
+public:
+  using is_transparent = void;
+  using LookupKey = std::pair<FileSystem*, const std::string*>;
+  bool LessThan(const LookupKey& x, const LookupKey& y) const {
+    assert(x.first != nullptr);
+    assert(y.first != nullptr);
+    if (x.first != y.first)
+      return x.first < y.first;
+    else
+      return *x.second < *y.second;
+  }
+  bool operator()(const Writer* x, const Writer* y) const {
+    return LessThan({x->fs_, &x->fname_}, {y->fs_, &y->fname_});
+  }
+  bool operator()(const Writer* x, const LookupKey& y) const {
+    return LessThan({x->fs_, &x->fname_}, y);
+  }
+  bool operator()(const LookupKey& x, const Writer* y) const {
+    return LessThan(x, {y->fs_, &y->fname_});
+  }
+};
+static std::set<const Writer*, Writer::WriterKeyCompare> g_reg;
+static std::mutex g_mtx;
+
+std::shared_ptr<uint64_t>
+GetLogWriterFileOffset(FileSystem& fs, const std::string& fname) {
+  std::lock_guard<std::mutex> lk(g_mtx);
+  auto iter = g_reg.find(Writer::WriterKeyCompare::LookupKey(&fs, &fname));
+  if (iter != g_reg.end())
+    return (*iter)->get_log_offset_ptr();
+  else
+    return nullptr;
+}
+
 Writer::Writer(std::unique_ptr<WritableFileWriter>&& dest, uint64_t log_number,
                bool recycle_log_files, bool manual_flush,
                CompressionType compression_type)
@@ -37,17 +72,23 @@ Writer::Writer(std::unique_ptr<WritableFileWriter>&& dest, uint64_t log_number,
     char t = static_cast<char>(i);
     type_crc_[i] = crc32c::Value(&t, 1);
   }
-  log_offset_ = 0;
+  fs_ = nullptr;
   memtable_as_log_index_ = false;
 }
 
 Writer::~Writer() {
   if (dest_) {
-    WriteBuffer().PermitUncheckedError();
+    //WriteBuffer().PermitUncheckedError();
     Close().PermitUncheckedError();
   }
   if (compress_) {
     delete compress_;
+  }
+  if (memtable_as_log_index_) {
+    std::lock_guard<std::mutex> lk(g_mtx);
+    auto iter = g_reg.find(this);
+    TERARK_VERIFY_S(g_reg.end() != iter, "%s is not registered", fname_);
+    g_reg.erase(iter);
   }
 }
 
@@ -105,6 +146,13 @@ void Writer::TruncateForMmap(FileSystem& fs, size_t file_size) {
   TERARK_VERIFY_S(s.ok(), "make mmap %s, %s", fname, s.ToString());
   TERARK_VERIFY_EQ(mmap_reader_->size_, file_size);
   wfile->SetFileSize(0); // this is just File Offset for Append
+  fname_ = fname;
+  fs_ = &fs;
+  log_offset_ = std::make_shared<uint64_t>(0);
+  memtable_as_log_index_ = true;
+  std::lock_guard<std::mutex> lk(g_mtx);
+  auto [iter, insert_ok] = g_reg.insert(this);
+  TERARK_VERIFY_S(insert_ok, "%s is registered", fname_);
 }
 
 IOStatus Writer::AddRecord(const Slice& slice,
@@ -296,7 +344,7 @@ IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
                                0 /* crc32c_checksum */, rate_limiter_priority);
     if (s.ok()) {
       s = dest_->Append(Slice(ptr, n), header.checksum, rate_limiter_priority);
-      log_offset_ += sizeof(RawRecHeader) + n;
+      *log_offset_ += sizeof(RawRecHeader) + n;
     }
     return s;
   }

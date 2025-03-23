@@ -1206,7 +1206,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
                        &reporter, true /*checksum*/, wal_number);
     std::shared_ptr<ReadonlyFileMmap> fmap;
     if (immutable_db_options_.memtable_as_log_index) {
-      reader.InitSetMemTableAsLogIndex(true);
+      reader.InitSetMemTableAsLogIndex(*fs_);
       IOStatus ios;
       fmap = ReadonlyFileMmap::New(&ios, *fs_, wal_number, fname);
       if (!ios.ok() && ios.ToString() != "Invalid argument: Empty File")
@@ -1953,8 +1953,7 @@ IOStatus DBImpl::CreateWAL(uint64_t log_file_num, uint64_t recycle_log_number,
                                immutable_db_options_.manual_wal_flush,
                                immutable_db_options_.wal_compression);
     if (immutable_db_options_.memtable_as_log_index) {
-      (*new_log)->InitSetMemTableAsLogIndex(true);
-      (*new_log)->TruncateForMmap(*fs_, 2 * GetMaxTotalWalSize());
+      (*new_log)->TruncateForMmap(*fs_, GetMaxTotalWalSize() + 8*1024*1024);
     }
     io_s = (*new_log)->AddCompressionTypeRecord();
   }

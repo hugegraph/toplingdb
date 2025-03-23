@@ -402,7 +402,7 @@ class Repairer {
     Slice record;
     WriteBatch batch;
     if (db_options_.memtable_as_log_index) {
-      reader.InitSetMemTableAsLogIndex(true);
+      reader.InitSetMemTableAsLogIndex(*fs);
       auto [fmap, ios] = ReadonlyFileMmap::New(*fs, log, logname);
       if (!ios.ok() && ios.ToString() != "Invalid argument: Empty File")
         return Status(ios);
