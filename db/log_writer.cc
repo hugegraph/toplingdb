@@ -330,6 +330,15 @@ IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
   if (memtable_as_log_index_) {
     ROCKSDB_VERIFY(!recycle_log_files_);
     ROCKSDB_VERIFY(!dest_->use_direct_io()); // must not use direct io
+    size_t need = *log_offset_ + sizeof(RawRecHeader) + n;
+    if (need > mmap_reader_->size_) {
+      dest_->Sync(false).PermitUncheckedError(); // Sync before return error
+      char msg1[128];
+      sprintf(msg1, "memtable_as_log_index log::Writer::AddRecord: "
+                    "write offset %zd, size %zd, exceeds mmap size %zd",
+              size_t(*log_offset_), n, mmap_reader_->size_);
+      return IOStatus::IOFenced(msg1, fname_);
+    }
     RawRecHeader header;
     header.checksum = crc32c::Value(ptr, n);
     header.length = n;
