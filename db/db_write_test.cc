@@ -41,6 +41,9 @@ class DBWriteTestUnparameterized : public DBTestBase {
 
 // It is invalid to do sync write while disabling WAL.
 TEST_P(DBWriteTest, SyncAndDisableWAL) {
+  if (GetOptions().memtable_as_log_index) {
+    return;
+  }
   WriteOptions write_options;
   write_options.sync = true;
   write_options.disableWAL = true;
@@ -772,6 +775,11 @@ TEST_P(DBWriteTest, ConcurrentlyDisabledWAL) {
   }
   for (auto& t : threads) {
     t.join();
+  }
+  if (options.memtable_as_log_index) {
+    // disableWAL does not take effect for memtable_as_log_index, but
+    // disableWAL is assumed to make Tickers::WAL_FILE_BYTES not increased
+    return;
   }
   uint64_t bytes_num = options.statistics->getTickerCount(
       ROCKSDB_NAMESPACE::Tickers::WAL_FILE_BYTES);
