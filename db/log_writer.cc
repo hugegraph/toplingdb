@@ -102,22 +102,17 @@ IOStatus Writer::WriteBuffer() {
 IOStatus Writer::Close() {
   IOStatus s;
   if (dest_) {
-    if (memtable_as_log_index_) {
-      // fault_injection_fs: TestFSWritableFile::Flush dose not flush
-      // internal buffer, which flush internal buffer is `Sync`
-     #if defined(ROCKSDB_UNIT_TEST)
-      s = dest_->SyncWithoutFlush(false); // to make test happy
-     #endif
-      s = dest_->Sync(false); // Flush + Sync
-      if (!s.ok()) {
-        fprintf(stderr, "ERR: %s:%d: Writer::Close.Sync(%s) = %s\n",
-                __FILE__, __LINE__, dest_->file_name().c_str(),
-                s.ToString().c_str());
-      }
-      s = dest_->writable_file()->Truncate(log_offset_, IOOptions(), nullptr);
-    }
     s = dest_->Close();
     dest_.reset();
+  }
+  if (memtable_as_log_index_) {
+    assert(fs_ != nullptr);
+    s = fs_->Truncate(fname_, *log_offset_, IOOptions(), nullptr);
+    if (!s.ok()) {
+      // For MockFileSystem, file fname may have been deleted
+      fprintf(stderr, "ERR: %s:%d: Writer::Close truncate %s = %s\n",
+              __FILE__, __LINE__, fname_.c_str(), s.ToString().c_str());
+    }
   }
   return s;
 }
