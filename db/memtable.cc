@@ -678,6 +678,42 @@ Status MemTable::VerifyEncodedEntry(Slice ikey, Slice value,
       .GetStatus();
 }
 
+bool g_MemTableVerifyKeyValueWithWAL = terark::getEnvBool(
+      "MemTableVerifyKeyValueWithWAL", true);
+
+static void
+VerifyKeyValueWithWAL(bool memtable_as_log_index, Slice key, Slice value) {
+ #if !defined(NDEBUG)
+  if (!g_MemTableVerifyKeyValueWithWAL) {
+    return;
+  }
+  if (!(memtable_as_log_index && value.size_)) {
+    return;
+  }
+  auto kv_pmt = (const KeyValuePassMemTable*)value.data_;
+  ROCKSDB_ASSERT_EQ(sizeof(KeyValuePassMemTable), value.size_);
+  ROCKSDB_ASSERT_EQ(kv_pmt->key_len, key.size_);
+  ROCKSDB_ASSERT_NE(kv_pmt->wal_file, nullptr);
+  ROCKSDB_ASSERT_NE(kv_pmt->wal_file->tail_pos.get(), nullptr);
+  size_t wal_lim = *kv_pmt->wal_file->tail_pos;
+  auto   wal_mem = kv_pmt->wal_file->data_;
+  Slice  org_val = kv_pmt->value;
+  size_t val_pos = kv_pmt->val_pos;
+  size_t val_end = val_pos + org_val.size_;
+  size_t key_end = val_pos - VarintLength(org_val.size_);
+  size_t key_data_pos = key_end - key.size_;
+  size_t key_size_pos = key_data_pos - VarintLength(key.size_);
+  ROCKSDB_ASSERT_LE(val_end, wal_lim);
+  uint64_t wal_key_len = 0, wal_val_len = 0;
+  GetVarint64Ptr(wal_mem + key_size_pos, wal_mem + key_data_pos, &wal_key_len);
+  GetVarint64Ptr(wal_mem + key_end, wal_mem + val_pos, &wal_val_len);
+  ROCKSDB_ASSERT_EQ(wal_key_len, key.size_);
+  ROCKSDB_ASSERT_EQ(wal_val_len, org_val.size_);
+  assert(memcmp(wal_mem + val_pos, org_val.data_, org_val.size_) == 0);
+  assert(memcmp(wal_mem + key_data_pos, key.data_, key.size_) == 0);
+ #endif
+}
+
 ROCKSDB_FLATTEN
 Status MemTable::Add(SequenceNumber s, ValueType type,
                      const Slice& key, /* user key */
@@ -685,6 +721,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
                      const ProtectionInfoKVOS64* kv_prot_info,
                      bool allow_concurrent,
                      MemTablePostProcessInfo* post_process_info, void** hint) {
+  VerifyKeyValueWithWAL(moptions_.memtable_as_log_index, key, value);
   if (reject_memtable_as_log_index_ && value.size_) {
     auto kv_pmt = (const KeyValuePassMemTable*)value.data_;
     ROCKSDB_ASSERT_EQ(sizeof(KeyValuePassMemTable), value.size_);
@@ -1482,6 +1519,7 @@ Status MemTable::Update(SequenceNumber seq, ValueType value_type,
   assert(moptions_.inplace_update_support);
   LookupKey lkey(key, seq);
 
+  VerifyKeyValueWithWAL(moptions_.memtable_as_log_index, key, value);
   const Slice value_param = value;
   if (reject_memtable_as_log_index_ && value.size_) {
     ROCKSDB_ASSERT_EQ(sizeof(KeyValuePassMemTable), value.size_);
