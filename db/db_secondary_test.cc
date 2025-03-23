@@ -1756,9 +1756,12 @@ TEST_F(DBSecondaryTestWithTimestamp, Iterators) {
   Close();
 }
 
+extern bool g_memtable_as_log_index;
+
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
+  ROCKSDB_NAMESPACE::g_memtable_as_log_index = false;
   ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
