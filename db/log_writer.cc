@@ -108,11 +108,11 @@ IOStatus Writer::Close() {
   return s;
 }
 
-void Writer::TruncateForMmap(FileSystem& fs, size_t file_size) {
+void Writer::InitReaderMmap(FileSystem& fs, size_t file_size) {
   auto& fname = dest_->file_name();
   if (file_size > (8ull<<40)) {
     fprintf(stderr,
-      "WARN: Writer::TruncateForMmap: file_size %.6f TiB, reset to 32 GiB\n",
+      "WARN: Writer::InitReaderMmap: file_size %.6f TiB, reset to 32 GiB\n",
       file_size / double(1ull<<40));
     file_size = 32ull << 30; // 32G
   }

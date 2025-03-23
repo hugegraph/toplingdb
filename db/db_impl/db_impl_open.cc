@@ -1960,7 +1960,7 @@ IOStatus DBImpl::CreateWAL(uint64_t log_file_num, uint64_t recycle_log_number,
                                immutable_db_options_.manual_wal_flush,
                                immutable_db_options_.wal_compression);
     if (immutable_db_options_.memtable_as_log_index) {
-      (*new_log)->TruncateForMmap(*fs_, GetMaxTotalWalSize() + 8*1024*1024);
+      (*new_log)->InitReaderMmap(*fs_, GetMaxTotalWalSize() + 8*1024*1024);
     }
     io_s = (*new_log)->AddCompressionTypeRecord();
   }

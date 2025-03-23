@@ -4157,7 +4157,7 @@ TEST_F(DBTest2, TestNumPread) {
     // After flush, we'll open the file and read footer, meta block,
     // property block and index block.
     if (options.memtable_as_log_index) {
-      // extra Read in TruncateForMmap Read whole file mmap
+      // extra Read in InitReaderMmap Read whole file mmap
       ASSERT_EQ(5, env_->random_read_counter_.Read());
     } else {
       ASSERT_EQ(4, env_->random_read_counter_.Read());

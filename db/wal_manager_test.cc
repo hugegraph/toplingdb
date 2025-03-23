@@ -91,7 +91,7 @@ class WalManagerTest : public testing::Test {
     current_log_writer_.reset(
         new log::Writer(std::move(file_writer), 0, false));
     if (db_options_.memtable_as_log_index) {
-      current_log_writer_->TruncateForMmap(*fs, 16*1024*1024);
+      current_log_writer_->InitReaderMmap(*fs, 16*1024*1024);
     }
   }
 
@@ -147,7 +147,7 @@ TEST_F(WalManagerTest, ReadFirstRecordCache) {
   log::Writer writer(std::move(file_writer), 1,
                      db_options_.recycle_log_file_num > 0);
   if (db_options_.memtable_as_log_index) {
-    writer.TruncateForMmap(*env_->GetFileSystem(), 1*1024*1024);
+    writer.InitReaderMmap(*env_->GetFileSystem(), 1*1024*1024);
   }
   WriteBatch batch;
   ASSERT_OK(batch.Put("foo", "bar"));

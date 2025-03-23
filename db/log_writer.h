@@ -108,7 +108,7 @@ class Writer {
     return *log_offset_ + sizeof(RawRecHeader);
   }
   auto get_log_offset_ptr() const { return log_offset_; }
-  void TruncateForMmap(FileSystem& fs, size_t file_size);
+  void InitReaderMmap(FileSystem& fs, size_t file_size);
   auto& mmap_reader() const { return mmap_reader_; }
   class WriterKeyCompare; friend class WriterKeyCompare;
 
