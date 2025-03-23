@@ -203,6 +203,7 @@ class PosixFileSystem : public FileSystem {
         return IOError("While opening file for sequentially read", fname,
                        errno);
       }
+      setvbuf(file, nullptr, _IONBF, 0); // disable buffer
     }
     result->reset(new PosixSequentialFile(
         fname, file, fd, GetLogicalBlockSizeForReadIfNeeded(options, fname, fd),
@@ -623,6 +624,15 @@ class PosixFileSystem : public FileSystem {
     IOStatus result;
     if (unlink(fname.c_str()) != 0) {
       result = IOError("while unlink() file", fname, errno);
+    }
+    return result;
+  }
+
+  IOStatus Truncate(const std::string& fname, size_t fsize,
+                    const IOOptions& options, IODebugContext* dbg) override {
+    IOStatus result;
+    if (truncate(fname.c_str(), fsize) != 0) {
+      result = IOError("while truncate() file", fname, errno);
     }
     return result;
   }
