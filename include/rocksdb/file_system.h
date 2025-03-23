@@ -488,10 +488,7 @@ class FileSystem : public Customizable {
   // Truncate the named file to the specified size.
   virtual IOStatus Truncate(const std::string& /*fname*/, size_t /*size*/,
                             const IOOptions& /*options*/,
-                            IODebugContext* /*dbg*/) {
-    return IOStatus::NotSupported(
-        "Truncate is not supported for this FileSystem");
-  }
+                            IODebugContext* /*dbg*/) = 0;
 
   // Create the specified directory. Returns error if directory exists.
   virtual IOStatus CreateDir(const std::string& dirname,
@@ -1076,9 +1073,7 @@ class FSWritableFile {
   // size due to whole pages writes. The behavior is undefined if called
   // with other writes to follow.
   virtual IOStatus Truncate(uint64_t /*size*/, const IOOptions& /*options*/,
-                            IODebugContext* /*dbg*/) {
-    return IOStatus::OK();
-  }
+                            IODebugContext* /*dbg*/) = 0;
 
   // The caller should call Close() before destroying the FSWritableFile to
   // surface any errors associated with finishing writes to the file.

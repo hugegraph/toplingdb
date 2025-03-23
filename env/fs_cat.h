@@ -72,6 +72,9 @@ class CatFileSystem : public FileSystem {
   IOStatus DeleteFile(const std::string& fname, const IOOptions& options,
                       IODebugContext* dbg) override;
 
+  IOStatus Truncate(const std::string& fname, size_t fsize, const IOOptions&,
+                    IODebugContext*) override;
+
   IOStatus CreateDir(const std::string& dirname, const IOOptions& options,
                      IODebugContext* dbg) override;
 

@@ -451,6 +451,16 @@ IOStatus CatFileSystem::DeleteFile(const std::string& fname,
   return ios;
 }
 
+IOStatus CatFileSystem::Truncate(const std::string& fname, size_t fsize,
+                                 const IOOptions& options,
+                                 IODebugContext* dbg) {
+  IOStatus ios = m_local->Truncate(fname, fsize, options, dbg);
+  if (ios.ok()) {
+    ios = m_remote->Truncate(fname, fsize, options, dbg);
+  }
+  return ios;
+}
+
 IOStatus CatFileSystem::CreateDir(const std::string& dirname,
                                   const IOOptions& options,
                                   IODebugContext* dbg) {

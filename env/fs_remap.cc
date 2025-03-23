@@ -206,6 +206,17 @@ IOStatus RemapFileSystem::DeleteFile(const std::string& fname,
                                        dbg);
 }
 
+IOStatus RemapFileSystem::Truncate(const std::string& fname, size_t size,
+                                   const IOOptions& options,
+                                   IODebugContext* dbg) {
+  auto status_and_enc_path = EncodePath(fname);
+  if (!status_and_enc_path.first.ok()) {
+    return status_and_enc_path.first;
+  }
+  return FileSystemWrapper::Truncate(status_and_enc_path.second, size,
+                                     options, dbg);
+}
+
 IOStatus RemapFileSystem::CreateDir(const std::string& dirname,
                                     const IOOptions& options,
                                     IODebugContext* dbg) {

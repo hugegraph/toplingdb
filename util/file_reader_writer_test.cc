@@ -456,6 +456,9 @@ TEST_F(WritableFileWriterTest, AppendStatusReturn) {
     uint64_t GetFileSize(const IOOptions&, IODebugContext*) final {
       return 0;
     }
+    IOStatus Truncate(uint64_t, const IOOptions&, IODebugContext*) final {
+      return IOStatus::OK();
+    }
     void Setuse_direct_io(bool val) { use_direct_io_ = val; }
     void SetIOError(bool val) { io_error_ = val; }
 
@@ -848,6 +851,9 @@ TEST_F(DBWritableFileWriterTest, IOErrorNotification) {
     }
     IOStatus Sync(const IOOptions& /*options*/,
                   IODebugContext* /*dbg*/) override {
+      return IOStatus::OK();
+    }
+    IOStatus Truncate(uint64_t, const IOOptions&, IODebugContext*) final {
       return IOStatus::OK();
     }
 

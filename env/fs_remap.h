@@ -98,6 +98,9 @@ class RemapFileSystem : public FileSystemWrapper {
   IOStatus DeleteFile(const std::string& fname, const IOOptions& options,
                       IODebugContext* dbg) override;
 
+  IOStatus Truncate(const std::string& fname, size_t size,
+                    const IOOptions& options, IODebugContext* dbg) override;
+
   IOStatus CreateDir(const std::string& dirname, const IOOptions& options,
                      IODebugContext* dbg) override;
 
