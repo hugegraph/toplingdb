@@ -143,6 +143,22 @@ struct EnvOptions {
 
   // If not nullptr, write rate limiting is enabled for flush and compaction
   RateLimiter* rate_limiter = nullptr;
+
+  // mmap_size allow us create a huge mmap for reserving a virtual address
+  // range, later we read the really written data, this is very useful for
+  // memtable_as_log_index. Previously we truncate the file to a huge size
+  // for such purpose, but the side effect is that external process can not
+  // tailing the file.
+  //
+  // By using this feature, all requirements are satified!
+  //
+  // This field should be in FileOptions, but in FileOptions may be passed
+  // to EnvWrapper::NewRandomAccessFile which will convert FileOptions to
+  // EnvOptions, then re-pass EnvOptions to FileOptions, thus FileOptions
+  // part will be lost, so we move mmap_size from FileOptions here to make
+  // the legacy code happy.
+  //
+  size_t  mmap_size = 0; // can be larger than file size
 };
 
 // Exceptions MUST NOT propagate out of overridden functions into RocksDB,

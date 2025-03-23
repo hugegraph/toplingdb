@@ -164,16 +164,6 @@ struct FileOptions : EnvOptions {
   // handoff during file writes.
   ChecksumType handoff_checksum_type;
 
-  // mmap_size allow us create a huge mmap for reserving a virtual address
-  // range, later we read the really written data, this is very useful for
-  // memtable_as_log_index. Previously we truncate the file to a huge size
-  // for such purpose, but the side effect is that external process can not
-  // tailing the file.
-  //
-  // By using this feature, all requirements are satified!
-  //
-  size_t  mmap_size = 0; // can be larger than file size
-
   FileOptions() : EnvOptions(), handoff_checksum_type(ChecksumType::kCRC32c) {}
 
   FileOptions(const DBOptions& opts)
