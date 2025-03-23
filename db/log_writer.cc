@@ -108,21 +108,21 @@ IOStatus Writer::Close() {
   return s;
 }
 
-void Writer::InitReaderMmap(FileSystem& fs, size_t file_size) {
+void Writer::InitReaderMmap(FileSystem& fs, size_t mmap_size) {
   auto& fname = dest_->file_name();
-  if (file_size > (8ull<<40)) {
+  if (mmap_size > (8ull<<40)) {
     fprintf(stderr,
-      "WARN: Writer::InitReaderMmap: file_size %.6f TiB, reset to 32 GiB\n",
-      file_size / double(1ull<<40));
-    file_size = 32ull << 30; // 32G
+      "WARN: Writer::InitReaderMmap: mmap_size %.6f TiB, reset to 32 GiB\n",
+      mmap_size / double(1ull<<40));
+    mmap_size = 32ull << 30; // 32G
   }
-  if (0 == file_size) {
-    file_size = size_t(1) << 30; // 1G
+  if (0 == mmap_size) {
+    mmap_size = size_t(1) << 30; // 1G
   }
   IOStatus s;
-  mmap_reader_ = ReadonlyFileMmap::New(&s, fs, log_number_, fname, file_size);
-  TERARK_VERIFY_S(s.ok(), "mmap size %zd for %s, %s", file_size, fname, s.ToString());
-  TERARK_VERIFY_GE(mmap_reader_->size_, file_size);
+  mmap_reader_ = ReadonlyFileMmap::New(&s, fs, log_number_, fname, mmap_size);
+  TERARK_VERIFY_S(s.ok(), "mmap size %zd for %s, %s", mmap_size, fname, s.ToString());
+  TERARK_VERIFY_GE(mmap_reader_->size_, mmap_size);
   fname_ = fname;
   fs_ = &fs;
   log_offset_ = std::make_shared<uint64_t>(0);
