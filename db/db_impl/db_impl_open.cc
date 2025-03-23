@@ -1255,6 +1255,10 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       if (!status.ok()) {
         return status;
       }
+      if (new_batch && immutable_db_options_.memtable_as_log_index) {
+        return Status::NotSupported("memtable_as_log_index",
+                                    "WriteBatchTimestampSizeDifference");
+      }
 
       bool batch_updated = new_batch != nullptr;
       WriteBatch* batch_to_use = batch_updated ? new_batch.get() : &batch;
