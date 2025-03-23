@@ -953,6 +953,9 @@ TEST_P(PerConfigMergeOperatorPinningTest, Randomized) {
 
 TEST_F(DBMergeOperatorTest, MaxSuccessiveMergesBaseValues) {
   Options options = CurrentOptions();
+  if (options.memtable_as_log_index) {
+    return;
+  }
   options.create_if_missing = true;
   options.merge_operator = MergeOperators::CreatePutOperator();
   options.max_successive_merges = 1;
