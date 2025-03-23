@@ -1381,7 +1381,14 @@ class StableCacheKeyTestFS : public FaultInjectionTestFS {
   }
 };
 
+extern bool g_MemTableVerifyKeyValueWithWAL;
+
 TEST_P(DBBlockCacheKeyTest, StableCacheKeys) {
+  if (ROCKSDB_NAMESPACE::g_MemTableVerifyKeyValueWithWAL) {
+    ROCKSDB_GTEST_BYPASS(
+      "Test depends on env MemTableVerifyKeyValueWithWAL being false");
+    return;
+  }
   std::shared_ptr<StableCacheKeyTestFS> test_fs{
       new StableCacheKeyTestFS(env_->GetFileSystem())};
   std::unique_ptr<CompositeEnvWrapper> test_env{

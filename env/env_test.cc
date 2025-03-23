@@ -71,6 +71,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+extern bool g_MemTableVerifyKeyValueWithWAL;
+
 using port::kPageSize;
 
 static const int kDelayMicros = 100000;
@@ -2535,6 +2537,11 @@ class EnvFSTestWithParam
 
 TEST_P(EnvFSTestWithParam, OptionsTest) {
   Options opts;
+  if (opts.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
+    ROCKSDB_GTEST_BYPASS(
+      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+    return;
+  }
   opts.env = env_;
   opts.create_if_missing = true;
   std::string dbname = dbname1_;

@@ -484,6 +484,10 @@ Status WriteBatch::Iterate(Handler* handler) const {
   if (rep_.size() < WriteBatchInternal::kHeader) {
     return Status::Corruption("malformed WriteBatch (too small)");
   }
+  if (wal_term_point_.size &&
+      wal_term_point_.size != GetDataSize() && is_write_memtable_) {
+    return Status::NotSupported("memtable_as_log_index", "wal_term_point");
+  }
 
   return WriteBatchInternal::Iterate(this, handler, WriteBatchInternal::kHeader,
                                      rep_.size());

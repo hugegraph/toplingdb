@@ -31,6 +31,8 @@ namespace ROCKSDB_NAMESPACE {
 
 // SYNC_POINT is not supported in released Windows mode.
 
+extern bool g_MemTableVerifyKeyValueWithWAL;
+
 class CompactionStatsCollector : public EventListener {
  public:
   CompactionStatsCollector()
@@ -8820,6 +8822,11 @@ TEST_F(DBCompactionTest, CompactionWithChecksumHandoff1) {
       new FaultInjectionTestFS(FileSystem::Default()));
   std::unique_ptr<Env> fault_fs_env(NewCompositeEnv(fault_fs));
   Options options = CurrentOptions();
+  if (options.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
+    ROCKSDB_GTEST_SKIP(
+      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+    return;
+  }
   options.level0_file_num_compaction_trigger = 2;
   options.num_levels = 3;
   options.env = fault_fs_env.get();
@@ -8915,6 +8922,11 @@ TEST_F(DBCompactionTest, CompactionWithChecksumHandoff2) {
       new FaultInjectionTestFS(FileSystem::Default()));
   std::unique_ptr<Env> fault_fs_env(NewCompositeEnv(fault_fs));
   Options options = CurrentOptions();
+  if (options.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
+    ROCKSDB_GTEST_SKIP(
+      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+    return;
+  }
   options.level0_file_num_compaction_trigger = 2;
   options.num_levels = 3;
   options.env = fault_fs_env.get();
@@ -9001,6 +9013,11 @@ TEST_F(DBCompactionTest, CompactionWithChecksumHandoffManifest1) {
       new FaultInjectionTestFS(FileSystem::Default()));
   std::unique_ptr<Env> fault_fs_env(NewCompositeEnv(fault_fs));
   Options options = CurrentOptions();
+  if (options.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
+    ROCKSDB_GTEST_SKIP(
+      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+    return;
+  }
   options.level0_file_num_compaction_trigger = 2;
   options.num_levels = 3;
   options.env = fault_fs_env.get();
@@ -9056,6 +9073,11 @@ TEST_F(DBCompactionTest, CompactionWithChecksumHandoffManifest2) {
       new FaultInjectionTestFS(FileSystem::Default()));
   std::unique_ptr<Env> fault_fs_env(NewCompositeEnv(fault_fs));
   Options options = CurrentOptions();
+  if (options.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
+    ROCKSDB_GTEST_SKIP(
+      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+    return;
+  }
   options.level0_file_num_compaction_trigger = 2;
   options.num_levels = 3;
   options.env = fault_fs_env.get();

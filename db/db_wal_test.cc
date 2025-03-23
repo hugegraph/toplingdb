@@ -514,6 +514,14 @@ TEST_F(DBWALTestWithTimestamp, EnableDisableUDT) {
 
   options.comparator = test::BytewiseComparatorWithU64TsWrapper();
   options.persist_user_defined_timestamps = false;
+  if (options.memtable_as_log_index) {
+    auto s = ReopenColumnFamiliesWithTs({"pikachu"}, options,
+                                        false /* persist_udt */,
+                                        avoid_flush_during_recovery);
+    ASSERT_TRUE(s.IsNotSupported());
+    return;
+  }
+
   // Test handle timestamp size inconsistency in WAL when enabling user-defined
   // timestamps.
   ASSERT_OK(ReopenColumnFamiliesWithTs({"pikachu"}, options,
@@ -2639,7 +2647,10 @@ TEST_F(DBWALTest, WalTermTest) {
   batch.MarkWalTerminationPoint();
   ASSERT_OK(batch.Put("foo2", "bar2"));
 
-  ASSERT_OK(dbfull()->Write(wo, &batch));
+  if (options.memtable_as_log_index)
+    ASSERT_TRUE(dbfull()->Write(wo, &batch).IsNotSupported());
+  else
+    ASSERT_OK(dbfull()->Write(wo, &batch));
 
   // make sure we can re-open it.
   ASSERT_OK(TryReopenWithColumnFamilies({"default", "pikachu"}, options));

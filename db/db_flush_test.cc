@@ -26,6 +26,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+extern bool g_MemTableVerifyKeyValueWithWAL;
+
 // This is a static filter used for filtering
 // kvs during the compaction process.
 static std::string NEW_VALUE = "NewValue";
@@ -2171,6 +2173,11 @@ TEST_F(DBFlushTest, FlushWithChecksumHandoff1) {
     ROCKSDB_GTEST_SKIP("Test requires non-mem or non-encrypted environment");
     return;
   }
+  if (ROCKSDB_NAMESPACE::g_MemTableVerifyKeyValueWithWAL) {
+    ROCKSDB_GTEST_BYPASS(
+      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+    return;
+  }
   std::shared_ptr<FaultInjectionTestFS> fault_fs(
       new FaultInjectionTestFS(FileSystem::Default()));
   std::unique_ptr<Env> fault_fs_env(NewCompositeEnv(fault_fs));
@@ -2239,6 +2246,11 @@ TEST_F(DBFlushTest, FlushWithChecksumHandoff2) {
       new FaultInjectionTestFS(FileSystem::Default()));
   std::unique_ptr<Env> fault_fs_env(NewCompositeEnv(fault_fs));
   Options options = CurrentOptions();
+  if (options.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
+    ROCKSDB_GTEST_BYPASS(
+      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+    return;
+  }
   options.write_buffer_size = 100;
   options.max_write_buffer_number = 4;
   options.min_write_buffer_number_to_merge = 3;
@@ -2289,6 +2301,12 @@ TEST_F(DBFlushTest, FlushWithChecksumHandoffManifest1) {
     ROCKSDB_GTEST_SKIP("Test requires non-mem or non-encrypted environment");
     return;
   }
+  if (ROCKSDB_NAMESPACE::g_MemTableVerifyKeyValueWithWAL) {
+    ROCKSDB_GTEST_BYPASS(
+      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+    return;
+  }
+
   std::shared_ptr<FaultInjectionTestFS> fault_fs(
       new FaultInjectionTestFS(FileSystem::Default()));
   std::unique_ptr<Env> fault_fs_env(NewCompositeEnv(fault_fs));
@@ -2327,6 +2345,11 @@ TEST_F(DBFlushTest, FlushWithChecksumHandoffManifest1) {
 TEST_F(DBFlushTest, FlushWithChecksumHandoffManifest2) {
   if (mem_env_ || encrypted_env_) {
     ROCKSDB_GTEST_SKIP("Test requires non-mem or non-encrypted environment");
+    return;
+  }
+  if (ROCKSDB_NAMESPACE::g_MemTableVerifyKeyValueWithWAL) {
+    ROCKSDB_GTEST_BYPASS(
+      "Test requires env MemTableVerifyKeyValueWithWAL being false");
     return;
   }
   std::shared_ptr<FaultInjectionTestFS> fault_fs(
