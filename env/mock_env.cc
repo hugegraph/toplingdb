@@ -249,7 +249,33 @@ class MemFile {
 
   // Data written into this file, all bytes before fsynced_bytes are
   // persistent.
-  std::string data_;
+  struct DataHolder {
+    ~DataHolder() { free(data_); }
+    char*  data_ = nullptr;
+    size_t size_ = 0;
+    size_t size() const { return size_; }
+    char*  data() const { return data_; }
+    operator char*() const { return data_; }
+    void resize(size_t sz) {
+      if (sz) {
+        // realloc is faster(by mmap alloc vm) than std::string::resize()
+        data_ = (char*)realloc(data_, sz); // `sz==0 for free` is not portable
+        ROCKSDB_VERIFY(data_ != nullptr);
+      } else {
+        free(data_);
+        data_ = nullptr;
+      }
+      size_ = sz;
+    }
+    void replace(size_t pos, size_t len, const char* src, size_t len2) {
+      ROCKSDB_VERIFY_EQ(len, len2);
+      if (pos + len > size_) {
+        resize(pos + len);
+      }
+      memmove(data_ + pos, src, len);
+    }
+  };
+  DataHolder data_;
   std::atomic<uint64_t> size_;
   std::atomic<uint64_t> modified_time_;
 
