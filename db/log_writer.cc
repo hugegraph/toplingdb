@@ -144,6 +144,7 @@ void Writer::TruncateForMmap(FileSystem& fs, size_t file_size) {
   fname_ = fname;
   fs_ = &fs;
   log_offset_ = std::make_shared<uint64_t>(0);
+  mmap_reader_->tail_pos = log_offset_;
   memtable_as_log_index_ = true;
   std::lock_guard<std::mutex> lk(g_mtx);
   auto [iter, insert_ok] = g_reg.insert(this);

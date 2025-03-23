@@ -1211,6 +1211,8 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       fmap = ReadonlyFileMmap::New(&ios, *fs_, wal_number, fname);
       if (!ios.ok() && ios.ToString() != "Invalid argument: Empty File")
         return Status(ios);
+      if (fmap)
+        fmap->tail_pos = std::make_shared<uint64_t>(fmap->size_);
     }
 
     // Determine if we should tolerate incomplete records at the tail end of the

@@ -1918,6 +1918,8 @@ class FSDirectoryWrapper : public FSDirectory {
 class ReadonlyFileMmap : public std::enable_shared_from_this<ReadonlyFileMmap>, public Slice {
   std::unique_ptr<FSRandomAccessFile> file_;
 public:
+  ReadonlyFileMmap& operator=(const ReadonlyFileMmap&) = delete;
+  ReadonlyFileMmap(const ReadonlyFileMmap&) = delete;
   ReadonlyFileMmap();
   ~ReadonlyFileMmap();
   static std::shared_ptr<ReadonlyFileMmap>
@@ -1928,6 +1930,7 @@ public:
     return {New(&ios, fs, fileno, fname, mmap_size), ios};
   }
   uint32_t fileno;
+  std::shared_ptr<uint64_t> tail_pos;
 };
 
 // A utility routine: write "data" to the named file.

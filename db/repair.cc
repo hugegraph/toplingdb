@@ -406,7 +406,10 @@ class Repairer {
       auto [fmap, ios] = ReadonlyFileMmap::New(*fs, log, logname);
       if (!ios.ok() && ios.ToString() != "Invalid argument: Empty File")
         return Status(ios);
-      batch.SetWAL(fmap, log, 0);
+      if (fmap) {
+        fmap->tail_pos = std::make_shared<uint64_t>(fmap->size_);
+        batch.SetWAL(fmap, log, 0);
+      }
     }
 
     int counter = 0;
