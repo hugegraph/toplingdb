@@ -783,6 +783,7 @@ TEST_F(DBWALTest, WALWithChecksumHandoff) {
   do {
     Options options = CurrentOptions();
 
+    options.memtable_as_log_index = false;
     options.checksum_handoff_file_types.Add(FileType::kWalFile);
     options.env = fault_fs_env.get();
     fault_fs->SetChecksumHandoffFuncType(ChecksumType::kCRC32c);
@@ -957,6 +958,11 @@ TEST_F(DBWALTest, IgnoreRecoveredLog) {
     options.create_if_missing = true;
     options.merge_operator = MergeOperators::CreateUInt64AddOperator();
     options.wal_dir = dbname_ + "/logs";
+
+    // be small, to speedup CopyFile for memtable_as_log_index alive
+    // WAL files are truncated to such size(default is too large).
+    options.max_total_wal_size = 256*1024;
+
     DestroyAndReopen(options);
 
     // fill up the DB
@@ -1230,7 +1236,9 @@ TEST_F(DBWALTest, GetCurrentWalFile) {
 
     // nothing has been written to the log yet
     ASSERT_EQ(log_file->StartSequence(), 0);
-    ASSERT_EQ(log_file->SizeFileBytes(), 0);
+    if (!CurrentOptions().memtable_as_log_index) {
+      ASSERT_EQ(log_file->SizeFileBytes(), 0);
+    }
     ASSERT_EQ(log_file->Type(), kAliveLogFile);
     ASSERT_GT(log_file->LogNumber(), 0);
 
@@ -1636,6 +1644,11 @@ class DBWALTestWithParams : public DBWALTestBase,
                                 std::tuple<bool, int, int, CompressionType>> {
  public:
   DBWALTestWithParams() : DBWALTestBase("/db_wal_test_with_params") {}
+  Options CurrentOptions() {
+    auto opt = DBWALTestBase::CurrentOptions();
+    opt.memtable_as_log_index = false;
+    return opt;
+  }
 };
 
 INSTANTIATE_TEST_CASE_P(
@@ -1741,6 +1754,7 @@ TEST_P(DBWALTestWithParams, kAbsoluteConsistency) {
 TEST_F(DBWALTest, kPointInTimeRecoveryCFConsistency) {
   Options options = CurrentOptions();
   options.avoid_flush_during_recovery = true;
+  options.memtable_as_log_index = false;
 
   // Create DB with multiple column families.
   CreateAndReopenWithCF({"one", "two"}, options);
@@ -2072,7 +2086,9 @@ TEST_F(DBWALTest, AvoidFlushDuringRecovery) {
 
   // Force flush with allow_2pc.
   options.avoid_flush_during_recovery = true;
-  options.allow_2pc = true;
+  if (!options.memtable_as_log_index) {
+    options.allow_2pc = true;
+  }
   ASSERT_OK(Put("foo", "v9"));
   ASSERT_OK(Put("bar", "v10"));
   ASSERT_OK(Flush());
@@ -2081,7 +2097,11 @@ TEST_F(DBWALTest, AvoidFlushDuringRecovery) {
   Reopen(options);
   ASSERT_EQ("v11", Get("foo"));
   ASSERT_EQ("v12", Get("bar"));
-  ASSERT_EQ(3, TotalTableFiles());
+  if (!options.memtable_as_log_index) {
+    ASSERT_EQ(3, TotalTableFiles());
+  } else {
+    ASSERT_EQ(2, TotalTableFiles());
+  }
 }
 
 TEST_F(DBWALTest, WalCleanupAfterAvoidFlushDuringRecovery) {
@@ -2112,6 +2132,10 @@ TEST_F(DBWALTest, WalCleanupAfterAvoidFlushDuringRecovery) {
 
 TEST_F(DBWALTest, RecoverWithoutFlush) {
   Options options = CurrentOptions();
+
+  // this test by pass DB Add, not support memtable_as_log_index
+  options.memtable_as_log_index = false;
+
   options.avoid_flush_during_recovery = true;
   options.create_if_missing = false;
   options.disable_auto_compactions = true;
@@ -2221,6 +2245,7 @@ TEST_P(DBWALTestWithParamsVaryingRecoveryMode,
   options.create_if_missing = false;
   options.disable_auto_compactions = true;
   options.write_buffer_size = 64 * 1024 * 1024;
+  options.memtable_as_log_index = false;
 
   auto getAll = [this]() {
     std::vector<std::pair<std::string, std::string>> data;
@@ -2302,7 +2327,9 @@ TEST_F(DBWALTest, RestoreTotalLogSizeAfterRecoverWithoutFlush) {
   ASSERT_EQ(1, log_files_before.size());
   uint64_t log_size_before = log_files_before[0]->SizeFileBytes();
   ASSERT_GT(log_size_before, 900 * kKB);
-  ASSERT_LT(log_size_before, 1 * kMB);
+  if (!options.memtable_as_log_index) {
+    ASSERT_LT(log_size_before, 1 * kMB);
+  }
   ReopenWithColumnFamilies({"default", "one"}, options);
   // Write one more value to make log larger than 1MB.
   ASSERT_OK(Put(1, "bar", value_300k));
@@ -2349,7 +2376,9 @@ TEST_F(DBWALTest, TruncateLastLogAfterRecoverWithoutFlush) {
   ASSERT_OK(dbfull()->GetSortedWalFiles(log_files_before));
   ASSERT_EQ(1, log_files_before.size());
   auto& file_before = log_files_before[0];
-  ASSERT_LT(file_before->SizeFileBytes(), 1 * kKB);
+  if (!options.memtable_as_log_index) {
+    ASSERT_LT(file_before->SizeFileBytes(), 1 * kKB);
+  }
   // The log file has preallocated space.
   ASSERT_GE(GetAllocatedFileSize(dbname_ + file_before->PathName()),
             preallocated_size);
@@ -2386,7 +2415,9 @@ TEST_F(DBWALTest, TruncateLastLogAfterRecoverWithFlush) {
   ASSERT_OK(dbfull()->GetSortedWalFiles(log_files_before));
   ASSERT_EQ(1, log_files_before.size());
   auto& file_before = log_files_before[0];
-  ASSERT_LT(file_before->SizeFileBytes(), 1 * kKB);
+  if (!options.memtable_as_log_index) {
+    ASSERT_LT(file_before->SizeFileBytes(), 1 * kKB);
+  }
   ASSERT_GE(GetAllocatedFileSize(dbname_ + file_before->PathName()),
             preallocated_size);
   // The log file has preallocated space.
@@ -2509,7 +2540,9 @@ TEST_F(DBWALTest, ReadOnlyRecoveryNoTruncate) {
   ASSERT_OK(dbfull()->GetSortedWalFiles(log_files_before));
   ASSERT_EQ(1, log_files_before.size());
   auto& file_before = log_files_before[0];
-  ASSERT_LT(file_before->SizeFileBytes(), 1 * kKB);
+  if (!options.memtable_as_log_index) {
+    ASSERT_LT(file_before->SizeFileBytes(), 1 * kKB);
+  }
   // The log file has preallocated space.
   auto db_size = GetAllocatedFileSize(dbname_ + file_before->PathName());
   ASSERT_GE(db_size, preallocated_size);
@@ -2526,8 +2559,10 @@ TEST_F(DBWALTest, ReadOnlyRecoveryNoTruncate) {
   ASSERT_EQ(log_files_after[0]->PathName(), file_before->PathName());
   // The preallocated space should NOT be truncated.
   // the DB size is almost the same.
-  ASSERT_NEAR(GetAllocatedFileSize(dbname_ + file_before->PathName()), db_size,
-              db_size / 100);
+  if (!options.memtable_as_log_index) {
+    ASSERT_NEAR(GetAllocatedFileSize(dbname_ + file_before->PathName()), db_size,
+                db_size / 100);
+  }
   SyncPoint::GetInstance()->DisableProcessing();
   SyncPoint::GetInstance()->ClearAllCallBacks();
 }
