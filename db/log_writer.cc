@@ -291,6 +291,7 @@ IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
     header.checksum = crc32c::Value(ptr, n);
     header.length = n;
     header.rec_type = t;
+    header.header_checksum = crc32c::Value(header.hbytes, sizeof(header.hbytes));
     IOStatus s = dest_->Append(Slice((char*)&header, sizeof(RawRecHeader)),
                                0 /* crc32c_checksum */, rate_limiter_priority);
     if (s.ok()) {

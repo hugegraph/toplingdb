@@ -18,14 +18,20 @@
 namespace ROCKSDB_NAMESPACE {
 namespace log {
 
-#pragma pack(push, 1)
+#pragma pack(push, 4)
 struct RawRecHeader {
-  uint64_t length;
+  uint32_t header_checksum; // crc32c
+  union {
+    struct {
   uint32_t checksum; // crc32c
-  uint8_t  rec_type; // kFullType or kUserDefinedTimestampSizeType
+      uint64_t length   : 56;
+      uint64_t rec_type : 8; // kFullType or kUserDefinedTimestampSizeType
+    };
+    char hbytes[12];
+  };
 };
 #pragma pack(pop)
-static_assert(sizeof(RawRecHeader) == 13);
+static_assert(sizeof(RawRecHeader) == 16);
 
 enum RecordType {
   // Zero is reserved for preallocated files

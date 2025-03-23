@@ -84,8 +84,23 @@ Reader::ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode) {
   }
   RawRecHeader header;
   memcpy(&header, buffer_.data(), sizeof(RawRecHeader));
-  if (0 == header.length) { // EOF record
-    this->eof_ = true;
+  auto computed = crc32c::Value(header.hbytes, sizeof(header.hbytes));
+  if (computed != header.header_checksum) {
+    static const char zeros[sizeof(RawRecHeader)] = {};
+    if (memcmp(&header, zeros, sizeof(sizeof(RawRecHeader))) == 0) {
+      auto pos = size_t(end_of_buffer_offset_ - buffer_.size_);
+      fprintf(stderr, "ERR: %s:%d: Reader::ReadRawRec(%s) ZeroEOF at %zd\n",
+              __FILE__, __LINE__, file_->file_name().c_str(), pos);
+    } else {
+      // all zeros, not a corruption
+      if (wal_recovery_mode == WALRecoveryMode::kAbsoluteConsistency ||
+          wal_recovery_mode == WALRecoveryMode::kPointInTimeRecovery) {
+        ReportCorruption(sizeof(RawRecHeader), "error reading trailing data");
+      } else {
+        ReportCorruption(sizeof(RawRecHeader), "header checksum mismatch");
+      }
+    }
+    this->eof_ = true; // treat as EOF
     this->eof_offset_ = end_of_buffer_offset_;
     return kZeroType; // fail
   }
