@@ -65,6 +65,8 @@ GetLogWriterFileOffset(FileSystem& fs, const std::string& fname);
 void Reader::InitSetMemTableAsLogIndex(FileSystem& fs) {
   memtable_as_log_index_ = true;
   wal_writer_offset_ = GetLogWriterFileOffset(fs, file_->file_name());
+  delete[] backing_store_; // we do not use it
+  backing_store_ = nullptr;
 }
 
 RecordType

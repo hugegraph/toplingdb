@@ -127,7 +127,7 @@ class Reader {
   const std::unique_ptr<SequentialFileReader> file_;
   Reporter* const reporter_;
   bool const checksum_;
-  char* const backing_store_;
+  char* backing_store_;
 
   // Internal state variables used for reading records
   Slice buffer_;
