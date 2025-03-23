@@ -1345,6 +1345,9 @@ Status DBImpl::MergeBatch(const WriteThread::WriteGroup& write_group,
 
 static void WriteGroupSetWAL(const WriteThread::WriteGroup& write_group,
                              const WriteBatch& merged_batch) {
+  if (!merged_batch.HasMmapWAL()) {
+    return;
+  }
   uint64_t offset = 0;
   for (auto writer : write_group) {
     if (!writer->CallbackFailed()) {
@@ -1391,9 +1394,11 @@ IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
   if (!io_s.ok()) {
     return io_s;
   }
-  merged_batch.SetWAL(log_writer->mmap_reader(),
-                      log_writer->get_log_number(),
-                      log_writer->get_log_offset());
+  if (immutable_db_options_.memtable_as_log_index) {
+    merged_batch.SetWAL(log_writer->mmap_reader(),
+                        log_writer->get_log_number(),
+                        log_writer->get_log_offset());
+  }
   io_s = log_writer->AddRecord(log_entry, rate_limiter_priority);
 
   if (UNLIKELY(needs_locking)) {

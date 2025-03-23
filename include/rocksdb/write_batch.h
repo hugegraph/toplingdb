@@ -482,6 +482,8 @@ class WriteBatch : public WriteBatchBase {
     wal_file_offset_ = src.wal_file_offset_ + start;
   }
 
+  bool HasMmapWAL() const { return wal_file_mmap_ != nullptr; }
+
  private:
   friend class WriteBatchInternal;
   friend class LocalSavePoint;
