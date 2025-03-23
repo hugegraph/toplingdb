@@ -23,7 +23,7 @@ struct RawRecHeader {
   uint32_t header_checksum; // crc32c
   union {
     struct {
-  uint32_t checksum; // crc32c
+      uint32_t checksum; // crc32c
       uint64_t length   : 56;
       uint64_t rec_type : 8; // kFullType or kUserDefinedTimestampSizeType
     };
