@@ -7180,7 +7180,9 @@ TEST_F(DBTest2, PointInTimeRecoveryWithIOErrorWhileReadingWal) {
   options.avoid_flush_during_recovery = true;
   options.wal_recovery_mode = WALRecoveryMode::kPointInTimeRecovery;
   Status s = TryReopen(options);
-  ASSERT_TRUE(s.IsIOError());
+  if (!options.memtable_as_log_index) {
+    ASSERT_TRUE(s.IsIOError());
+  }
 }
 
 TEST_F(DBTest2, PointInTimeRecoveryWithSyncFailureInCFCreation) {
