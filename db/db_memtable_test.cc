@@ -170,6 +170,7 @@ TEST_F(DBMemTableTest, DuplicateSeq) {
   std::string value;
   MergeContext merge_context;
   Options options;
+  options.memtable_as_log_index = false;
   InternalKeyComparator ikey_cmp(options.comparator);
   ReadRangeDelAggregator range_del_agg(&ikey_cmp,
                                        kMaxSequenceNumber /* upper_bound */);
@@ -257,6 +258,7 @@ TEST_F(DBMemTableTest, ConcurrentMergeWrite) {
   // A merge operator that is not sensitive to concurrent writes since in this
   // test we don't order the writes.
   options.merge_operator = MergeOperators::CreateUInt64AddOperator();
+  options.memtable_as_log_index = false;
 
   // Create a MemTable
   InternalKeyComparator cmp(BytewiseComparator());
