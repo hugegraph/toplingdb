@@ -121,6 +121,7 @@ class Reader {
     return !first_record_read_ && compression_type_record_read_;
   }
   void InitSetMemTableAsLogIndex(FileSystem&);
+  static IOStatus IsMemTableAsLogIndexFile(FileSystem&, const std::string& fname, bool*);
 
  protected:
   std::shared_ptr<Logger> info_log_;

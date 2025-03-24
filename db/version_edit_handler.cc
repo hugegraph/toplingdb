@@ -928,6 +928,22 @@ Status VersionEditHandlerPointInTime::VerifyFile(ColumnFamilyData* cfd,
 Status VersionEditHandlerPointInTime::VerifyBlobFile(
     ColumnFamilyData* cfd, uint64_t blob_file_num,
     const BlobFileAddition& blob_addition) {
+  // does not need to check memtable_as_log_index, because the blob file may
+  // be created(hard link) by previous run with memtable_as_log_index = true
+  const auto& dbo = *version_set_->db_options();
+  auto& fs = *dbo.fs;
+  auto& blob_dir = cfd->ioptions()->cf_paths.front().path;
+  auto fname = BlobFileName(blob_dir, blob_file_num);
+  bool result = false;
+  IOStatus ios = log::Reader::IsMemTableAsLogIndexFile(fs, fname, &result);
+  if (!ios.ok()) {
+    return Status(ios);
+  }
+  if (result) { // this is a MemTableAsLogIndexFile
+    // TODO: verify checksum
+    return Status::OK();
+  }
+
   BlobSource* blob_source = cfd->blob_source();
   assert(blob_source);
   CacheHandleGuard<BlobFileReader> blob_file_reader;

@@ -69,6 +69,26 @@ void Reader::InitSetMemTableAsLogIndex(FileSystem& fs) {
   backing_store_ = nullptr;
 }
 
+IOStatus Reader::IsMemTableAsLogIndexFile
+(FileSystem& fs, const std::string& fname, bool* result) {
+  FileOptions fopt;
+  IODebugContext dbg;
+  std::unique_ptr<FSSequentialFile> file;
+  IOStatus ios = fs.NewSequentialFile(fname, fopt, &file, &dbg);
+  if (!ios.ok()) {
+    return ios;
+  }
+  RawRecHeader header;
+  Slice data;
+  ios = file->Read(sizeof(header), fopt.io_options, &data, (char*)&header, &dbg);
+  if (!ios.ok()) {
+    return ios;
+  }
+  auto computed = crc32c::Value(header.hbytes, sizeof(header.hbytes));
+  *result = computed == header.header_checksum;
+  return ios;
+}
+
 RecordType
 Reader::ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode) {
   assert(memtable_as_log_index_);
