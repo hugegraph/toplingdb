@@ -1313,7 +1313,9 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       // we just ignore the update.
       // That's why we set ignore missing column families to true
       bool has_valid_writes = false;
-      batch_to_use->SetWAL(fmap, wal_number, reader.LastRecordOffset());
+      if (fmap) {
+        batch_to_use->SetWAL(fmap, wal_number, reader.LastRecordOffset());
+      }
       status = WriteBatchInternal::InsertInto(
           batch_to_use, column_family_memtables_.get(), &flush_scheduler_,
           &trim_history_scheduler_, true, wal_number, this,
@@ -1928,7 +1930,14 @@ IOStatus DBImpl::CreateWAL(uint64_t log_file_num, uint64_t recycle_log_number,
   std::string log_fname = LogFileName(wal_dir, log_file_num);
 
   if (immutable_db_options_.memtable_as_log_index) {
-    ROCKSDB_VERIFY(!opt_file_options.use_direct_writes);
+    if (recycle_log_number || opt_file_options.use_direct_writes) {
+      ROCKS_LOG_WARN(immutable_db_options_.info_log,
+        "memtable_as_log_index fix bad: reusing log %zd or direct write %s\n",
+        size_t(recycle_log_number),
+        opt_file_options.use_direct_writes ? "true" : "false");
+    }
+    opt_file_options.use_direct_writes = false;
+    recycle_log_number = 0;
   }
 
   if (recycle_log_number) {

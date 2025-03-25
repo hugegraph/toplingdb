@@ -1917,10 +1917,11 @@ class FSDirectoryWrapper : public FSDirectory {
 
 class ReadonlyFileMmap : public std::enable_shared_from_this<ReadonlyFileMmap>, public Slice {
   std::unique_ptr<FSRandomAccessFile> file_;
+  struct PrivateCons{};
 public:
   ReadonlyFileMmap& operator=(const ReadonlyFileMmap&) = delete;
   ReadonlyFileMmap(const ReadonlyFileMmap&) = delete;
-  ReadonlyFileMmap();
+  ReadonlyFileMmap(PrivateCons);
   ~ReadonlyFileMmap();
   static std::shared_ptr<ReadonlyFileMmap>
   New(IOStatus* s, FileSystem& fs, size_t fileno, const std::string& fname, size_t mmap_size = 0);

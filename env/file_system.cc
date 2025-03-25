@@ -275,7 +275,7 @@ DirFsyncOptions::DirFsyncOptions(FsyncReason fsync_reason) {
   reason = fsync_reason;
 }
 
-ReadonlyFileMmap::ReadonlyFileMmap() = default;
+ReadonlyFileMmap::ReadonlyFileMmap(PrivateCons) {}
 ReadonlyFileMmap::~ReadonlyFileMmap() = default;
 
 std::shared_ptr<ReadonlyFileMmap> ReadonlyFileMmap::New
@@ -296,7 +296,7 @@ std::shared_ptr<ReadonlyFileMmap> ReadonlyFileMmap::New
     mmap_size = fsize;
   }
   fopt.mmap_size = mmap_size;
-  auto fmap = std::make_shared<ReadonlyFileMmap>();
+  auto fmap = std::make_shared<ReadonlyFileMmap>(PrivateCons());
   *ios = fs.NewRandomAccessFile(fname, fopt, &fmap->file_, &dbg);
   if (ios->ok()) {
     auto fp = fmap->file_.get();

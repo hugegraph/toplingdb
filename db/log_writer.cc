@@ -17,8 +17,6 @@
 #include "util/coding.h"
 #include "util/crc32c.h"
 #include "util/udt_util.h"
-#include "util/xxhash.h"
-#include "rocksdb/write_batch.h"
 
 namespace ROCKSDB_NAMESPACE {
 namespace log {
