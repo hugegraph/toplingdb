@@ -628,11 +628,11 @@ Status PessimisticTransaction::Commit() {
             log_number_);
       }
       s = CommitWithoutPrepareInternal();
-      if (!name_.empty()) {
-        txn_db_impl_->UnregisterTransaction(this);
-      }
-      Clear();
       if (s.ok()) {
+        if (!name_.empty()) {
+          txn_db_impl_->UnregisterTransaction(this);
+        }
+        Clear();
         txn_state_.store(COMMITTED);
       }
     }
