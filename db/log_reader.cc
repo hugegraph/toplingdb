@@ -112,6 +112,12 @@ Reader::ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode) {
     buffer_ = Slice(bufmem.data(), old_remain + buffer_.size());
   }
   if (buffer_.size() < sizeof(RawRecHeader)) {
+    if (buffer_.size() != 0) {
+      if (wal_recovery_mode == WALRecoveryMode::kAbsoluteConsistency ||
+          wal_recovery_mode == WALRecoveryMode::kPointInTimeRecovery) {
+        ReportCorruption(sizeof(RawRecHeader), "error reading trailing data");
+      }
+    }
     this->eof_ = true;
     this->eof_offset_ = end_of_buffer_offset_;
     return kZeroType; // fail
@@ -157,6 +163,10 @@ Reader::ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode) {
     end_of_buffer_offset_ += buffer_.size();
     buffer_ = Slice(bufmem.data(), cur + buffer_.size());
     if (pack_len > buffer_.size()) {
+      if (wal_recovery_mode == WALRecoveryMode::kAbsoluteConsistency ||
+          wal_recovery_mode == WALRecoveryMode::kPointInTimeRecovery) {
+        ReportCorruption(sizeof(RawRecHeader), "error reading trailing data");
+      }
       this->eof_ = true;
       this->eof_offset_ = end_of_buffer_offset_;
       return kZeroType; // fail
