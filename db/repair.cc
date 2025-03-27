@@ -408,7 +408,7 @@ class Repairer {
         return Status(ios);
       if (fmap) {
         fmap->tail_pos = std::make_shared<uint64_t>(fmap->size_);
-        batch.SetWAL(fmap, log, 0);
+        batch.SetWAL({fmap, log, 0});
       }
     }
 

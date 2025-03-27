@@ -1361,7 +1361,8 @@ static void WriteGroupSetWAL(const WriteThread::WriteGroup& write_group,
       } else {
         logical_offset = 0;
       }
-      writer->batch->SetWAL(merged_batch, logical_offset);
+      writer->batch->SetWAL(merged_batch.GetWAL(0));
+      writer->batch->GetWAL(0).file_offset += logical_offset;
      #if !defined(NDEBUG)
       auto len = BatchSizeWAL(writer->batch, false);
       auto cur = writer->batch->Data().data() + WriteBatchInternal::kHeader;
@@ -1412,9 +1413,9 @@ IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
     return io_s;
   }
   if (immutable_db_options_.memtable_as_log_index) {
-    merged_batch.SetWAL(log_writer->mmap_reader(),
-                        log_writer->get_log_number(),
-                        log_writer->get_log_offset());
+    merged_batch.SetWAL({log_writer->mmap_reader(),
+                         log_writer->get_log_number(),
+                         log_writer->get_log_offset()});
   }
   io_s = log_writer->AddRecord(log_entry, rate_limiter_priority);
 

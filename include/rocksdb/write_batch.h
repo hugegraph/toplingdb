@@ -363,6 +363,8 @@ class WriteBatch : public WriteBatchBase {
     // implementation always returns true.
     virtual bool Continue();
 
+    virtual void SetBeginPrepareNextPtr(const char* curr) {}
+
    protected:
     friend class WriteBatchInternal;
     enum class OptionState {
@@ -468,21 +470,26 @@ class WriteBatch : public WriteBatchBase {
   struct ProtectionInfo;
   size_t GetProtectionBytesPerKey() const;
 
-  void SetOffsetOfWAL(uint64_t offset) { wal_file_offset_ = offset; }
-  void SetWAL(const std::shared_ptr<ReadonlyFileMmap>& f,
-              uint32_t fileno, uint64_t offset) const {
-    wal_file_mmap_ = f;
-    wal_file_no_ = fileno;
-    wal_file_offset_ = offset;
+  struct WALFileRef {
+    std::shared_ptr<ReadonlyFileMmap> file_mmap;
+    uint64_t file_number = UINT64_MAX;
+    uint64_t file_offset = UINT64_MAX;
+  };
+  void SetOffsetOfWAL(uint64_t offset) {
+    wal_ref_[0].file_offset = offset;
   }
-
-  void SetWAL(const WriteBatch& src, uint64_t start) {
-    wal_file_mmap_ = src.wal_file_mmap_;
-    wal_file_no_ = src.wal_file_no_;
-    wal_file_offset_ = src.wal_file_offset_ + start;
+  WALFileRef& GetWAL(size_t which) const {
+    assert(which <= 1);
+    return wal_ref_[which];
   }
-
-  bool HasMmapWAL() const { return wal_file_mmap_ != nullptr; }
+  void SetWAL(WALFileRef wal, size_t which = 0) const {
+    assert(which <= 1);
+    wal_ref_[which] = std::move(wal);
+  }
+  void PresetWAL(const WriteBatch& src, ptrdiff_t diff = 0);
+  void StartWriteMemTable(bool b) const { is_write_memtable_ = b; }
+  void FinishWriteMemTable() const { is_write_memtable_ = false; }
+  bool HasMmapWAL() const { return wal_ref_[0].file_mmap != nullptr; }
 
  private:
   friend class WriteBatchInternal;
@@ -518,9 +525,7 @@ class WriteBatch : public WriteBatchBase {
   bool has_key_with_ts_ = false;
 
   mutable bool is_write_memtable_ = false;
-  mutable uint64_t wal_file_no_ = UINT64_MAX;
-  mutable uint64_t wal_file_offset_ = UINT64_MAX;
-  mutable std::shared_ptr<ReadonlyFileMmap> wal_file_mmap_;
+  mutable WALFileRef wal_ref_[2];
 
   // For HasXYZ.  Mutable to allow lazy computation of results
 #if 0

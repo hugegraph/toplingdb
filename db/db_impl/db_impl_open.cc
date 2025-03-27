@@ -47,10 +47,6 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
     result.env = Env::Default();
   }
 
-  if (result.allow_2pc) {
-    result.memtable_as_log_index = false;
-  }
-
   if (result.memtable_as_log_index) {
     result.recycle_log_file_num = 0;
     result.manual_wal_flush = false;
@@ -1314,7 +1310,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       // That's why we set ignore missing column families to true
       bool has_valid_writes = false;
       if (fmap) {
-        batch_to_use->SetWAL(fmap, wal_number, reader.LastRecordOffset());
+        batch_to_use->SetWAL({fmap, wal_number, reader.LastRecordOffset()});
       }
       status = WriteBatchInternal::InsertInto(
           batch_to_use, column_family_memtables_.get(), &flush_scheduler_,

@@ -266,6 +266,17 @@ void WriteBatch::Clear() {
   }
   wal_term_point_.clear();
   default_cf_ts_sz_ = 0;
+
+  is_write_memtable_ = false;
+  wal_ref_[0] = {};
+  wal_ref_[1] = {};
+}
+
+void WriteBatch::PresetWAL(const WriteBatch& src, ptrdiff_t diff) {
+  size_t my_size = GetDataSize() - WriteBatchInternal::kHeader;
+  wal_ref_[0].file_mmap = src.wal_ref_[0].file_mmap;
+  wal_ref_[0].file_number = src.wal_ref_[0].file_number;
+  wal_ref_[0].file_offset = src.wal_ref_[0].file_offset - my_size + diff;
 }
 
 uint32_t WriteBatch::Count() const { return WriteBatchInternal::Count(this); }
@@ -484,10 +495,6 @@ Status WriteBatch::Iterate(Handler* handler) const {
   if (rep_.size() < WriteBatchInternal::kHeader) {
     return Status::Corruption("malformed WriteBatch (too small)");
   }
-  if (wal_term_point_.size &&
-      wal_term_point_.size != GetDataSize() && is_write_memtable_) {
-    return Status::NotSupported("memtable_as_log_index", "wal_term_point");
-  }
 
   return WriteBatchInternal::Iterate(this, handler, WriteBatchInternal::kHeader,
                                      rep_.size());
@@ -501,11 +508,10 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
   }
   assert(begin <= end);
   KeyValuePassMemTable kv_pmt;
-  kv_pmt.fileno = wb->wal_file_no_;
-  kv_pmt.wal_file = wb->wal_file_mmap_.get();
-  const uint64_t wal_file_offset = wb->wal_file_offset_;
   const bool is_write_memtable = wb->is_write_memtable_;
   const char* base_ptr = wb->rep_.data();
+  const auto wal_term_pos = wb->wal_term_point_.size ? wb->wal_term_point_.size : end;
+  const auto wal_term_ptr = base_ptr + wal_term_pos;
   Slice input(wb->rep_.data() + begin, static_cast<size_t>(end - begin));
   bool whole_batch =
       (begin == WriteBatchInternal::kHeader) && (end == wb->rep_.size());
@@ -534,10 +540,29 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
       tag = 0;
       column_family = 0;  // default
 
+      const char* rec_ptr = input.data_;
       s = ReadRecordFromWriteBatch(&input, &tag, &column_family, &key, &value,
                                    &blob, &xid);
       if (!s.ok()) {
         return s;
+      }
+      if (is_write_memtable) {
+        if (rec_ptr < wal_term_ptr) {
+          kv_pmt.fileno = wb->wal_ref_[0].file_number;
+          kv_pmt.wal_file = wb->wal_ref_[0].file_mmap.get();
+          kv_pmt.val_pos = wb->wal_ref_[0].file_offset + value.data() - base_ptr;
+        } else {
+          if (UNLIKELY(!wb->wal_ref_[1].file_mmap)) {
+            return Status::NotSupported("memtable_as_log_index", "wal_term_point");
+          }
+          kv_pmt.fileno = wb->wal_ref_[1].file_number;
+          kv_pmt.wal_file = wb->wal_ref_[1].file_mmap.get();
+          kv_pmt.val_pos = wb->wal_ref_[1].file_offset +
+              (value.data() - wal_term_ptr) + WriteBatchInternal::kHeader;
+        }
+        kv_pmt.value = value;
+        kv_pmt.key_len = key.size();
+        value = {(char*)&kv_pmt, sizeof(kv_pmt)};
       }
     } else {
       assert(s.IsTryAgain());
@@ -549,13 +574,6 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
       }
       last_was_try_again = true;
       s = Status::OK();
-    }
-
-    if (is_write_memtable) {
-      kv_pmt.value = value;
-      kv_pmt.key_len = key.size();
-      kv_pmt.val_pos = wal_file_offset + (value.data() - base_ptr);
-      value = {(char*)&kv_pmt, sizeof(kv_pmt)};
     }
 
     switch (tag) {
@@ -626,6 +644,7 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
       case kTypeBeginPrepareXID:
         assert(wb->content_flags_.load(std::memory_order_relaxed) &
                (ContentFlags::DEFERRED | ContentFlags::HAS_BEGIN_PREPARE));
+        handler->SetBeginPrepareNextPtr(input.data_);
         s = handler->MarkBeginPrepare();
         assert(s.ok());
         empty_batch = false;
@@ -648,6 +667,7 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
       case kTypeBeginPersistedPrepareXID:
         assert(wb->content_flags_.load(std::memory_order_relaxed) &
                (ContentFlags::DEFERRED | ContentFlags::HAS_BEGIN_PREPARE));
+        handler->SetBeginPrepareNextPtr(input.data_);
         s = handler->MarkBeginPrepare();
         assert(s.ok());
         empty_batch = false;
@@ -663,6 +683,7 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
       case kTypeBeginUnprepareXID:
         assert(wb->content_flags_.load(std::memory_order_relaxed) &
                (ContentFlags::DEFERRED | ContentFlags::HAS_BEGIN_UNPREPARE));
+        handler->SetBeginPrepareNextPtr(input.data_);
         s = handler->MarkBeginPrepare(true /* unprepared */);
         assert(s.ok());
         empty_batch = false;
@@ -1818,6 +1839,7 @@ class MemTableInserter : public WriteBatch::Handler {
   using HintMap = terark::SmartMap<MemTable*, void*, 1>;
   HintMap hint_;
   uint32_t curr_cf_id_ = UINT32_MAX;
+  bool memtable_as_log_index_;
 
   union { DuplicateDetector duplicate_detector_; };
 
@@ -1910,7 +1932,14 @@ class MemTableInserter : public WriteBatch::Handler {
         dup_dectector_on_(false),
         hint_per_batch_(hint_per_batch) {
     assert(cf_mems_);
+    memtable_as_log_index_ = cf_mems->GetImmutableDBOptions()->memtable_as_log_index;
   }
+  bool memtable_as_log_index() const { return memtable_as_log_index_; }
+  void SetBeginPrepareNextPtr(const char* curr) final {
+    prepare_content_begin_ = curr;
+  }
+  const WriteBatch* src_batch_ = nullptr;
+  const char* prepare_content_begin_ = nullptr;
 
   ~MemTableInserter() override {
     if (dup_dectector_on_) {
@@ -2004,6 +2033,17 @@ class MemTableInserter : public WriteBatch::Handler {
     return true;
   }
 
+  Slice get_real_value(Slice value) {
+    if (memtable_as_log_index_) {
+      auto kv_pmt = (KeyValuePassMemTable*)(value.data_);
+      ROCKSDB_ASSERT_EQ(value.size_, sizeof(KeyValuePassMemTable));
+      ROCKSDB_ASSERT_NE(kv_pmt->wal_file, nullptr);
+      return kv_pmt->value;
+    } else {
+      return value;
+    }
+  }
+
   Status PutCFImpl(uint32_t column_family_id, const Slice& key,
                    const Slice& value, ValueType value_type,
                    const ProtectionInfoKVOS64* kv_prot_info) {
@@ -2011,7 +2051,7 @@ class MemTableInserter : public WriteBatch::Handler {
     if (UNLIKELY(write_after_commit_ && rebuilding_trx_ != nullptr)) {
       // TODO(ajkr): propagate `ProtectionInfoKVOS64`.
       return WriteBatchInternal::Put(rebuilding_trx_, column_family_id, key,
-                                     value);
+                                     get_real_value(value));
       // else insert the values to the memtable right away
     }
 
@@ -2023,7 +2063,7 @@ class MemTableInserter : public WriteBatch::Handler {
         // need to keep track of the keys for upcoming rollback/commit.
         // TODO(ajkr): propagate `ProtectionInfoKVOS64`.
         ret_status = WriteBatchInternal::Put(rebuilding_trx_, column_family_id,
-                                             key, value);
+                                             key, get_real_value(value));
         if (ret_status.ok()) {
           MaybeAdvanceSeq(IsDuplicateKeySeq(column_family_id, key));
         }
@@ -2153,7 +2193,7 @@ class MemTableInserter : public WriteBatch::Handler {
       assert(!write_after_commit_);
       // TODO(ajkr): propagate `ProtectionInfoKVOS64`.
       ret_status = WriteBatchInternal::Put(rebuilding_trx_, column_family_id,
-                                           key, value);
+                                           key, get_real_value(value));
     }
     return ret_status;
   }
@@ -2350,7 +2390,7 @@ class MemTableInserter : public WriteBatch::Handler {
   Status DeleteRangeCF(uint32_t column_family_id, const Slice& begin_key,
                        const Slice& end_key) override {
     Slice real_end_key = end_key;
-    if (cf_mems_->GetImmutableDBOptions()->memtable_as_log_index && end_key.size_) {
+    if (memtable_as_log_index_ && end_key.size_) {
       auto kv_pmt = (const KeyValuePassMemTable*)end_key.data_;
       ROCKSDB_ASSERT_EQ(sizeof(KeyValuePassMemTable), end_key.size_);
       ROCKSDB_ASSERT_EQ(kv_pmt->key_len, begin_key.size_);
@@ -2363,7 +2403,7 @@ class MemTableInserter : public WriteBatch::Handler {
     if (UNLIKELY(write_after_commit_ && rebuilding_trx_ != nullptr)) {
       // TODO(ajkr): propagate `ProtectionInfoKVOS64`.
       return WriteBatchInternal::DeleteRange(rebuilding_trx_, column_family_id,
-                                             begin_key, end_key);
+                                             begin_key, real_end_key);
       // else insert the values to the memtable right away
     }
 
@@ -2453,7 +2493,7 @@ class MemTableInserter : public WriteBatch::Handler {
     if (UNLIKELY(write_after_commit_ && rebuilding_trx_ != nullptr)) {
       // TODO(ajkr): propagate `ProtectionInfoKVOS64`.
       return WriteBatchInternal::Merge(rebuilding_trx_, column_family_id, key,
-                                       value);
+                                       get_real_value(value));
       // else insert the values to the memtable right away
     }
 
@@ -2465,7 +2505,7 @@ class MemTableInserter : public WriteBatch::Handler {
         // need to keep track of the keys for upcoming rollback/commit.
         // TODO(ajkr): propagate `ProtectionInfoKVOS64`.
         ret_status = WriteBatchInternal::Merge(rebuilding_trx_,
-                                               column_family_id, key, value);
+                                               column_family_id, key, get_real_value(value));
         if (ret_status.ok()) {
           MaybeAdvanceSeq(IsDuplicateKeySeq(column_family_id, key));
         }
@@ -2624,7 +2664,7 @@ class MemTableInserter : public WriteBatch::Handler {
       assert(!write_after_commit_);
       // TODO(ajkr): propagate `ProtectionInfoKVOS64`.
       ret_status = WriteBatchInternal::Merge(rebuilding_trx_, column_family_id,
-                                             key, value);
+                                             key, get_real_value(value));
     }
     if (UNLIKELY(ret_status.IsTryAgain())) {
       DecrementProtectionInfoIdxForTryAgain();
@@ -2712,6 +2752,8 @@ class MemTableInserter : public WriteBatch::Handler {
       // we are now iterating through a prepared section
       rebuilding_trx_ = new WriteBatch();
       rebuilding_trx_seq_ = sequence_;
+      auto base = src_batch_->Data().data() + WriteBatchInternal::kHeader;
+      rebuilding_trx_->PresetWAL(*src_batch_, prepare_content_begin_ - base);
       // Verify that we have matching MarkBeginPrepare/MarkEndPrepare markers.
       // unprepared_batch_ should be false because it is false by default, and
       // gets reset to false in MarkEndPrepare.
@@ -2794,7 +2836,9 @@ class MemTableInserter : public WriteBatch::Handler {
           // all inserts must reference this trx log number
           log_number_ref_ = batch_info.log_number_;
           ResetProtectionInfo();
+          batch_info.batch_->StartWriteMemTable(memtable_as_log_index_);
           s = batch_info.batch_->Iterate(this);
+          batch_info.batch_->FinishWriteMemTable();
           log_number_ref_ = 0;
         }
         // else the values are already inserted before the commit
@@ -2957,8 +3001,8 @@ Status WriteBatchInternal::InsertInto(
     SetSequence(w->batch, inserter.sequence());
     inserter.set_log_number_ref(w->log_ref);
     inserter.set_prot_info(w->batch->prot_info_.get());
-    auto& idbo = *memtables->GetImmutableDBOptions();
-    w->batch->is_write_memtable_ = idbo.memtable_as_log_index;
+    inserter.src_batch_ = w->batch;
+    w->batch->is_write_memtable_ = inserter.memtable_as_log_index();
     w->status = w->batch->Iterate(&inserter);
     w->batch->is_write_memtable_ = false;
     if (!w->status.ok()) {
@@ -2990,8 +3034,8 @@ Status WriteBatchInternal::InsertInto(
   SetSequence(writer->batch, sequence);
   inserter.set_log_number_ref(writer->log_ref);
   inserter.set_prot_info(writer->batch->prot_info_.get());
-  auto& idbo = *memtables->GetImmutableDBOptions();
-  writer->batch->is_write_memtable_ = idbo.memtable_as_log_index;
+  inserter.src_batch_ = writer->batch;
+  writer->batch->is_write_memtable_ = inserter.memtable_as_log_index();
   Status s = writer->batch->Iterate(&inserter);
   writer->batch->is_write_memtable_ = false;
   assert(!seq_per_batch || batch_cnt != 0);
@@ -3014,8 +3058,8 @@ Status WriteBatchInternal::InsertInto(
                             ignore_missing_column_families, log_number, db,
                             concurrent_memtable_writes, batch->prot_info_.get(),
                             has_valid_writes, seq_per_batch, batch_per_txn);
-  auto& idbo = *memtables->GetImmutableDBOptions();
-  batch->is_write_memtable_ = idbo.memtable_as_log_index;
+  inserter.src_batch_ = batch;
+  batch->is_write_memtable_ = inserter.memtable_as_log_index();
   Status s = batch->Iterate(&inserter);
   batch->is_write_memtable_ = false;
   if (next_seq != nullptr) {
