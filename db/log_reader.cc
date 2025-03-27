@@ -91,6 +91,7 @@ IOStatus Reader::IsMemTableAsLogIndexFile
 
 RecordType
 Reader::ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode) {
+ReadNextRecord:
   assert(memtable_as_log_index_);
   constexpr size_t MinBufMem = TERARK_IF_DEBUG(32, kBlockSize);
   auto& bufmem = uncompressed_record_;
@@ -174,13 +175,11 @@ Reader::ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode) {
   }
   *record = buffer_.substr(sizeof(RawRecHeader), header.length);
   buffer_.remove_prefix(pack_len);
-  auto computed_checksum = crc32c::Value(record->data(), record->size());
-  if (computed_checksum != header.checksum) {
-    if (wal_recovery_mode == WALRecoveryMode::kAbsoluteConsistency ||
-        wal_recovery_mode == WALRecoveryMode::kPointInTimeRecovery) {
-      ReportCorruption(record->size(), "error reading trailing data");
-    } else {
+  if (checksum_) {
+    auto computed_checksum = crc32c::Value(record->data(), record->size());
+    if (computed_checksum != header.checksum) {
       ReportCorruption(record->size(), "checksum mismatch");
+      goto ReadNextRecord;
     }
   }
   if (end_of_buffer_offset_ == writer_pos) {
