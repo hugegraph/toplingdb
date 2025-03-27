@@ -533,7 +533,10 @@ TEST_P(FaultInjectionTest, WriteBatchWalTerminationTest) {
   ASSERT_OK(batch.Put("cats", "dogs"));
   batch.MarkWalTerminationPoint();
   ASSERT_OK(batch.Put("boys", "girls"));
-  ASSERT_OK(db_->Write(wo, &batch));
+  if (options.memtable_as_log_index)
+    ASSERT_TRUE(db_->Write(wo, &batch).IsNotSupported());
+  else
+    ASSERT_OK(db_->Write(wo, &batch));
 
   env_->SetFilesystemActive(false);
   NoWriteTestReopenWithFault(kResetDropAndDeleteUnsynced);
@@ -627,16 +630,9 @@ INSTANTIATE_TEST_CASE_P(
                       std::make_tuple(false, kSyncWal, kEnd),
                       std::make_tuple(true, kSyncWal, kEnd)));
 
-extern bool g_MemTableVerifyKeyValueWithWAL;
-
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
-  if (ROCKSDB_NAMESPACE::g_MemTableVerifyKeyValueWithWAL) {
-    ROCKSDB_GTEST_BYPASS(
-      "Test depends on env MemTableVerifyKeyValueWithWAL being false");
-    return 0;
-  }
   ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   RegisterCustomObjects(argc, argv);

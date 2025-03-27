@@ -576,9 +576,9 @@ TEST_P(DBWriteTest, IOErrorOnWALWriteTriggersReadOnlyMode) {
   std::unique_ptr<FaultInjectionTestEnv> mock_env(
       new FaultInjectionTestEnv(env_));
   Options options = GetOptions();
-  if (options.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
+  if (options.memtable_as_log_index) {
     ROCKSDB_GTEST_BYPASS(
-      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+      "Test requires env MEMTABLE_AS_LOG_INDEX being false");
     return;
   }
   options.env = mock_env.get();
@@ -615,9 +615,9 @@ TEST_P(DBWriteTest, IOErrorOnSwitchMemtable) {
   std::unique_ptr<FaultInjectionTestEnv> mock_env(
       new FaultInjectionTestEnv(env_));
   Options options = GetOptions();
-  if (options.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
+  if (options.memtable_as_log_index) {
     ROCKSDB_GTEST_BYPASS(
-      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+      "Test requires env MEMTABLE_AS_LOG_INDEX being false");
     return;
   }
   options.env = mock_env.get();
@@ -648,9 +648,9 @@ TEST_P(DBWriteTest, LockWALInEffect) {
     return;
   }
   Options options = GetOptions();
-  if (options.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
+  if (options.memtable_as_log_index) {
     ROCKSDB_GTEST_BYPASS(
-      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+      "Test requires env MEMTABLE_AS_LOG_INDEX being false");
     return;
   }
   std::shared_ptr<FaultInjectionTestFS> fault_fs(
