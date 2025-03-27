@@ -196,6 +196,7 @@ WriteBatch::WriteBatch(std::string&& rep)
 
 WriteBatch::WriteBatch(const WriteBatch& src)
     : wal_term_point_(src.wal_term_point_),
+      wal_ref_{src.wal_ref_[0], src.wal_ref_[1]},
       content_flags_(src.content_flags_.load(std::memory_order_relaxed)),
       max_bytes_(src.max_bytes_),
       default_cf_ts_sz_(src.default_cf_ts_sz_),
@@ -213,6 +214,7 @@ WriteBatch::WriteBatch(const WriteBatch& src)
 WriteBatch::WriteBatch(WriteBatch&& src) noexcept
     : save_points_(std::move(src.save_points_)),
       wal_term_point_(std::move(src.wal_term_point_)),
+      wal_ref_{std::move(src.wal_ref_[0]), std::move(src.wal_ref_[1])},
       content_flags_(src.content_flags_.load(std::memory_order_relaxed)),
       max_bytes_(src.max_bytes_),
       prot_info_(std::move(src.prot_info_)),
