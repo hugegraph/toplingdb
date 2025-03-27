@@ -32,8 +32,6 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-extern bool g_MemTableVerifyKeyValueWithWAL;
-
 class CheckpointTest : public testing::Test {
  protected:
   // Sequence of option configurations to try
@@ -547,7 +545,6 @@ TEST_F(CheckpointTest, CheckpointCFNoFlush) {
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
       "DBImpl::BackgroundCallFlush:start", [&](void* /*arg*/) {
         // Flush should never trigger.
-      if (!options.memtable_as_log_index)
         FAIL();
       });
   ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
@@ -798,11 +795,6 @@ TEST_F(CheckpointTest, CheckpointOptionsFileFailedToPersist) {
   // OPTIONS file failed and the DB was opened with
   // `fail_if_options_file_error == false`.
   Options options = CurrentOptions();
-  if (options.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
-    ROCKSDB_GTEST_BYPASS(
-      "Test requires env MemTableVerifyKeyValueWithWAL being false");
-    return;
-  }
   options.fail_if_options_file_error = false;
   auto fault_fs = std::make_shared<FaultInjectionTestFS>(FileSystem::Default());
 

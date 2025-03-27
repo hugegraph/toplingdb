@@ -23,8 +23,6 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-extern bool g_MemTableVerifyKeyValueWithWAL;
-
 // Test variations of WriteImpl.
 class DBWriteTest : public DBTestBase, public testing::WithParamInterface<int> {
  public:
@@ -279,9 +277,9 @@ TEST_P(DBWriteTest, IOErrorOnWALWritePropagateToWriteThreadFollower) {
   std::unique_ptr<FaultInjectionTestEnv> mock_env(
       new FaultInjectionTestEnv(env_));
   Options options = GetOptions();
-  if (options.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
+  if (options.memtable_as_log_index) {
     ROCKSDB_GTEST_BYPASS(
-      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+      "Test requires env MEMTABLE_AS_LOG_INDEX being false");
     return;
   }
   options.env = mock_env.get();
@@ -464,8 +462,8 @@ TEST_F(DBWriteTestUnparameterized, PipelinedWriteRace) {
 
 TEST_P(DBWriteTest, ManualWalFlushInEffect) {
   Options options = GetOptions();
-  if (options.memtable_as_log_index) {
-    ROCKSDB_GTEST_BYPASS("Test requires memtable_as_log_index being false");
+  if (options.memtable_as_log_index && options.manual_wal_flush) {
+    ROCKSDB_GTEST_BYPASS("Test requires env MEMTABLE_AS_LOG_INDEX being false");
     return;
   }
   Reopen(options);
@@ -486,9 +484,9 @@ TEST_P(DBWriteTest, UnflushedPutRaceWithTrackedWalSync) {
   // Repro race condition bug where unflushed WAL data extended the synced size
   // recorded to MANIFEST despite being unrecoverable.
   Options options = GetOptions();
-  if (options.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
+  if (options.memtable_as_log_index) {
     ROCKSDB_GTEST_BYPASS(
-      "Test requires env MemTableVerifyKeyValueWithWAL being false");
+      "Test requires env MEMTABLE_AS_LOG_INDEX being false");
     return;
   }
   std::unique_ptr<FaultInjectionTestEnv> fault_env(
@@ -528,11 +526,6 @@ TEST_P(DBWriteTest, InactiveWalFullySyncedBeforeUntracked) {
   // synced inactive logs. Previously such a WAL would be wrongly untracked
   // so the final append would never be synced.
   Options options = GetOptions();
-  if (options.memtable_as_log_index && g_MemTableVerifyKeyValueWithWAL) {
-    ROCKSDB_GTEST_BYPASS(
-      "Test requires env MemTableVerifyKeyValueWithWAL being false");
-    return;
-  }
   std::unique_ptr<FaultInjectionTestEnv> fault_env(
       new FaultInjectionTestEnv(env_));
   options.env = fault_env.get();
@@ -576,7 +569,7 @@ TEST_P(DBWriteTest, IOErrorOnWALWriteTriggersReadOnlyMode) {
   std::unique_ptr<FaultInjectionTestEnv> mock_env(
       new FaultInjectionTestEnv(env_));
   Options options = GetOptions();
-  if (options.memtable_as_log_index) {
+  if (options.memtable_as_log_index && options.manual_wal_flush) {
     ROCKSDB_GTEST_BYPASS(
       "Test requires env MEMTABLE_AS_LOG_INDEX being false");
     return;

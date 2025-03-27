@@ -1275,10 +1275,6 @@ TEST_F(DBBasicTest, DBCloseFlushError) {
   options.manual_wal_flush = true;
   options.write_buffer_size = 100;
   options.env = fault_injection_env.get();
-  if (options.memtable_as_log_index) {
-    fprintf(stderr, "SKIPPED: DBBasicTest.DBCloseFlushError for memtable_as_log_index\n");
-    return;
-  }
 
   Reopen(options);
   ASSERT_OK(Put("key1", "value1"));

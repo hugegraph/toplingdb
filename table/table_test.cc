@@ -504,6 +504,7 @@ class MemTableConstructor : public Constructor {
         write_buffer_manager_(wb),
         table_factory_(new SkipListFactory) {
     options_.memtable_factory = table_factory_;
+    options_.memtable_as_log_index = false;
     ImmutableOptions ioptions(options_);
     memtable_ =
         new MemTable(internal_comparator_, ioptions, MutableCFOptions(options_),
@@ -518,6 +519,7 @@ class MemTableConstructor : public Constructor {
                     const stl_wrappers::KVMap& kv_map) override {
     delete memtable_->Unref();
     ImmutableOptions mem_ioptions(ioptions);
+    mem_ioptions.memtable_as_log_index = false;
     memtable_ = new MemTable(internal_comparator_, mem_ioptions,
                              MutableCFOptions(options_), write_buffer_manager_,
                              kMaxSequenceNumber, 0 /* column_family_id */);
@@ -4863,6 +4865,7 @@ class MemTableTest : public testing::Test {
     InternalKeyComparator cmp(BytewiseComparator());
     auto table_factory = std::make_shared<SkipListFactory>();
     options_.memtable_factory = table_factory;
+    options_.memtable_as_log_index = false;
     ImmutableOptions ioptions(options_);
     wb_ = new WriteBufferManager(options_.db_write_buffer_size);
     memtable_ = new MemTable(cmp, ioptions, MutableCFOptions(options_), wb_,
@@ -4893,6 +4896,7 @@ TEST_F(MemTableTest, Simple) {
   ASSERT_OK(batch.DeleteRange(std::string("chi"), std::string("xigua")));
   ASSERT_OK(batch.DeleteRange(std::string("begin"), std::string("end")));
   ColumnFamilyMemTablesDefault cf_mems_default(GetMemTable());
+  const_cast<bool&>(cf_mems_default.GetImmutableDBOptions()->memtable_as_log_index) = false;
   ASSERT_TRUE(
       WriteBatchInternal::InsertInto(&batch, &cf_mems_default, nullptr, nullptr)
           .ok());
@@ -6393,12 +6397,9 @@ TEST_F(CacheUsageOptionsOverridesTest, SanitizeAndValidateOptions) {
   Destroy(options);
 }
 
-extern bool g_memtable_as_log_index;
-
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
-  ROCKSDB_NAMESPACE::g_memtable_as_log_index = false;
   ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

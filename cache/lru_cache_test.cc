@@ -2704,16 +2704,9 @@ TEST_P(DBSecondaryCacheTest, TestSecondaryCacheOptionTwoDB) {
   ASSERT_OK(DestroyDB(dbname2, options));
 }
 
-extern bool g_MemTableVerifyKeyValueWithWAL;
-
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
-  if (ROCKSDB_NAMESPACE::g_MemTableVerifyKeyValueWithWAL) {
-    ROCKSDB_GTEST_BYPASS(
-      "Test requires env MemTableVerifyKeyValueWithWAL being false");
-    return 0;
-  }
   ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
