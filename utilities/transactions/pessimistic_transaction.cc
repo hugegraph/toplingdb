@@ -754,6 +754,10 @@ Status WriteCommittedTxn::CommitInternal() {
   if (needs_ts && commit_timestamp_ == kMaxTxnTimestamp) {
     return Status::InvalidArgument("Must assign a commit timestamp");
   }
+  if (needs_ts && db_impl_->immutable_db_options().memtable_as_log_index) {
+    return Status::NotSupported("memtable_as_log_index",
+        "user timestamp must Commit without Prepare but with Prepare");
+  }
   // We take the commit-time batch and append the Commit marker.
   // The Memtable will ignore the Commit marker in non-recovery mode
   WriteBatch* working_batch = GetCommitTimeWriteBatch();
@@ -788,6 +792,7 @@ Status WriteCommittedTxn::CommitInternal() {
 
   // any operations appended to this working_batch will be ignored from WAL
   working_batch->MarkWalTerminationPoint();
+  working_batch->SetWAL(wb->GetWAL(0), 1);
 
   // insert prepared batch into Memtable only skipping WAL.
   // Memtable will ignore BeginPrepare/EndPrepare markers

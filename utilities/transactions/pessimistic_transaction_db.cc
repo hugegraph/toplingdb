@@ -161,6 +161,8 @@ Status PessimisticTransactionDB::Initialize(
     if (!s.ok()) {
       break;
     }
+    WriteBatch* trx_batch = real_trx->GetWriteBatch()->GetWriteBatch();
+    trx_batch->PresetWAL(*batch_info.batch_);
 
     s = real_trx->RebuildFromWriteBatch(batch_info.batch_);
     // WriteCommitted set this to to disable this check that is specific to
