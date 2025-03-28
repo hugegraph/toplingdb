@@ -238,6 +238,17 @@ class WritableFileWriter {
   IOStatus Append(const Slice& data, uint32_t crc32c_checksum = 0,
                   Env::IOPriority op_rate_limiter_priority = Env::IO_TOTAL);
 
+  IOStatus Appendv(const SliceParts& parts, uint32_t crc32c_checksum = 0,
+                   Env::IOPriority op_rate_limiter_priority = Env::IO_TOTAL);
+
+  IOStatus Appendv(const std::initializer_list<Slice>& vec,
+                   uint32_t crc32c_checksum = 0,
+                   Env::IOPriority op_rate_limiter_priority = Env::IO_TOTAL) {
+    SliceParts parts(&*vec.begin(), vec.size());
+    return Appendv(parts, crc32c_checksum, op_rate_limiter_priority);
+  }
+
+
   IOStatus Pad(const size_t pad_bytes,
                Env::IOPriority op_rate_limiter_priority = Env::IO_TOTAL);
 

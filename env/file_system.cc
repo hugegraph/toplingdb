@@ -275,6 +275,17 @@ DirFsyncOptions::DirFsyncOptions(FsyncReason fsync_reason) {
   reason = fsync_reason;
 }
 
+IOStatus FSWritableFile::Appendv(const SliceParts& parts,
+                                 const IOOptions& options,
+                                 IODebugContext* dbg) {
+  for (ssize_t i = 0, n = parts.num_parts; i < n; i++) {
+    IOStatus ios = Append(parts.parts[i], options, dbg);
+    if (!ios.ok())
+      return ios;
+  }
+  return IOStatus::OK();
+}
+
 ReadonlyFileMmap::ReadonlyFileMmap(PrivateCons) {}
 ReadonlyFileMmap::~ReadonlyFileMmap() = default;
 

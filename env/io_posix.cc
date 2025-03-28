@@ -24,6 +24,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/uio.h> // for writev
 
 #include <cstdio>
 #include <cstdlib>
@@ -1327,6 +1328,56 @@ IOStatus PosixWritableFile::Append(const Slice& data, const IOOptions& /*opts*/,
     return IOError("While appending to file", filename_, errno);
   }
 
+  filesize_ += nbytes;
+  return IOStatus::OK();
+}
+
+IOStatus PosixWritableFile::Appendv(const SliceParts& parts,
+                                    const IOOptions& options,
+                                    IODebugContext* dbg) {
+  if (UNLIKELY(use_direct_io())) {
+    return FSWritableFile::Appendv(parts, options, dbg);
+  }
+  auto pvec = (struct iovec*)parts.parts;
+  static_assert(sizeof(struct iovec) == sizeof(Slice));
+  static_assert(sizeof(pvec->iov_len) == sizeof(size_t));
+  static_assert(offsetof(struct iovec, iov_len) == offsetof(Slice, size_));
+  ssize_t nbytes = 0, num = parts.num_parts;
+  for (ssize_t i = 0; i < num; i++) {
+    nbytes += pvec[i].iov_len;
+    if (nbytes < 0 || pvec[i].iov_len < 0) {
+      return IOStatus::InvalidArgument("writev SliceParts sum overflow");
+    }
+  }
+  ssize_t done;
+  while (true) {
+    done = writev(fd_, pvec, num);
+    if (done < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      return IOError("While appending to file by writev", filename_, errno);
+    }
+    break;
+  }
+  if (UNLIKELY(done < nbytes)) {
+    // not written all data, for simple, write remaining parts one by one
+    ssize_t sum = 0;
+    for (ssize_t i = 0; i < num; i++) {
+      auto cur_len = (const ssize_t)pvec[i].iov_len;
+      auto cur_ptr = (const char * )pvec[i].iov_base;
+      if (sum + cur_len > done) {
+        auto pos = done - sum;
+        auto len = cur_len - pos;
+        auto ptr = cur_ptr + pos;
+        if (!PosixWrite(fd_, ptr, len)) {
+          return IOError("While appending to file", filename_, errno);
+        }
+        done = sum + cur_len;
+      }
+      sum += cur_len;
+    }
+  }
   filesize_ += nbytes;
   return IOStatus::OK();
 }

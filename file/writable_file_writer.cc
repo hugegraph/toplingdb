@@ -179,6 +179,60 @@ IOStatus WritableFileWriter::Append(const Slice& data, uint32_t crc32c_checksum,
   return s;
 }
 
+IOStatus WritableFileWriter::Appendv(const SliceParts& parts,
+                                     uint32_t /*crc32c_checksum*/,
+                                     Env::IOPriority op_rate_limiter_priority) {
+  if (UNLIKELY(seen_error())) {
+    return AssertFalseAndGetStatusForPrevError();
+  }
+  size_t sum_size = 0;
+  for (size_t i = 0, n = parts.num_parts; i < n; i++) {
+    sum_size += parts.parts[i].size_;
+  }
+  if (checksum_generator_ != nullptr) {
+    for (size_t i = 0, n = parts.num_parts; i < n; i++)
+      checksum_generator_->Update(parts.parts[i].data_, parts.parts[i].size_);
+  }
+  IOStatus ios;
+  IOOptions io_options;
+  pending_sync_ = true;
+  if (rate_limiter_) {
+    io_options.rate_limiter_priority =
+        WritableFileWriter::DecideRateLimiterPriority(
+            writable_file_->GetIOPriority(), op_rate_limiter_priority);
+    if (io_options.rate_limiter_priority != Env::IO_TOTAL) {
+      for (size_t remain = sum_size; remain > 0; )
+        remain -= rate_limiter_->RequestToken(remain, 4096,
+          io_options.rate_limiter_priority, stats_, RateLimiter::OpType::kWrite);
+    }
+  }
+  IOSTATS_TIMER_GUARD(write_nanos);
+  if (ShouldNotifyListeners()) {
+    auto start_ts = FileOperationInfo::StartNow();
+    uint64_t old_size = next_write_offset_;
+    {
+      IOSTATS_CPU_TIMER_GUARD(cpu_write_nanos, clock_);
+      ios = writable_file_->Appendv(parts, io_options, nullptr);
+    }
+    auto finish_ts = std::chrono::steady_clock::now();
+    NotifyOnFileWriteFinish(old_size, sum_size, start_ts, finish_ts, ios);
+    if (!ios.ok())
+      NotifyOnIOError(ios, FileOperationType::kAppend, file_name_, sum_size, old_size);
+  }
+  else {
+    IOSTATS_CPU_TIMER_GUARD(cpu_write_nanos, clock_);
+    ios = writable_file_->Appendv(parts, io_options, nullptr);
+  }
+  if (LIKELY(ios.ok())) {
+    next_write_offset_ += sum_size;
+    flushed_size_.fetch_add(sum_size, std::memory_order_relaxed);
+    filesize_.fetch_add(sum_size, std::memory_order_relaxed);
+  } else {
+    set_seen_error();
+  }
+  return ios;
+}
+
 IOStatus WritableFileWriter::Pad(const size_t pad_bytes,
                                  Env::IOPriority op_rate_limiter_priority) {
   if (seen_error()) {

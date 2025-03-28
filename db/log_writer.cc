@@ -17,6 +17,7 @@
 #include "util/coding.h"
 #include "util/crc32c.h"
 #include "util/udt_util.h"
+#include <terark/fstring.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 namespace log {
@@ -131,6 +132,10 @@ void Writer::InitReaderMmap(FileSystem& fs, size_t mmap_size) {
   TERARK_VERIFY_S(insert_ok, "%s is registered", fname_);
 }
 
+// when use writev, skip buffer in WritableFileWriter
+const static bool g_WAL_USE_WRITEV = terark::getEnvBool
+                  ("WAL_USE_WRITEV", TERARK_IF_DEBUG(false, true));
+
 IOStatus Writer::AddRecord(const Slice& slice,
                            Env::IOPriority rate_limiter_priority) {
   const char* ptr = slice.data();
@@ -138,7 +143,7 @@ IOStatus Writer::AddRecord(const Slice& slice,
 
   if (memtable_as_log_index_) {
     IOStatus s = EmitPhysicalRecord(kFullType, ptr, left, rate_limiter_priority);
-    if (!manual_flush_ && s.ok()) {
+    if (!g_WAL_USE_WRITEV && !manual_flush_ && s.ok()) {
       s = dest_->Flush();
     }
     return s;
@@ -325,6 +330,15 @@ IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
     header.length = n;
     header.rec_type = t;
     header.header_checksum = crc32c::Value(header.hbytes, sizeof(header.hbytes));
+    if (g_WAL_USE_WRITEV) {
+      IOStatus s = dest_->Appendv(
+          {Slice((char*)&header, sizeof(RawRecHeader)), Slice(ptr, n)},
+          0 /* crc32c_checksum */, rate_limiter_priority);
+      if (s.ok()) {
+        *log_offset_ += sizeof(RawRecHeader) + n;
+      }
+      return s;
+    }
     IOStatus s = dest_->Append(Slice((char*)&header, sizeof(RawRecHeader)),
                                0 /* crc32c_checksum */, rate_limiter_priority);
     if (s.ok()) {

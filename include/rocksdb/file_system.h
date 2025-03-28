@@ -1011,6 +1011,9 @@ class FSWritableFile {
   virtual IOStatus Append(const Slice& data, const IOOptions& options,
                           IODebugContext* dbg) = 0;
 
+  virtual IOStatus Appendv(const SliceParts& parts, const IOOptions& options,
+                           IODebugContext* dbg);
+
   // Append data with verification information.
   // Note that this API change is experimental and it might be changed in
   // the future. Currently, RocksDB only generates crc32c based checksum for
