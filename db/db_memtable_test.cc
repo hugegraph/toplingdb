@@ -39,16 +39,16 @@ class MockMemTableRep : public MemTableRep {
     last_hint_out_ = *hint;
   }
 
-  bool InsertKeyValue(const Slice& ikey, const Slice& value) override {
-    return rep_->InsertKeyValue(ikey, value);
+  bool InsertKeyValue(uint64_t tag, const Slice& ukey, const Slice& value) override {
+    return rep_->InsertKeyValue(tag, ukey, value);
   }
 
-  bool InsertKeyValueWithHint(const Slice& ikey,
+  bool InsertKeyValueWithHint(uint64_t tag, const Slice& ukey,
                               const Slice& value, void** hint) override {
     num_insert_with_hint_++;
     EXPECT_NE(nullptr, hint);
     last_hint_in_ = *hint;
-    bool ret = rep_->InsertKeyValueWithHint(ikey, value, hint);
+    bool ret = rep_->InsertKeyValueWithHint(tag, ukey, value, hint);
     last_hint_out_ = *hint;
     return ret;
   }

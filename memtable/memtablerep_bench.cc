@@ -244,11 +244,12 @@ class FillBenchmarkThread : public BenchmarkThread {
     if (g_is_cspp) {
       auto internal_key_size = 16;
       uint64_t key = key_gen_->Next();
-      char key_buf[16];
-      EncodeFixed64(key_buf+0, key);
-      EncodeFixed64(key_buf+8, ++(*sequence_));
+      char key_buf[8]; // user key
+      EncodeFixed64(key_buf, key);
+      uint64_t tag = ++(*sequence_);
+      Slice ukey(key_buf, sizeof(key_buf));
       Slice value = generator_.Generate(FLAGS_item_size);
-      table_->InsertKeyValueConcurrently(Slice(key_buf, sizeof(key_buf)), value);
+      table_->InsertKeyValueConcurrently(tag, ukey, value);
       *bytes_written_ += internal_key_size + FLAGS_item_size + 1;
     }
     else {

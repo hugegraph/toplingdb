@@ -89,23 +89,24 @@ class MemTableRep : public CacheAlignedNewDelete {
   };
 
   static size_t EncodeKeyValueSize(const Slice& key, const Slice& value);
-  KeyHandle EncodeKeyValue(const Slice& key, const Slice& value);
+  KeyHandle EncodeKeyValue(uint64_t tag, const Slice& key, const Slice& value);
 
   explicit MemTableRep(Allocator* allocator) : allocator_(allocator) {}
 
   // InsertKey(handler) key value impl
-  virtual bool InsertKeyValue(const Slice& internal_key, const Slice& value);
+  virtual bool InsertKeyValue(uint64_t tag, const Slice& ukey, const Slice& value);
 
   // InsertKeyWithHint(handler, hint) key value impl
-  virtual bool InsertKeyValueWithHint(const Slice& internal_key,
+  virtual bool InsertKeyValueWithHint(uint64_t tag, const Slice& ukey,
                                       const Slice& value, void** hint);
 
   // InsertKeyConcurrently(handler) key value impl
-  virtual bool InsertKeyValueConcurrently(const Slice& internal_key,
+  virtual bool InsertKeyValueConcurrently(uint64_t tag, const Slice& ukey,
                                           const Slice& value);
 
   // InsertKeyWithHintConcurrently(handler, hint) key value impl
-  virtual bool InsertKeyValueWithHintConcurrently(const Slice& internal_key,
+  virtual bool InsertKeyValueWithHintConcurrently(uint64_t tag,
+                                                  const Slice& ukey,
                                                   const Slice& value,
                                                   void** hint);
 

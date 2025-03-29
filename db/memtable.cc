@@ -316,46 +316,51 @@ Slice MemTableRep::UserKey(const char* key) const {
 
 size_t MemTableRep::EncodeKeyValueSize(const Slice& key, const Slice& value) {
   size_t buf_size = 0;
-  buf_size += VarintLength(key.size()) + key.size();
+  size_t ikey_size = key.size() + 8; // now `key` is user key
+  buf_size += VarintLength(ikey_size) + ikey_size;
   buf_size += VarintLength(value.size()) + value.size();
   return buf_size;
 }
 
-KeyHandle MemTableRep::EncodeKeyValue(const Slice& key, const Slice& value) {
+KeyHandle MemTableRep::EncodeKeyValue(uint64_t tag, const Slice& key,
+                                      const Slice& value) {
   size_t buf_size = EncodeKeyValueSize(key, value);
   char* buf = nullptr;
   KeyHandle handle = Allocate(buf_size, &buf);
   assert(nullptr != handle);
   assert(nullptr != buf);
-  char* p = EncodeVarint32(buf, (uint32_t)key.size());
+  char* p = EncodeVarint32(buf, (uint32_t)(key.size() + 8));
   memcpy(p, key.data(), key.size());
-  p = EncodeVarint32(p + key.size(), (uint32_t)value.size());
+  p += key.size();
+  PutUnaligned((uint64_t*)p, tag);
+  p = EncodeVarint32(p + 8, (uint32_t)value.size());
   memcpy(p, value.data(), value.size());
   return handle;
 }
 
-bool MemTableRep::InsertKeyValue(const Slice& internal_key,
+bool MemTableRep::InsertKeyValue(uint64_t tag, const Slice& ukey,
                                  const Slice& value) {
-  KeyHandle handle = EncodeKeyValue(internal_key, value);
+  KeyHandle handle = EncodeKeyValue(tag, ukey, value);
   return InsertKey(handle);
 }
 
-bool MemTableRep::InsertKeyValueWithHint(const Slice& internal_key,
+bool MemTableRep::InsertKeyValueWithHint(uint64_t tag, const Slice& ukey,
                                          const Slice& value, void** hint) {
-  KeyHandle handle = EncodeKeyValue(internal_key, value);
+  KeyHandle handle = EncodeKeyValue(tag, ukey, value);
   return InsertKeyWithHint(handle, hint);
 }
 
-bool MemTableRep::InsertKeyValueConcurrently(const Slice& internal_key,
+bool MemTableRep::InsertKeyValueConcurrently(uint64_t tag, const Slice& ukey,
                                              const Slice& value) {
-  KeyHandle handle = EncodeKeyValue(internal_key, value);
+  KeyHandle handle = EncodeKeyValue(tag, ukey, value);
   return InsertKeyConcurrently(handle);
 }
 
-bool MemTableRep::InsertKeyValueWithHintConcurrently(const Slice& internal_key,
+bool MemTableRep::InsertKeyValueWithHintConcurrently(uint64_t tag,
+                                                     const Slice& ukey,
                                                      const Slice& value,
                                                      void** hint) {
-  KeyHandle handle = EncodeKeyValue(internal_key, value);
+  KeyHandle handle = EncodeKeyValue(tag, ukey, value);
   return InsertKeyWithHintConcurrently(handle, hint);
 }
 
@@ -731,10 +736,11 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
   }
   std::unique_ptr<MemTableRep>& table =
       type == kTypeRangeDeletion ? range_del_table_ : table_;
-  Slice key_slice((char*)memcpy(alloca(key.size_ + 8), key.data_, key.size_),
-                  key.size_ + 8);
-  PutUnaligned((uint64_t*)(key_slice.data_ + key.size_), PackSequenceAndType(s, type));
+  const uint64_t tag = PackSequenceAndType(s, type);
   if (kv_prot_info != nullptr) {
+    Slice key_slice((char*)memcpy(alloca(key.size_ + 8), key.data_, key.size_),
+                    key.size_ + 8);
+    PutUnaligned((uint64_t*)(key_slice.data_ + key.size_), tag);
     TEST_SYNC_POINT_CALLBACK("MemTable::Add:Encoded", &key_slice);
     Status status = VerifyEncodedEntry(key_slice, value, *kv_prot_info);
     if (!status.ok()) {
@@ -742,19 +748,19 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
     }
   }
 
-  size_t encoded_len = MemTableRep::EncodeKeyValueSize(key_slice, value);
+  size_t encoded_len = MemTableRep::EncodeKeyValueSize(key, value);
   if (!allow_concurrent) {
     // Extract prefix for insert with hint.
     if (insert_with_hint_prefix_extractor_ != nullptr &&
         insert_with_hint_prefix_extractor_->InDomain(key)) {
       Slice prefix = insert_with_hint_prefix_extractor_->Transform(key);
       hint = &insert_hints_[prefix];  // overwrite hint?
-      bool res = table->InsertKeyValueWithHint(key_slice, value, hint);
+      bool res = table->InsertKeyValueWithHint(tag, key, value, hint);
       if (UNLIKELY(!res)) {
         return Status::TryAgain("key+seq exists");
       }
     } else {
-      bool res = table->InsertKeyValue(key_slice, value);
+      bool res = table->InsertKeyValue(tag, key, value);
       if (UNLIKELY(!res)) {
         return Status::TryAgain("key+seq exists");
       }
@@ -766,7 +772,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
                        std::memory_order_relaxed);
     data_size_.store(data_size_.load(std::memory_order_relaxed) + encoded_len,
                      std::memory_order_relaxed);
-    raw_key_size_.store(raw_key_size_.load(std::memory_order_relaxed) + key_slice.size_,
+    raw_key_size_.store(raw_key_size_.load(std::memory_order_relaxed) + key.size_ + 8,
                      std::memory_order_relaxed);
     raw_value_size_.store(raw_value_size_.load(std::memory_order_relaxed) + value.size_,
                      std::memory_order_relaxed);
@@ -820,8 +826,8 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
   } else {
     bool res =
         (hint == nullptr)
-            ? table->InsertKeyValueConcurrently(key_slice, value)
-            : table->InsertKeyValueWithHintConcurrently(key_slice, value, hint);
+            ? table->InsertKeyValueConcurrently(tag, key, value)
+            : table->InsertKeyValueWithHintConcurrently(tag, key, value, hint);
     if (UNLIKELY(!res)) {
       return Status::TryAgain("key+seq exists");
     }
@@ -836,7 +842,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
     else if (type == kTypeMerge) {
       post_process_info->num_merges++;
     }
-    post_process_info->raw_key_size += key_slice.size_;
+    post_process_info->raw_key_size += key.size_ + 8;
     post_process_info->raw_value_size += value.size_;
     if (post_process_info->largest_seqno < s) {
         post_process_info->largest_seqno = s;
