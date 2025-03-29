@@ -141,9 +141,9 @@ IOStatus Writer::AddRecord(const Slice& slice,
   const char* ptr = slice.data();
   size_t left = slice.size();
 
-  if (memtable_as_log_index_) {
+  if (LIKELY(memtable_as_log_index_)) {
     IOStatus s = EmitPhysicalRecord(kFullType, ptr, left, rate_limiter_priority);
-    if (!g_WAL_USE_WRITEV && !manual_flush_ && s.ok()) {
+    if (UNLIKELY(!g_WAL_USE_WRITEV && !manual_flush_ && s.ok())) {
       s = dest_->Flush();
     }
     return s;
@@ -313,11 +313,11 @@ bool Writer::BufferIsEmpty() { return dest_->BufferIsEmpty(); }
 
 IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
                                     Env::IOPriority rate_limiter_priority) {
-  if (memtable_as_log_index_) {
+  if (LIKELY(memtable_as_log_index_)) {
     ROCKSDB_VERIFY(!recycle_log_files_);
     ROCKSDB_VERIFY(!dest_->use_direct_io()); // must not use direct io
     size_t need = *log_offset_ + sizeof(RawRecHeader) + n;
-    if (need > mmap_reader_->size_) {
+    if (UNLIKELY(need > mmap_reader_->size_)) {
       dest_->Sync(false).PermitUncheckedError(); // Sync before return error
       char msg1[128];
       sprintf(msg1, "memtable_as_log_index log::Writer::AddRecord: "
@@ -330,11 +330,11 @@ IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
     header.length = n;
     header.rec_type = t;
     header.header_checksum = crc32c::Value(header.hbytes, sizeof(header.hbytes));
-    if (g_WAL_USE_WRITEV) {
+    if (LIKELY(g_WAL_USE_WRITEV)) {
       IOStatus s = dest_->Appendv(
           {Slice((char*)&header, sizeof(RawRecHeader)), Slice(ptr, n)},
           0 /* crc32c_checksum */, rate_limiter_priority);
-      if (s.ok()) {
+      if (LIKELY(s.ok())) {
         *log_offset_ += sizeof(RawRecHeader) + n;
       }
       return s;
