@@ -525,7 +525,6 @@ class WriteBatch : public WriteBatchBase {
   bool has_key_with_ts_ = false;
 
   mutable bool is_write_memtable_ = false;
-  mutable WALFileRef wal_ref_[2];
 
   // For HasXYZ.  Mutable to allow lazy computation of results
 #if 0
@@ -533,6 +532,8 @@ class WriteBatch : public WriteBatchBase {
 #else
   mutable fake_atomic<uint32_t> content_flags_;
 #endif
+
+  mutable WALFileRef wal_ref_[2];
 
   // Performs deferred computation of content_flags if necessary
   uint32_t ComputeContentFlags() const;
