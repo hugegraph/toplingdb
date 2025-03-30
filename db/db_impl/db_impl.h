@@ -2225,7 +2225,7 @@ public:
   SnapshotImpl* GetSnapshotImpl(SequenceNumber snapshot_seq,
                                 bool is_write_conflict_boundary,
                                 bool lock = true);
-private:
+protected:
 
   // If snapshot_seq != kMaxSequenceNumber, then this function can only be
   // called from the write thread that publishes sequence numbers to readers.

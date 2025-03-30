@@ -41,6 +41,7 @@ class LogReaderContainer {
   log::FragmentBufferedReader* reader_;
   log::Reader::Reporter* reporter_;
   Status* status_;
+  std::shared_ptr<ReadonlyFileMmap> fmap_;
   ~LogReaderContainer() {
     delete reader_;
     delete reporter_;

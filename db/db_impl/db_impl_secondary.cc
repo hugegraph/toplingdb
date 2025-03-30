@@ -169,8 +169,23 @@ Status DBImplSecondary::MaybeInitLogReader(
 
     // Create the log reader.
     LogReaderContainer* log_reader_container = new LogReaderContainer(
-        env_, immutable_db_options_.info_log, std::move(fname),
+        env_, immutable_db_options_.info_log, fname,
         std::move(file_reader), log_number);
+    if (immutable_db_options_.memtable_as_log_index) {
+      // will tailing log Reader, so must preserve mmap size
+      auto mmap_size = GetMaxTotalWalSize() + 8*1024*1024;
+      if (mmap_size > (1ull << 40)) {
+        mmap_size = 32ull << 30; // 32G
+      }
+      auto [fmap, ios] = ReadonlyFileMmap::New(*fs_, log_number, fname, mmap_size);
+      if (!ios.ok()) {
+        delete log_reader_container;
+        return Status(ios);
+      }
+      fmap->tail_pos = std::make_shared<uint64_t>(0);
+      log_reader_container->fmap_ = fmap;
+      log_reader_container->reader_->InitSetMemTableAsLogIndex(*fs_);
+    }
     log_readers_.insert(std::make_pair(
         log_number, std::unique_ptr<LogReaderContainer>(log_reader_container)));
   }
@@ -216,6 +231,12 @@ Status DBImplSecondary::RecoverLogFiles(
     Slice record;
     WriteBatch batch;
 
+    uint64_t* tail_pos = nullptr;
+    if (auto fmap = it->second->fmap_) {
+      batch.SetWAL({fmap, log_number, 0});
+      tail_pos = fmap->tail_pos.get();
+      assert(tail_pos != nullptr);
+    }
     while (reader->ReadRecord(&record, &scratch,
                               immutable_db_options_.wal_recovery_mode) &&
            wal_read_status->ok() && status.ok()) {
@@ -278,6 +299,10 @@ Status DBImplSecondary::RecoverLogFiles(
             new_mem->Ref();
             cfd->SetMemtable(new_mem);
           }
+        }
+        if (tail_pos) {
+          batch.SetOffsetOfWAL(reader->LastRecordOffset());
+          *tail_pos = reader->LastRecordEnd();
         }
         bool has_valid_writes = false;
         status = WriteBatchInternal::InsertInto(

@@ -3613,10 +3613,6 @@ int main(int argc, char** argv) {
 
   // Check that secondary instance works.
   StartPhase("open_as_secondary");
-  if (atoi(getenv("MEMTABLE_AS_LOG_INDEX") ? : "0")) {
-    fprintf(stderr, "Skip open_as_secondary for MEMTABLE_AS_LOG_INDEX=1\n");
-  }
-  else
   {
     rocksdb_close(db);
     rocksdb_destroy_db(options, dbname, &err);

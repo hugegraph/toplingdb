@@ -554,7 +554,10 @@ TEST_F(DBSecondaryTest, SecondaryCloseFiles) {
 
   ASSERT_OK(dbfull()->CompactRange(CompactRangeOptions(), nullptr, nullptr));
   ASSERT_OK(db_secondary_->TryCatchUpWithPrimary());
-  ASSERT_EQ(2, static_cast<TraceFileEnv*>(traced_env.get())->files_closed());
+  if (options.memtable_as_log_index) // with other 2 mmap file handles
+    ASSERT_EQ(4, static_cast<TraceFileEnv*>(traced_env.get())->files_closed());
+  else
+    ASSERT_EQ(2, static_cast<TraceFileEnv*>(traced_env.get())->files_closed());
 
   Status s = db_secondary_->SetDBOptions({{"max_open_files", "-1"}});
   ASSERT_TRUE(s.IsNotSupported());
@@ -1756,12 +1759,9 @@ TEST_F(DBSecondaryTestWithTimestamp, Iterators) {
   Close();
 }
 
-extern bool g_memtable_as_log_index;
-
 }  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
-  ROCKSDB_NAMESPACE::g_memtable_as_log_index = false;
   ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
