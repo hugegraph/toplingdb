@@ -203,7 +203,7 @@ class PosixFileSystem : public FileSystem {
         return IOError("While opening file for sequentially read", fname,
                        errno);
       }
-      setvbuf(file, nullptr, _IONBF, 0); // disable buffer
+      //setvbuf(file, nullptr, _IONBF, 0); // disable buffer
     }
     result->reset(new PosixSequentialFile(
         fname, file, fd, GetLogicalBlockSizeForReadIfNeeded(options, fname, fd),
