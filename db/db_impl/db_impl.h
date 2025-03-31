@@ -1914,6 +1914,7 @@ class DBImpl : public DB {
   Status RecoverLogFiles(const std::vector<uint64_t>& log_numbers,
                          SequenceNumber* next_sequence, bool read_only,
                          bool* corrupted_log_found,
+                         const std::vector<std::string>& files_in_wal_dir,
                          RecoveryContext* recovery_ctx);
 
   // The following two methods are used to flush a memtable to

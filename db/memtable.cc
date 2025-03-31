@@ -73,6 +73,14 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
                    const MutableCFOptions& mutable_cf_options,
                    WriteBufferManager* write_buffer_manager,
                    SequenceNumber latest_seq, uint32_t column_family_id)
+    : MemTable(nullptr, cmp, ioptions, mutable_cf_options,
+               write_buffer_manager, latest_seq, column_family_id) {}
+
+MemTable::MemTable(MemTableRep* table, const InternalKeyComparator& cmp,
+                   const ImmutableOptions& ioptions,
+                   const MutableCFOptions& mutable_cf_options,
+                   WriteBufferManager* write_buffer_manager,
+                   SequenceNumber latest_seq, uint32_t column_family_id)
     : comparator_(cmp),
       moptions_(ioptions, mutable_cf_options),
       refs_(0),
@@ -85,7 +93,7 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
                  ? &mem_tracker_
                  : nullptr,
              mutable_cf_options.memtable_huge_page_size),
-      table_(ioptions.memtable_factory->CreateMemTableRep(
+      table_(table ? table : ioptions.memtable_factory->CreateMemTableRep(
           ioptions.cf_paths[0].path, // level0_dir
           mutable_cf_options,
           comparator_, &arena_, mutable_cf_options.prefix_extractor.get(),
@@ -125,6 +133,8 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       memtable_max_range_deletions_(
           mutable_cf_options.memtable_max_range_deletions) {
   needs_user_key_cmp_in_get_ = table_->NeedsUserKeyCompareInGet();
+if (nullptr == table) { // old behavior: table_ is created
+  is_load_from_file_ = false;
   table_->InitSetMemTableAsLogIndex(moptions_.memtable_as_log_index);
   support_convert_to_sst_ = table_->SupportConvertToSST();
   reject_memtable_as_log_index_ = moptions_.memtable_as_log_index
@@ -135,6 +145,11 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
   UpdateFlushState();
   // something went wrong if we need to flush before inserting anything
   assert(!ShouldScheduleFlush());
+} else { // table is passed in
+  is_load_from_file_ = true;
+  support_convert_to_sst_ = table_->SupportConvertToSST();
+  reject_memtable_as_log_index_ = false;
+}
 
   // use bloom_filter_ for both whole key and prefix bloom filter
   if ((prefix_extractor_ || moptions_.memtable_whole_key_filtering) &&
@@ -374,9 +389,20 @@ void MemTableRep::Iterator::SeekForPrev(const Slice& ikey) {
   return SeekForPrev(ikey, nullptr);
 }
 Status MemTableRep::Iterator::status() const { return Status::OK(); }
-void MemTableRep::FinishHint(void* hint) {
+void MemTableRep::FinishHint(void* hint, WALReadyInfo) {
   delete[] reinterpret_cast<char*>(hint);
 }
+void MemTable::FinishHint(void* hint, MemTableRep::WALReadyInfo w) const {
+  table_->FinishHint(hint, w);
+}
+
+MemTableRep::WALReadyInfoSet MemTableRep::GetWALReadyInfo() const {
+  ROCKSDB_DIE("NotSupported");
+}
+// merge this function to FinishHint
+// void MemTableRep::UpdateWALReadyInfo(WALReadyInfoSet) {
+//   // do nothing
+// }
 Status MemTableRep::ConvertToSST(struct FileMetaData*,
                                  const struct TableBuilderOptions&) {
   ROCKSDB_VERIFY(SupportConvertToSST());

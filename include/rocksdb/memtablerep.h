@@ -39,6 +39,7 @@
 #include <stdlib.h>
 
 #include <memory>
+#include <set>
 #include <unordered_set>
 
 #include "rocksdb/customizable.h"
@@ -293,7 +294,24 @@ class MemTableRep : public CacheAlignedNewDelete {
 
   virtual bool NeedsUserKeyCompareInGet() const { return true; }
 
-  virtual void FinishHint(void*);
+  struct WALReadyInfo {
+    uint64_t wal_file_no; // const key
+    mutable uint64_t last_offset;
+    mutable uint64_t last_seq;
+    struct Less {
+      using is_transparent = void;
+      bool operator()(const WALReadyInfo& x, const WALReadyInfo& y) const
+         { return x.wal_file_no < y.wal_file_no; }
+      bool operator()(const WALReadyInfo& x, uint64_t y) const
+         { return x.wal_file_no < y; }
+      bool operator()(uint64_t x, const WALReadyInfo& y) const
+         { return x < y.wal_file_no; }
+    };
+  };
+  using WALReadyInfoSet = std::set<WALReadyInfo, WALReadyInfo::Less>;
+  virtual WALReadyInfoSet GetWALReadyInfo() const;
+  // virtual void UpdateWALReadyInfo(WALReadyInfo); // merge to FinishHint
+  virtual void FinishHint(void*, WALReadyInfo); // also update last wal offset
   virtual void InitSetMemTableAsLogIndex(bool) {}
   virtual bool SupportMemTableAsLogIndex() const { return false; }
   virtual bool SupportConvertToSST() const { return false; }
@@ -338,6 +356,13 @@ class MemTableRepFactory : public Customizable {
       uint32_t column_family_id) {
     return CreateMemTableRep(key_cmp, allocator, slice_transform, logger,
                              column_family_id);
+  }
+
+  virtual bool SupportOpenMemTableRep() const { return false; }
+  virtual Status OpenMemTableRep(std::unique_ptr<MemTableRep>*,
+      const std::string& /*fname*/, const std::string& wal_dir,
+      Logger*, uint32_t /*cf_id*/) {
+    return Status::NotSupported(Name(), "OpenMemTableRep");
   }
 
   const char* Name() const override = 0;

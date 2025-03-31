@@ -1838,7 +1838,8 @@ class MemTableInserter : public WriteBatch::Handler {
   bool hint_per_batch_;
 
   // Hints for this batch
-  using HintMap = terark::SmartMap<MemTable*, void*, 1>;
+  // In many cases there are meta and data --------- 2 cf, such as MyTopling
+  using HintMap = terark::SmartMap<MemTable*, void*, 2>;
   HintMap hint_;
   uint32_t curr_cf_id_ = UINT32_MAX;
   bool memtable_as_log_index_;
@@ -1846,7 +1847,9 @@ class MemTableInserter : public WriteBatch::Handler {
   union { DuplicateDetector duplicate_detector_; };
 
   HintMap& GetHintMap() {
-    assert(hint_per_batch_ || hint_.empty());
+    // now we also use hint map for gather all column family's memtable,
+    // so we always use hint map, so remove the assert
+    //assert(hint_per_batch_ || hint_.empty());
     return *reinterpret_cast<HintMap*>(&hint_);
   }
 
@@ -1948,10 +1951,14 @@ class MemTableInserter : public WriteBatch::Handler {
       reinterpret_cast<DuplicateDetector*>(&duplicate_detector_)
           ->~DuplicateDetector();
     }
-    GetHintMap().for_each([](auto& iter) {
+    GetHintMap().for_each([this](auto& iter) {
       // In base MemTableRep, FinishHint do delete [] (char*)(hint).
       // In ToplingDB CSPP PatriciaTrie, FinishHint idle/release token.
-      iter.first->FinishHint(iter.second);
+      MemTableRep::WALReadyInfo wal;
+      wal.wal_file_no = src_batch_->GetWAL(0).file_number;
+      wal.last_offset = src_batch_->GetWALEndOffset();
+      wal.last_seq = sequence_;
+      iter.first->FinishHint(iter.second, wal);
     });
     delete rebuilding_trx_;
   }
@@ -2085,7 +2092,7 @@ class MemTableInserter : public WriteBatch::Handler {
       Status add_status =
           mem->Add(sequence_, value_type, key, value, kv_prot_info,
                    concurrent_memtable_writes_, get_post_process_info(mem),
-                   hint_per_batch_ ? &GetHintMap()[mem] : nullptr);
+                   &GetHintMap()[mem]);
       if (UNLIKELY(!add_status.ok())) {
         ret_status = add_status;
       }
@@ -2255,7 +2262,7 @@ class MemTableInserter : public WriteBatch::Handler {
     ret_status =
         mem->Add(sequence_, delete_type, key, value, kv_prot_info,
                  concurrent_memtable_writes_, get_post_process_info(mem),
-                 hint_per_batch_ ? &GetHintMap()[mem] : nullptr);
+                 &GetHintMap()[mem]);
     if (UNLIKELY(ret_status.IsTryAgain())) {
       assert(seq_per_batch_);
       const bool kBatchBoundary = true;

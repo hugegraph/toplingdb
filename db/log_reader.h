@@ -78,6 +78,8 @@ class Reader {
                               WALRecoveryMode::kTolerateCorruptedTailRecords,
                           uint64_t* record_checksum = nullptr);
 
+  virtual void Skip(uint64_t);
+
   // Return the recorded user-defined timestamp size that have been read so
   // far. This only applies to WAL logs.
   const UnorderedMap<uint32_t, size_t>& GetRecordedTimestampSize() const {

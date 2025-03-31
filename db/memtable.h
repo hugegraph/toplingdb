@@ -156,6 +156,13 @@ class MemTable : public CacheAlignedNewDelete {
                     const MutableCFOptions& mutable_cf_options,
                     WriteBufferManager* write_buffer_manager,
                     SequenceNumber earliest_seq, uint32_t column_family_id);
+  explicit MemTable(MemTableRep* table,
+                    const InternalKeyComparator& comparator,
+                    const ImmutableOptions& ioptions,
+                    const MutableCFOptions& mutable_cf_options,
+                    WriteBufferManager* write_buffer_manager,
+                    SequenceNumber earliest_seq, uint32_t column_family_id);
+
   // No copying allowed
   MemTable(const MemTable&) = delete;
   MemTable& operator=(const MemTable&) = delete;
@@ -546,7 +553,7 @@ class MemTable : public CacheAlignedNewDelete {
     return table_->IsSnapshotSupported() && !moptions_.inplace_update_support;
   }
 
-  void FinishHint(void* hint) const { table_->FinishHint(hint); }
+  void FinishHint(void* hint, MemTableRep::WALReadyInfo w) const;
   bool SupportConvertToSST() const {
     return table_->SupportConvertToSST() && is_range_del_table_empty_;
   }
@@ -662,6 +669,7 @@ class MemTable : public CacheAlignedNewDelete {
   bool needs_user_key_cmp_in_get_;
   bool support_convert_to_sst_;
   bool reject_memtable_as_log_index_;
+  bool is_load_from_file_;
   uint64_t file_number_;    // filled up after flush is complete
 
   // The updates to be applied to the transaction log when this

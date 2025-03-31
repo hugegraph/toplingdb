@@ -475,6 +475,8 @@ class WriteBatch : public WriteBatchBase {
     uint64_t file_number = UINT64_MAX;
     uint64_t file_offset = UINT64_MAX;
   };
+  auto GetWALEndOffset() const { return wal_end_offset_; }
+  void SetWALEndOffset(uint64_t offset) const { wal_end_offset_ = offset; }
   void SetOffsetOfWAL(uint64_t offset) {
     wal_ref_[0].file_offset = offset;
   }
@@ -534,6 +536,7 @@ class WriteBatch : public WriteBatchBase {
 #endif
 
   mutable WALFileRef wal_ref_[2];
+  mutable uint64_t wal_end_offset_;
 
   // Performs deferred computation of content_flags if necessary
   uint32_t ComputeContentFlags() const;

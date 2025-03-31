@@ -89,6 +89,13 @@ IOStatus Reader::IsMemTableAsLogIndexFile
   return ios;
 }
 
+void Reader::Skip(uint64_t n) {
+  // Now just skip before first ReadRecord
+  end_of_buffer_offset_ = n;
+  last_record_offset_ = n;
+  file_->Skip(n);
+}
+
 RecordType
 Reader::ReadRawRec(Slice* record, WALRecoveryMode wal_recovery_mode) {
 ReadNextRecord:

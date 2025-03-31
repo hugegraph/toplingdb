@@ -776,6 +776,7 @@ Status DBImpl::Recover(
 
       bool corrupted_wal_found = false;
       s = RecoverLogFiles(wals, &next_sequence, read_only, &corrupted_wal_found,
+                          files_in_wal_dir,
                           recovery_ctx);
       if (corrupted_wal_found && recovered_seq != nullptr) {
         *recovered_seq = next_sequence;
@@ -1080,6 +1081,7 @@ bool DBImpl::InvokeWalFilterIfNeededOnWalRecord(uint64_t wal_number,
 Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
                                SequenceNumber* next_sequence, bool read_only,
                                bool* corrupted_wal_found,
+                               const std::vector<std::string>& files_in_wal_dir,
                                RecoveryContext* recovery_ctx) {
   struct LogReporter : public log::Reader::Reporter {
     Env* env;
@@ -1118,6 +1120,92 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
     stream.EndArray();
   }
 
+  using MemTableMap = std::map<size_t, std::pair<std::string, std::unique_ptr<MemTableRep> > >;
+  std::map<ColumnFamilyId, MemTableMap> cfmemtab_files;
+  MemTableRep::WALReadyInfoSet wal_ready_set;
+  auto find_memtab_files = [&]() {
+    std::set<std::string> unique_dirs;
+    for (auto cfd : *versions_->GetColumnFamilySet()) {
+      if (cfd->ioptions()->memtable_factory->SupportOpenMemTableRep()) {
+        unique_dirs.insert(cfd->ioptions()->cf_paths[0].path);
+      }
+    }
+    const std::string& wal_dir = immutable_db_options_.GetWalDir();
+    auto log = immutable_db_options_.info_log.get();
+    for (const std::string& dir : unique_dirs) {
+      std::vector<std::string> files_tmp;
+      auto get_files = [&]() -> const std::vector<std::string>& {
+        if (dir == wal_dir) { // this is the most likely case
+          return files_in_wal_dir;
+        } else {
+          auto fs = immutable_db_options_.fs.get();
+          IOOptions io_options;
+          IOStatus ios = fs->GetChildren(dir, io_options, &files_tmp, nullptr);
+          if (!ios.ok()) {
+            ROCKS_LOG_ERROR(log, "GetChildren(%s) = %s",
+                            dir.c_str(), ios.ToString().c_str());
+          }
+          return files_tmp;
+        }
+      };
+      for (auto& fname : get_files()) {
+        if (!Slice(fname).starts_with("cspp-")) {
+          continue; // sscan is slow, continue earlier
+        }
+        size_t cf_file_id, cf_id;
+        int fields = sscanf(fname.c_str(), "cspp-%zu.memtab-%zu",
+                            &cf_file_id, &cf_id);
+        if (fields == 2) {
+          cfmemtab_files[ColumnFamilyId(cf_id)][cf_file_id].first =
+            dir + "/" + fname;
+        } else {
+          ROCKS_LOG_ERROR(log, "file %s does not match cspp-%%zu.memtab-%%zu",
+                          fname.c_str());
+        }
+      }
+    }
+  };
+  auto recover_memtab_files = [&](ColumnFamilyData* cfd) {
+    auto& mopt = *cfd->GetCurrentMutableCFOptions();
+    auto& iopt = *cfd->ioptions();
+    auto& mtabfac = *iopt.memtable_factory;
+    auto& wal_dir = iopt.GetWalDir();
+    auto* log = iopt.info_log.get();
+    auto cf_id = cfd->GetID();
+    auto file_iter = cfmemtab_files.find(cf_id);
+    if (file_iter == cfmemtab_files.end()) {
+      return;
+    }
+    auto& memtab_files = file_iter->second;
+    for (auto& [cf_file_id, pair] : memtab_files) {
+      auto& [fname, ptr] = pair;
+      status = mtabfac.OpenMemTableRep(&ptr, fname, wal_dir, log, cf_id);
+      if (!status.ok()) {
+        return; // log has printed in OpenMemTableRep
+      }
+      for (const auto& src : ptr->GetWALReadyInfo()) {
+        auto iter = wal_ready_set.find(src.wal_file_no);
+        if (iter != wal_ready_set.end()) {
+          terark::minimize(iter->last_offset, src.last_offset);
+          terark::minimize(iter->last_seq, src.last_seq);
+        }
+      }
+      auto wbm = iopt.write_buffer_manager.get();
+      auto cmp = iopt.internal_comparator;
+      auto rep = ptr.release();
+      auto mem = new MemTable(rep, cmp, iopt, mopt, wbm, 0, cf_id);
+      auto iter = version_edits.find(cfd->GetID());
+      assert(iter != version_edits.end());
+      VersionEdit* edit = &iter->second;
+      status = WriteLevel0TableForRecovery(job_id, cfd, mem, edit);
+      if (!status.ok()) {
+        // Reflect errors immediately so that conditions like full
+        // file-systems cause the DB::Open() to fail.
+        return;
+      }
+    }
+  };
+
   // No-op for immutable_db_options_.wal_filter == nullptr.
   InvokeWalFilterIfNeededOnColumnFamilyToWalNumberMap();
 
@@ -1130,6 +1218,12 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
     // In non-2pc mode, we skip WALs that do not back unflushed data.
     min_wal_number =
         std::max(min_wal_number, versions_->MinLogNumberWithUnflushedData());
+    find_memtab_files();
+    for (auto cfd : *versions_->GetColumnFamilySet()) {
+      recover_memtab_files(cfd);
+      if (!status.ok())
+        return status;
+    }
   }
   for (auto wal_number : wal_numbers) {
     if (wal_number < min_wal_number) {
@@ -1210,6 +1304,9 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
         return Status(ios);
       if (fmap)
         fmap->tail_pos = std::make_shared<uint64_t>(fmap->size_);
+    }
+    if (auto i = wal_ready_set.find(wal_number); i != wal_ready_set.end()) {
+      reader.Skip(i->last_offset);
     }
 
     // Determine if we should tolerate incomplete records at the tail end of the
@@ -1703,6 +1800,37 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
       version->Ref();
       const ReadOptions read_option(Env::IOActivity::kDBOpen);
       uint64_t num_input_entries = 0;
+    if (mem->SupportConvertToSST()) {
+      // pass these fields to ConvertToSST, to fill TableProperties
+      meta.num_entries = mem->num_entries();
+      meta.num_deletions = mem->num_deletes();
+      meta.num_merges = mem->num_merges();
+      meta.num_range_deletions = 0;
+      meta.raw_key_size = mem->raw_key_size();
+      meta.raw_value_size = mem->raw_value_size();
+      tboptions.generate_file_no = [this]() {
+        return versions_->NewFileNumber();
+      };
+      tboptions.add_blob_file = [&](BlobFileAddition b) {
+        blob_file_additions.push_back(std::move(b));
+      };
+      s = mem->ConvertToSST(&meta, tboptions);
+      if (!s.ok()) {
+        ROCKS_LOG_FATAL(immutable_db_options_.info_log,
+                        "[%s] [JOB %d] WriteLevel0TableForRecovery ConvertToSST #%"
+                        PRIu64 ": ApproximateMemoryUsage %" PRIu64 " bytes %s",
+                        cfd->GetName().c_str(), job_id,
+                        meta.fd.GetNumber(), mem->ApproximateMemoryUsage(),
+                        s.ToString().c_str());
+        LogFlush(immutable_db_options_.info_log);
+        ROCKSDB_DIE("WriteLevel0TableForRecovery ConvertToSST");
+      }
+      meta.fd.smallest_seqno = std::min(mem->GetEarliestSequenceNumber(),
+                                        mem->GetFirstSequenceNumber());
+      meta.fd.largest_seqno = mem->largest_seqno();
+      meta.marked_for_compaction = true;
+      num_input_entries = meta.num_entries;
+    } else {
       s = BuildTable(
           dbname_, versions_.get(), immutable_db_options_, tboptions,
           file_options_for_compaction_, read_option, cfd->table_cache(),
@@ -1714,6 +1842,7 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
           nullptr /* table_properties */, write_hint,
           nullptr /*full_history_ts_low*/, &blob_callback_, version,
           &num_input_entries);
+    }
       version->Unref();
       LogFlush(immutable_db_options_.info_log);
       ROCKS_LOG_DEBUG(immutable_db_options_.info_log,
