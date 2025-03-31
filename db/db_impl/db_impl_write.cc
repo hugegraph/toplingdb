@@ -192,6 +192,9 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
   if (immutable_db_options_.memtable_as_log_index) {
     const_cast<bool&>(write_options.disableWAL) = false;
   }
+
+  #define if(expr) if (UNLIKELY(!!(expr)))
+
   if (my_batch == nullptr) {
     return Status::InvalidArgument("Batch is nullptr!");
   } else if (!disable_memtable &&
@@ -315,6 +318,8 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     return PipelinedWriteImpl(write_options, my_batch, callback, log_used,
                               log_ref, disable_memtable, seq_used);
   }
+
+#undef if
 
   PERF_TIMER_GUARD(write_pre_and_post_process_time);
   WriteThread::Writer w(write_options, my_batch, callback, log_ref,
