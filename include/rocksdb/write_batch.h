@@ -363,7 +363,7 @@ class WriteBatch : public WriteBatchBase {
     // implementation always returns true.
     virtual bool Continue();
 
-    virtual void SetBeginPrepareNextPtr(const char* curr) {}
+    virtual void SetBeginPrepareNextPtr(const char*) {}
 
    protected:
     friend class WriteBatchInternal;
