@@ -1171,7 +1171,7 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
   assert(write_context != nullptr && log_context != nullptr);
   Status status;
 
-  if (error_handler_.IsDBStopped()) {
+  if (UNLIKELY(error_handler_.IsDBStopped())) {
     InstrumentedMutexLock l(&mutex_);
     status = error_handler_.GetBGError();
   }

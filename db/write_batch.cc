@@ -72,6 +72,7 @@
 #include "util/string_util.h"
 
 #include <terark/smartmap.hpp>
+#include <terark/fstring.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -840,11 +841,40 @@ Status CheckColumnFamilyTimestampSize(ColumnFamilyHandle* column_family,
 
 Status WriteBatchInternal::Put(WriteBatch* b, uint32_t column_family_id,
                                const Slice& key, const Slice& value) {
-  if (key.size() > size_t{std::numeric_limits<uint32_t>::max()}) {
+  if (UNLIKELY(key.size() > size_t{std::numeric_limits<uint32_t>::max()})) {
     return Status::InvalidArgument("key is too large");
   }
-  if (value.size() > size_t{std::numeric_limits<uint32_t>::max()}) {
+  if (UNLIKELY(value.size() > size_t{std::numeric_limits<uint32_t>::max()})) {
     return Status::InvalidArgument("value is too large");
+  }
+
+  if (LIKELY(nullptr == b->prot_info_)) {
+    size_t old_size = b->rep_.size();
+    size_t inc_size = 1
+           + (column_family_id ? VarUint32Length(column_family_id) : 0)
+           + VarUint32Length(uint32_t(key.size())) + key.size()
+           + VarUint32Length(uint32_t(value.size())) + value.size();
+    if (UNLIKELY(b->max_bytes_ && old_size + inc_size > b->max_bytes_)) {
+      return Status::MemoryLimit();
+    }
+    terark::string_resize_no_touch_memory(&b->rep_, old_size + inc_size);
+    char* ptr = b->rep_.data();
+    EncodeFixed32(ptr + 8, DecodeFixed32(ptr + 8) + 1); // Update Batch Count
+    ptr += old_size;
+    if (column_family_id == 0) {
+      ptr[0] = static_cast<char>(kTypeValue);
+      ptr += 1;
+    } else {
+      ptr[0] = static_cast<char>(kTypeColumnFamilyValue);
+      ptr = EncodeVarint32(ptr + 1, column_family_id);
+    }
+    ptr = EncodeVarint32(ptr, key.size());
+    memcpy(ptr, key.data(), key.size());
+    ptr = EncodeVarint32(ptr + key.size(), value.size());
+    memcpy(ptr, value.data(), value.size());
+    ptr[value.size()] = '\0'; // end of str
+    b->content_flags_.fetch_or(ContentFlags::HAS_PUT, std::memory_order_relaxed);
+    return Status::OK();
   }
 
   LocalSavePoint save(b);
@@ -874,6 +904,7 @@ Status WriteBatchInternal::Put(WriteBatch* b, uint32_t column_family_id,
 
 Status WriteBatch::Put(ColumnFamilyHandle* column_family, const Slice& key,
                        const Slice& value) {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   size_t ts_sz = 0;
   uint32_t cf_id = 0;
   Status s;
@@ -896,6 +927,10 @@ Status WriteBatch::Put(ColumnFamilyHandle* column_family, const Slice& key,
   std::array<Slice, 2> key_with_ts{{key, dummy_ts}};
   return WriteBatchInternal::Put(this, cf_id, SliceParts(key_with_ts.data(), 2),
                                  SliceParts(&value, 1));
+#else
+  uint32_t cf_id = column_family ? column_family->GetID() : 0;
+  return WriteBatchInternal::Put(this, cf_id, key, value);
+#endif
 }
 
 Status WriteBatch::Put(ColumnFamilyHandle* column_family, const Slice& key,
@@ -1142,6 +1177,29 @@ Status WriteBatchInternal::MarkRollback(WriteBatch* b, const Slice& xid) {
 
 Status WriteBatchInternal::Delete(WriteBatch* b, uint32_t column_family_id,
                                   const Slice& key) {
+  if (LIKELY(nullptr == b->prot_info_)) {
+    size_t old_size = b->rep_.size();
+    size_t inc_size = 1
+           + (column_family_id ? VarUint32Length(column_family_id) : 0)
+           + VarUint32Length(uint32_t(key.size())) + key.size();
+    terark::string_resize_no_touch_memory(&b->rep_, old_size + inc_size);
+    char* ptr = b->rep_.data();
+    EncodeFixed32(ptr + 8, DecodeFixed32(ptr + 8) + 1); // Update Batch Count
+    ptr += old_size;
+    if (column_family_id == 0) {
+      ptr[0] = static_cast<char>(kTypeDeletion);
+      ptr += 1;
+    } else {
+      ptr[0] = static_cast<char>(kTypeColumnFamilyDeletion);
+      ptr = EncodeVarint32(ptr + 1, column_family_id);
+    }
+    ptr = EncodeVarint32(ptr, key.size());
+    memcpy(ptr, key.data(), key.size());
+    ptr[key.size()] = '\0'; // end of str
+    b->content_flags_.fetch_or(ContentFlags::HAS_DELETE,
+                               std::memory_order_relaxed);
+    return Status::OK();
+  }
   LocalSavePoint save(b);
   WriteBatchInternal::SetCount(b, WriteBatchInternal::Count(b) + 1);
   if (column_family_id == 0) {
@@ -1165,6 +1223,7 @@ Status WriteBatchInternal::Delete(WriteBatch* b, uint32_t column_family_id,
 }
 
 Status WriteBatch::Delete(ColumnFamilyHandle* column_family, const Slice& key) {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   size_t ts_sz = 0;
   uint32_t cf_id = 0;
   Status s;
@@ -1187,6 +1246,10 @@ Status WriteBatch::Delete(ColumnFamilyHandle* column_family, const Slice& key) {
   std::array<Slice, 2> key_with_ts{{key, dummy_ts}};
   return WriteBatchInternal::Delete(this, cf_id,
                                     SliceParts(key_with_ts.data(), 2));
+#else
+  uint32_t cf_id = column_family ? column_family->GetID() : 0;
+  return WriteBatchInternal::Delete(this, cf_id, key);
+#endif
 }
 
 Status WriteBatch::Delete(ColumnFamilyHandle* column_family, const Slice& key,
@@ -1254,6 +1317,29 @@ Status WriteBatch::Delete(ColumnFamilyHandle* column_family,
 Status WriteBatchInternal::SingleDelete(WriteBatch* b,
                                         uint32_t column_family_id,
                                         const Slice& key) {
+  if (LIKELY(nullptr == b->prot_info_)) {
+    size_t old_size = b->rep_.size();
+    size_t inc_size = 1
+           + (column_family_id ? VarUint32Length(column_family_id) : 0)
+           + VarUint32Length(uint32_t(key.size())) + key.size();
+    terark::string_resize_no_touch_memory(&b->rep_, old_size + inc_size);
+    char* ptr = b->rep_.data();
+    EncodeFixed32(ptr + 8, DecodeFixed32(ptr + 8) + 1); // Update Batch Count
+    ptr += old_size;
+    if (column_family_id == 0) {
+      ptr[0] = static_cast<char>(kTypeSingleDeletion);
+      ptr += 1;
+    } else {
+      ptr[0] = static_cast<char>(kTypeColumnFamilySingleDeletion);
+      ptr = EncodeVarint32(ptr + 1, column_family_id);
+    }
+    ptr = EncodeVarint32(ptr, key.size());
+    memcpy(ptr, key.data(), key.size());
+    ptr[key.size()] = '\0'; // end of str
+    b->content_flags_.fetch_or(ContentFlags::HAS_SINGLE_DELETE,
+                               std::memory_order_relaxed);
+    return Status::OK();
+  }
   LocalSavePoint save(b);
   WriteBatchInternal::SetCount(b, WriteBatchInternal::Count(b) + 1);
   if (column_family_id == 0) {
@@ -1278,6 +1364,7 @@ Status WriteBatchInternal::SingleDelete(WriteBatch* b,
 
 Status WriteBatch::SingleDelete(ColumnFamilyHandle* column_family,
                                 const Slice& key) {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   size_t ts_sz = 0;
   uint32_t cf_id = 0;
   Status s;
@@ -1300,6 +1387,10 @@ Status WriteBatch::SingleDelete(ColumnFamilyHandle* column_family,
   std::array<Slice, 2> key_with_ts{{key, dummy_ts}};
   return WriteBatchInternal::SingleDelete(this, cf_id,
                                           SliceParts(key_with_ts.data(), 2));
+#else
+  uint32_t cf_id = column_family ? column_family->GetID() : 0;
+  return WriteBatchInternal::SingleDelete(this, cf_id, key);
+#endif
 }
 
 Status WriteBatch::SingleDelete(ColumnFamilyHandle* column_family,
@@ -1490,11 +1581,40 @@ Status WriteBatch::DeleteRange(ColumnFamilyHandle* column_family,
 
 Status WriteBatchInternal::Merge(WriteBatch* b, uint32_t column_family_id,
                                  const Slice& key, const Slice& value) {
-  if (key.size() > size_t{std::numeric_limits<uint32_t>::max()}) {
+  if (UNLIKELY(key.size() > size_t{std::numeric_limits<uint32_t>::max()})) {
     return Status::InvalidArgument("key is too large");
   }
-  if (value.size() > size_t{std::numeric_limits<uint32_t>::max()}) {
+  if (UNLIKELY(value.size() > size_t{std::numeric_limits<uint32_t>::max()})) {
     return Status::InvalidArgument("value is too large");
+  }
+
+  if (LIKELY(nullptr == b->prot_info_)) {
+    size_t old_size = b->rep_.size();
+    size_t inc_size = 1
+           + (column_family_id ? VarUint32Length(column_family_id) : 0)
+           + VarUint32Length(uint32_t(key.size())) + key.size()
+           + VarUint32Length(uint32_t(value.size())) + value.size();
+    if (UNLIKELY(b->max_bytes_ && old_size + inc_size > b->max_bytes_)) {
+      return Status::MemoryLimit();
+    }
+    terark::string_resize_no_touch_memory(&b->rep_, old_size + inc_size);
+    char* ptr = b->rep_.data();
+    EncodeFixed32(ptr + 8, DecodeFixed32(ptr + 8) + 1); // Update Batch Count
+    ptr += old_size;
+    if (column_family_id == 0) {
+      ptr[0] = static_cast<char>(kTypeMerge);
+      ptr += 1;
+    } else {
+      ptr[0] = static_cast<char>(kTypeColumnFamilyMerge);
+      ptr = EncodeVarint32(ptr + 1, column_family_id);
+    }
+    ptr = EncodeVarint32(ptr, key.size());
+    memcpy(ptr, key.data(), key.size());
+    ptr = EncodeVarint32(ptr + key.size(), value.size());
+    memcpy(ptr, value.data(), value.size());
+    ptr[value.size()] = '\0'; // end of str
+    b->content_flags_.fetch_or(ContentFlags::HAS_MERGE, std::memory_order_relaxed);
+    return Status::OK();
   }
 
   LocalSavePoint save(b);
@@ -1521,6 +1641,7 @@ Status WriteBatchInternal::Merge(WriteBatch* b, uint32_t column_family_id,
 
 Status WriteBatch::Merge(ColumnFamilyHandle* column_family, const Slice& key,
                          const Slice& value) {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   size_t ts_sz = 0;
   uint32_t cf_id = 0;
   Status s;
@@ -1544,6 +1665,10 @@ Status WriteBatch::Merge(ColumnFamilyHandle* column_family, const Slice& key,
 
   return WriteBatchInternal::Merge(
       this, cf_id, SliceParts(key_with_ts.data(), 2), SliceParts(&value, 1));
+#else
+  uint32_t cf_id = column_family ? column_family->GetID() : 0;
+  return WriteBatchInternal::Merge(this, cf_id, key, value);
+#endif
 }
 
 Status WriteBatch::Merge(ColumnFamilyHandle* column_family, const Slice& key,

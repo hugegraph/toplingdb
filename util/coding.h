@@ -257,6 +257,20 @@ inline int VarintLength(uint64_t v) {
   return len;
 }
 
+inline int VarUint32Length(uint32_t v) {
+  if (0) {}
+  else if (v < (1 <<  7))
+    return 1;
+  else if (v < (1 << 14))
+    return 2;
+  else if (v < (1 << 21))
+    return 3;
+  else if (v < (1 << 28))
+    return 4;
+  else
+    return 5;
+}
+
 inline bool GetFixed64(Slice* input, uint64_t* value) {
   if (input->size() < sizeof(uint64_t)) {
     return false;
