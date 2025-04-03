@@ -1353,6 +1353,12 @@ static void WriteGroupSetWAL(const WriteThread::WriteGroup& write_group,
   if (!merged_batch.HasMmapWAL()) {
     return;
   }
+  if (auto leader = write_group.leader; &merged_batch == leader->batch) {
+    ROCKSDB_ASSERT_EQ(write_group.size, 1);
+    assert(!leader->CallbackFailed());
+    assert(leader->batch->GetWalTerminationPoint().is_cleared());
+    return;
+  }
   uint64_t offset = 0;
   for (auto writer : write_group) {
     if (!writer->CallbackFailed()) {
