@@ -217,6 +217,8 @@ const uint64_t kDefaultTtl = 0xfffffffffffffffe;
 const uint64_t kDefaultPeriodicCompSecs = 0xfffffffffffffffe;
 }  // anonymous namespace
 
+extern MemTableRepFactory* NewCSPPMemTabForPlain(const std::string&);
+
 ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
                                     const ColumnFamilyOptions& src) {
   ColumnFamilyOptions result = src;
@@ -445,6 +447,16 @@ ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
   if (result.periodic_compaction_seconds == kDefaultPeriodicCompSecs) {
     result.periodic_compaction_seconds = 0;
   }
+
+#if defined(ROCKSDB_UNIT_TEST)
+  if (result.comparator->IsBytewise() &&
+        Slice(result.memtable_factory->Name()) == "SkipListFactory") {
+    const char* memtab_opt = getenv("MemTableRepFactory");
+    if (memtab_opt && strncmp(memtab_opt, "cspp:", 5) == 0) {
+      result.memtable_factory.reset(NewCSPPMemTabForPlain(memtab_opt + 5));
+    }
+  }
+#endif
 
   return result;
 }
