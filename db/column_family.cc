@@ -448,6 +448,12 @@ ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
     result.periodic_compaction_seconds = 0;
   }
 
+#if !defined(ROCKSDB_UNIT_TEST)
+  if (db_options.memtable_as_log_index) {
+    result.enable_blob_garbage_collection = true;
+  }
+#endif
+
 #if defined(ROCKSDB_UNIT_TEST)
   if (result.comparator->IsBytewise() &&
         Slice(result.memtable_factory->Name()) == "SkipListFactory") {
