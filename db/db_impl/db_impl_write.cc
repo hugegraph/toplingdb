@@ -1394,11 +1394,8 @@ static void WriteGroupSetWAL(const WriteThread::WriteGroup& write_group,
 // write thread. Otherwise this must be called holding log_write_mutex_.
 IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
                             log::Writer* log_writer, uint64_t* log_used,
-                            uint64_t* log_size,
                             Env::IOPriority rate_limiter_priority,
                             LogFileNumberSize& log_file_number_size) {
-  assert(log_size != nullptr);
-
   Slice log_entry = WriteBatchInternal::Contents(&merged_batch);
   TEST_SYNC_POINT_CALLBACK("DBImpl::WriteToWAL:log_entry", &log_entry);
   if (UNLIKELY(merged_batch.HasProtectionInfo())) {
@@ -1407,7 +1404,6 @@ IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
       return status_to_io_status(std::move(s));
     }
   }
-  *log_size = log_entry.size();
   // When two_write_queues_ WriteToWAL has to be protected from concurretn calls
   // from the two queues anyway and log_write_mutex_ is already held. Otherwise
   // if manual_wal_flush_ is enabled we need to protect log_writer->AddRecord
@@ -1442,8 +1438,8 @@ IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
   if (log_used != nullptr) {
     *log_used = logfile_number_;
   }
-  total_log_size_ += log_entry.size();
-  log_file_number_size.AddSize(*log_size);
+  total_log_size_.fetch_add(log_entry.size(), std::memory_order_relaxed);
+  log_file_number_size.AddSize(log_entry.size());
   log_empty_ = false;
   return io_s;
 }
@@ -1476,8 +1472,8 @@ IOStatus DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
 
   WriteBatchInternal::SetSequence(merged_batch, sequence);
 
-  uint64_t log_size;
-  io_s = WriteToWAL(*merged_batch, log_writer, log_used, &log_size,
+  uint64_t log_size = merged_batch->GetDataSize();
+  io_s = WriteToWAL(*merged_batch, log_writer, log_used,
                     write_group.leader->rate_limiter_priority,
                     log_file_number_size);
   WriteGroupSetWAL(write_group, *merged_batch);
@@ -1582,8 +1578,8 @@ IOStatus DBImpl::ConcurrentWriteToWAL(
 
   assert(log_writer->get_log_number() == log_file_number_size.number);
 
-  uint64_t log_size;
-  io_s = WriteToWAL(*merged_batch, log_writer, log_used, &log_size,
+  uint64_t log_size = merged_batch->GetDataSize();
+  io_s = WriteToWAL(*merged_batch, log_writer, log_used,
                     write_group.leader->rate_limiter_priority,
                     log_file_number_size);
   WriteGroupSetWAL(write_group, *merged_batch);

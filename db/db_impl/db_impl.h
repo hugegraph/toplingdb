@@ -2074,7 +2074,7 @@ class DBImpl : public DB {
   // for automatic WAL flush (`Options::manual_wal_flush` == false)
   // associated with this WriteToWAL
   IOStatus WriteToWAL(const WriteBatch& merged_batch, log::Writer* log_writer,
-                      uint64_t* log_used, uint64_t* log_size,
+                      uint64_t* log_used,
                       Env::IOPriority rate_limiter_priority,
                       LogFileNumberSize& log_file_number_size);
 
