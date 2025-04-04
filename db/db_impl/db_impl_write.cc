@@ -1417,18 +1417,22 @@ IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
   if (UNLIKELY(needs_locking)) {
     log_write_mutex_.Lock();
   }
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
+{
   IOStatus io_s = log_writer->MaybeAddUserDefinedTimestampSizeRecord(
       versions_->GetColumnFamiliesTimestampSizeForRecord(),
       rate_limiter_priority);
   if (!io_s.ok()) {
     return io_s;
   }
+}
+#endif
   if (immutable_db_options_.memtable_as_log_index) {
     merged_batch.SetWAL({log_writer->mmap_reader(),
                          log_writer->get_log_number(),
                          log_writer->get_log_offset()});
   }
-  io_s = log_writer->AddRecord(log_entry, rate_limiter_priority);
+  IOStatus io_s = log_writer->AddRecord(log_entry, rate_limiter_priority);
 
   if (UNLIKELY(needs_locking)) {
     log_write_mutex_.Unlock();
