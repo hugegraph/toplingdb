@@ -1401,9 +1401,11 @@ IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
 
   Slice log_entry = WriteBatchInternal::Contents(&merged_batch);
   TEST_SYNC_POINT_CALLBACK("DBImpl::WriteToWAL:log_entry", &log_entry);
-  auto s = merged_batch.VerifyChecksum();
-  if (!s.ok()) {
-    return status_to_io_status(std::move(s));
+  if (UNLIKELY(merged_batch.HasProtectionInfo())) {
+    auto s = merged_batch.VerifyChecksum();
+    if (!s.ok()) {
+      return status_to_io_status(std::move(s));
+    }
   }
   *log_size = log_entry.size();
   // When two_write_queues_ WriteToWAL has to be protected from concurretn calls

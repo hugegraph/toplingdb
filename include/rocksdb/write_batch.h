@@ -490,6 +490,7 @@ class WriteBatch : public WriteBatchBase {
   void StartWriteMemTable(bool b) const { is_write_memtable_ = b; }
   void FinishWriteMemTable() const { is_write_memtable_ = false; }
   bool HasMmapWAL() const { return wal_ref_[0].file_mmap != nullptr; }
+  bool HasProtectionInfo() const { return prot_info_ != nullptr; }
 
  private:
   friend class WriteBatchInternal;
