@@ -1531,7 +1531,9 @@ Status MemTable::Update(SequenceNumber seq, ValueType value_type,
     ROCKSDB_ASSERT_EQ(sizeof(KeyValuePassMemTable), value.size_);
     auto kv_pmt = (const KeyValuePassMemTable*)value.data_;
     value = kv_pmt->value; // not supportted, use orig value
+    goto ContinueUpdate;
   }
+if (!moptions_.memtable_as_log_index) { ContinueUpdate:
   std::unique_ptr<MemTableRep::Iterator> iter(
       table_->GetDynamicPrefixIterator());
   iter->Seek(lkey.internal_key(), lkey.memtable_key_data());
@@ -1575,6 +1577,7 @@ Status MemTable::Update(SequenceNumber seq, ValueType value_type,
       }
     }
   }
+}
 
   // The latest value is not value_type or key doesn't exist
   return Add(seq, value_type, key, value_param, kv_prot_info);
