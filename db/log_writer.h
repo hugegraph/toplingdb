@@ -26,6 +26,7 @@ namespace ROCKSDB_NAMESPACE {
 
 class WritableFileWriter;
 class ReadonlyFileMmap;
+class InstrumentedMutex;
 
 namespace log {
 
@@ -90,6 +91,8 @@ class Writer {
   IOStatus AddRecord(const Slice& slice,
                      Env::IOPriority rate_limiter_priority = Env::IO_TOTAL);
   IOStatus AddCompressionTypeRecord();
+
+  static RawRecHeader PopulateRecordHeader(const Slice&);
 
   // If there are column families in `cf_to_ts_sz` not included in
   // `recorded_cf_to_ts_sz_` and its user-defined timestamp size is non-zero,

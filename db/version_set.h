@@ -1341,6 +1341,7 @@ class VersionSet {
   uint64_t LastSequence() const {
     return last_sequence_.load(std::memory_order_acquire);
   }
+  auto LastSequencePtr() { return &last_sequence_; }
 
   // Note: memory_order_acquire must be sufficient.
   uint64_t LastAllocatedSequence() const {

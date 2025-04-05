@@ -175,8 +175,8 @@ ReadNextRecord:
   }
   *record = buffer_.substr(sizeof(RawRecHeader), header.length);
   buffer_.remove_prefix(pack_len);
-  if (checksum_) {
-    auto computed_checksum = crc32c::Value(record->data(), record->size());
+  if (checksum_ && record->size() >= 8) {
+    auto computed_checksum = crc32c::Value(record->data() + 8, record->size() - 8);
     if (computed_checksum != header.checksum) {
       ReportCorruption(record->size(), "checksum mismatch");
       goto ReadNextRecord;

@@ -1500,6 +1500,10 @@ class DBImpl : public DB {
                                 uint64_t log_ref, SequenceNumber seq,
                                 const size_t sub_batch_cnt);
 
+  Status NoGroupWrite(const WriteOptions&, WriteBatch*, WriteCallback*,
+                      uint64_t* log_used, uint64_t log_ref,
+                      bool disable_memtable, uint64_t* seq_used);
+
   // Whether the batch requires to be assigned with an order
   enum AssignOrder : bool { kDontAssignOrder, kDoAssignOrder };
   // Whether it requires publishing last sequence or not
@@ -2062,6 +2066,10 @@ class DBImpl : public DB {
   // REQUIRES: mutex locked
   Status PreprocessWrite(const WriteOptions& write_options,
                          LogContext* log_context, WriteContext* write_context);
+  Status PopulateWriteContext(const WriteOptions&, WriteContext*);
+  Status PopulateLogContext(const WriteOptions&, LogContext*, Status&&);
+  Status PopulateLogContextNoLock(const WriteOptions&, LogContext*, Status&&);
+  void PopulateLogContextNoLock(const WriteOptions&, LogContext*);
 
   // Merge write batches in the write group into merged_batch.
   // Returns OK if merge is successful.

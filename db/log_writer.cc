@@ -311,6 +311,17 @@ IOStatus Writer::MaybeAddUserDefinedTimestampSizeRecord(
 
 bool Writer::BufferIsEmpty() { return dest_->BufferIsEmpty(); }
 
+RawRecHeader Writer::PopulateRecordHeader(const Slice& rec) {
+  const char* ptr = rec.data();
+  const size_t n  = rec.size();
+  RawRecHeader header;
+  header.checksum = crc32c::Value(ptr + 8, n - 8);
+  header.length = n;
+  header.rec_type = kFullType;
+  header.header_checksum = crc32c::Value(header.hbytes, sizeof(header.hbytes));
+  return header;
+}
+
 IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
                                     Env::IOPriority rate_limiter_priority) {
   if (LIKELY(memtable_as_log_index_)) {
@@ -326,7 +337,7 @@ IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
       return IOStatus::IOFenced(msg1, fname_);
     }
     RawRecHeader header;
-    header.checksum = crc32c::Value(ptr, n);
+    header.checksum = n >= 8 ? crc32c::Value(ptr + 8, n - 8) : 0;
     header.length = n;
     header.rec_type = t;
     header.header_checksum = crc32c::Value(header.hbytes, sizeof(header.hbytes));

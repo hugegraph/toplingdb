@@ -174,6 +174,9 @@ Status DBImpl::WriteWithCallback(const WriteOptions& write_options,
   return s;
 }
 
+const static bool g_USE_GROUP_WRITE = terark::getEnvBool
+                  ("USE_GROUP_WRITE", true);
+
 // The main write queue. This is the only write queue that updates LastSequence.
 // When using one write queue, the same sequence also indicates the last
 // published sequence.
@@ -191,6 +194,10 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
              my_batch->GetProtectionBytesPerKey());
   if (immutable_db_options_.memtable_as_log_index) {
     const_cast<bool&>(write_options.disableWAL) = false;
+    if (!g_USE_GROUP_WRITE) {
+      return NoGroupWrite(write_options, my_batch, callback, log_used,
+                          log_ref, disable_memtable, seq_used);
+    }
   }
 
   #define if(expr) if (UNLIKELY(!!(expr)))
@@ -1169,6 +1176,12 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
                                LogContext* log_context,
                                WriteContext* write_context) {
   assert(write_context != nullptr && log_context != nullptr);
+  Status status = PopulateWriteContext(write_options, write_context);
+  return PopulateLogContext(write_options, log_context, std::move(status));
+}
+
+Status DBImpl::PopulateWriteContext(const WriteOptions& write_options,
+                                    WriteContext* write_context) {
   Status status;
 
   if (UNLIKELY(error_handler_.IsDBStopped())) {
@@ -1260,7 +1273,25 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
       WriteBufferManagerStallWrites();
     }
   }
+
+  return status;
+}
+
+Status DBImpl::PopulateLogContext(const WriteOptions& write_options,
+                                  LogContext* log_context, Status&& status) {
+
   InstrumentedMutexLock l(&log_write_mutex_);
+  return PopulateLogContextNoLock(write_options, log_context, std::move(status));
+}
+
+inline void DBImpl::PopulateLogContextNoLock(const WriteOptions& write_options,
+                                             LogContext* log_context) {
+  auto s = PopulateLogContextNoLock(write_options, log_context, Status::OK());
+  s.PermitUncheckedError();
+}
+
+Status DBImpl::PopulateLogContextNoLock(const WriteOptions& write_options,
+                                  LogContext* log_context, Status&& status) {
   if (status.ok() && log_context->need_log_sync) {
     // Wait until the parallel syncs are finished. Any sync process has to sync
     // the front log too so it is enough to check the status of front()
@@ -1600,6 +1631,150 @@ IOStatus DBImpl::ConcurrentWriteToWAL(
     RecordTick(stats_, WRITE_WITH_WAL, write_with_wal);
   }
   return io_s;
+}
+
+Status DBImpl::NoGroupWrite(const WriteOptions& wo, WriteBatch* batch,
+                            WriteCallback* callback,
+                            uint64_t* log_used, uint64_t log_ref,
+                            bool disable_memtable, uint64_t* seq_used) {
+  assert(!wo.disableWAL);
+  assert(immutable_db_options_.memtable_as_log_index);
+  StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
+  WriteContext write_context;
+  if (auto s = PopulateWriteContext(wo, &write_context); UNLIKELY(!s.ok())) {
+    return s;
+  }
+  if (UNLIKELY(tracer_ != nullptr)) {
+    PERF_TIMER_GUARD(write_pre_and_post_process_time);
+    InstrumentedMutexLock lock(&trace_mutex_);
+    if (tracer_ != nullptr && tracer_->IsWriteOrderPreserved())
+      tracer_->Write(batch).PermitUncheckedError();
+  }
+  if (UNLIKELY(batch->HasProtectionInfo())) {
+    PERF_TIMER_GUARD(write_pre_and_post_process_time);
+    if (auto s = batch->VerifyChecksum(); !s.ok())
+      return s;
+  }
+  if (UNLIKELY(callback != nullptr)) {
+    PERF_TIMER_GUARD(write_pre_and_post_process_time);
+    if (auto s = callback->Callback(this); !s.ok())
+      return s;
+  }
+  auto stats = default_cf_internal_stats_;
+  auto count = WriteBatchInternal::Count(batch);
+  auto bytes = batch->GetDataSize();
+  stats->AddDBStats(InternalStats::kIntStatsWriteDoneBySelf, 1);
+  RecordTick(stats_, WRITE_DONE_BY_SELF, 1);
+  Slice log_entry = WriteBatchInternal::Contents(batch);
+  TEST_SYNC_POINT_CALLBACK("DBImpl::WriteToWAL:log_entry", &log_entry);
+  auto header_struct = log::Writer::PopulateRecordHeader(log_entry);
+  Slice header_slice((const char*)&header_struct, sizeof(header_struct));
+  LogContext log_context(wo.sync);
+  log_write_mutex_.Lock(); //!!! After PopulateRecordHeader
+  PopulateLogContextNoLock(wo, &log_context);
+  auto* wal = log_context.writer;
+  uint64_t last_sequence = versions_->FetchAddLastAllocatedSequence(count);
+  WriteBatchInternal::SetSequence(batch, last_sequence + 1);
+  //printf("sequence %zd count %zd\n", size_t(sequence), count);
+  size_t wal_number = wal->get_log_number();
+  size_t wal_offset = wal->get_log_offset(); // include header size
+  size_t write_size = log_entry.size();
+  size_t mmap_size = wal->mmap_reader()->size();
+  auto* file = wal->file();
+  if (UNLIKELY(wal_offset + write_size > mmap_size)) {
+    char msg1[128];
+    sprintf(msg1, "memtable_as_log_index log::Writer::AddRecord: "
+                  "write offset %zd, size %zd, exceeds mmap size %zd",
+            wal_offset, write_size, mmap_size);
+    log_write_mutex_.Unlock(); //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    return IOStatus::IOFenced(msg1, file->file_name());
+  }
+  PERF_TIMER_WITH_HISTOGRAM(write_wal_time, WRITE_WAL_NANOS, stats_);
+  uint32_t zero_crc32c = 0; // crc32c_checksum
+  IOStatus ios = file->Appendv({header_slice, log_entry}, zero_crc32c,
+                               wo.rate_limiter_priority);
+  PERF_TIMER_STOP(write_wal_time);
+  if (LIKELY(ios.ok())) {
+    ROCKSDB_VERIFY_EQ(wal_offset + write_size, file->GetFileSize());
+    versions_->SetLastSequence(last_sequence + count - 1); //!!!!!!!
+    log_empty_ = false;
+    log_context.log_file_number_size->AddSize(log_entry.size());
+    *wal->get_log_offset_ptr() = wal_offset + write_size;
+    batch->SetWAL({wal->mmap_reader(), wal_number, wal_offset});
+    if (UNLIKELY(log_context.need_log_sync)) {
+      PERF_TIMER_GUARD(write_pre_and_post_process_time);
+      VersionEdit synced_wals;
+      if (ios.ok()) {
+        MarkLogsSynced(logfile_number_, log_context.need_log_dir_sync,
+                        &synced_wals);
+      } else {
+        MarkLogsNotSynced(logfile_number_);
+      }
+      ROCKSDB_ASSERT_EQ(versions_->LastAllocatedSequence(), last_sequence + count);
+      log_write_mutex_.Unlock(); //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      if (synced_wals.IsWalAddition()) {
+        InstrumentedMutexLock l(&mutex_);
+        const ReadOptions read_options;
+        Status s = ApplyWALToManifest(read_options, &synced_wals);
+        if (!s.ok())
+          return s;
+      }
+    }
+    else {
+      log_write_mutex_.Unlock(); //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    }
+    // out lock log_write_mutex_
+    total_log_size_.fetch_add(log_entry.size(), std::memory_order_relaxed);
+    if (log_context.need_log_sync) {
+      stats->AddDBStats(InternalStats::kIntStatsWalFileSynced, 1);
+      RecordTick(stats_, WAL_FILE_SYNCED);
+    }
+    stats->AddDBStats(InternalStats::kIntStatsWalFileBytes, log_entry.size());
+    RecordTick(stats_, WAL_FILE_BYTES, log_entry.size());
+    stats->AddDBStats(InternalStats::kIntStatsWriteWithWal, count);
+    RecordTick(stats_, WRITE_WITH_WAL, count);
+    Status status;
+    if (!disable_memtable) {
+      PERF_TIMER_WITH_HISTOGRAM(write_memtable_time, MEMTAB_WRITE_KV_NANOS, stats_);
+      pending_memtable_writes_.fetch_add(1, std::memory_order_relaxed);
+      uint64_t next_seq = UINT64_MAX;
+      bool has_valid_writes = false;
+      bool concurrent_memtable_writes = true;
+      ColumnFamilyMemTablesImpl thread_ctx(versions_->GetColumnFamilySet());
+      Status s = WriteBatchInternal::InsertInto(batch, &thread_ctx,
+          &flush_scheduler_, &trim_history_scheduler_,
+          wo.ignore_missing_column_families, 0 /*log_number*/, this,
+          concurrent_memtable_writes, &next_seq, &has_valid_writes,
+          seq_per_batch_, batch_per_txn_);
+      if (LIKELY(s.ok())) {
+        stats->AddDBStats(InternalStats::kIntStatsNumKeysWritten, count);
+        RecordTick(stats_, NUMBER_KEYS_WRITTEN, count);
+        stats->AddDBStats(InternalStats::kIntStatsBytesWritten, bytes);
+        RecordTick(stats_, BYTES_WRITTEN, bytes);
+        RecordInHistogram(stats_, BYTES_PER_WRITE, bytes);
+      } else {
+        MemTableInsertStatusCheck(s);
+        status = std::move(s);
+      }
+      auto pending_cnt = pending_memtable_writes_.fetch_sub(1, std::memory_order_relaxed) - 1;
+      if (pending_cnt == 0) {
+        std::lock_guard<std::mutex> lck(switch_mutex_);
+        switch_cv_.notify_all();
+      }
+    }
+    if (log_used != nullptr) {
+      *log_used = wal_number;
+    }
+    if (seq_used != nullptr) {
+      *seq_used = last_sequence + 1;
+    }
+    return status;
+  }
+  else {
+    IOStatusCheck(ios);
+    log_write_mutex_.Unlock(); //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    return Status(ios);
+  }
 }
 
 Status DBImpl::WriteRecoverableState() {
