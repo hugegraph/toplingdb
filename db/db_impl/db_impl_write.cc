@@ -1291,15 +1291,6 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
   return status;
 }
 
-static size_t BatchSizeWAL(const WriteBatch* batch, bool first) {
-  const SavePoint& end = batch->GetWalTerminationPoint();
-  size_t endpos = !end.is_cleared() ? end.size : batch->GetDataSize();
-  if (first)
-    return endpos;
-  else
-    return endpos - WriteBatchInternal::kHeader;
-}
-
 Status DBImpl::MergeBatch(const WriteThread::WriteGroup& write_group,
                           WriteBatch* tmp_batch, WriteBatch** merged_batch,
                           size_t* write_with_wal,
@@ -1325,22 +1316,25 @@ Status DBImpl::MergeBatch(const WriteThread::WriteGroup& write_group,
     // We could avoid copying here with an iov-like AddRecord
     // interface
     *merged_batch = tmp_batch;
-    uint64_t offset = 0;
     for (auto writer : write_group) {
       if (!writer->CallbackFailed()) {
-        Status s = WriteBatchInternal::Append(*merged_batch, writer->batch,
-                                              /*WAL_only*/ true);
-        if (!s.ok()) {
-          tmp_batch->Clear();
-          return s;
+        if (immutable_db_options_.memtable_as_log_index) {
+          if (0 == *write_with_wal)
+            *merged_batch = writer->batch; // first successful batch
+        }
+        else {
+          Status s = WriteBatchInternal::Append(*merged_batch, writer->batch,
+                                                /*WAL_only*/ true);
+          if (!s.ok()) {
+            tmp_batch->Clear();
+            return s;
+          }
         }
         if (WriteBatchInternal::IsLatestPersistentState(writer->batch)) {
           // We only need to cache the last of such write batch
           *to_be_cached_state = writer->batch;
         }
         (*write_with_wal)++;
-        offset += BatchSizeWAL(writer->batch, 0 == offset);
-        ROCKSDB_ASSERT_EQ(offset, (*merged_batch)->GetDataSize());
       }
     }
   }
@@ -1348,60 +1342,47 @@ Status DBImpl::MergeBatch(const WriteThread::WriteGroup& write_group,
   return Status::OK();
 }
 
-static void WriteGroupSetWAL(const WriteThread::WriteGroup& write_group,
-                             const WriteBatch& merged_batch) {
-  if (!merged_batch.HasMmapWAL()) {
-    return;
-  }
-  if (auto leader = write_group.leader; &merged_batch == leader->batch) {
-    ROCKSDB_ASSERT_EQ(write_group.size, 1);
-    assert(!leader->CallbackFailed());
-    assert(leader->batch->GetWalTerminationPoint().is_cleared());
-    return;
-  }
-  uint64_t offset = 0;
-  for (auto writer : write_group) {
-    if (!writer->CallbackFailed()) {
-      uint64_t logical_offset;
-      if (offset) {
-        // beginning at second batch, the header was stripped in merged_batch,
-        // but such batch will be written to memtable in each thread which has
-        // the header, so the logical_offset need to substract the header size
-        ROCKSDB_VERIFY_GE(offset, WriteBatchInternal::kHeader);
-        logical_offset = offset - WriteBatchInternal::kHeader;
-      } else {
-        logical_offset = 0;
-      }
-      writer->batch->SetWAL(merged_batch.GetWAL(0));
-      writer->batch->GetWAL(0).file_offset += logical_offset;
-     #if !defined(NDEBUG)
-      auto len = BatchSizeWAL(writer->batch, false);
-      auto cur = writer->batch->Data().data() + WriteBatchInternal::kHeader;
-      auto all = merged_batch.Data().data() + WriteBatchInternal::kHeader
-                                            + logical_offset;
-      assert(memcmp(cur, all, len) == 0);
-     #endif
-      offset += BatchSizeWAL(writer->batch, 0 == offset);
-    }
-  }
-  if (offset)
-    ROCKSDB_VERIFY_EQ(merged_batch.GetDataSize(), offset);
-  else
-    ROCKSDB_VERIFY_EQ(merged_batch.GetDataSize(), WriteBatchInternal::kHeader);
-}
-
 // When two_write_queues_ is disabled, this function is called from the only
 // write thread. Otherwise this must be called holding log_write_mutex_.
 IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
                             log::Writer* log_writer, uint64_t* log_used,
+                            uint64_t* log_size,
                             Env::IOPriority rate_limiter_priority,
                             LogFileNumberSize& log_file_number_size) {
+  // Make a fake WriteGroup to pass to DoWriteWAL
+  WriteThread::Writer w;
+  WriteThread::WriteGroup write_group;
+  write_group.last_sequence = UINT64_MAX;
+  write_group.leader = &w;
+  write_group.size = 1;
+  w.batch = const_cast<WriteBatch*>(&merged_batch);
+  return DoWriteWAL(merged_batch, log_writer, log_used, log_size,
+             write_group, rate_limiter_priority, log_file_number_size);
+}
+
+IOStatus DBImpl::DoWriteWAL(const WriteBatch& merged_batch,
+                            log::Writer* log_writer, uint64_t* log_used,
+                            uint64_t* log_size,
+                            const WriteThread::WriteGroup& write_group,
+                            Env::IOPriority rate_limiter_priority,
+                            LogFileNumberSize& log_file_number_size) {
+  assert(log_size != nullptr);
+
   Slice log_entry = WriteBatchInternal::Contents(&merged_batch);
-  TEST_SYNC_POINT_CALLBACK("DBImpl::WriteToWAL:log_entry", &log_entry);
   if (UNLIKELY(merged_batch.HasProtectionInfo())) {
-    auto s = merged_batch.VerifyChecksum();
-    if (!s.ok()) {
-      return status_to_io_status(std::move(s));
+    // 1. We expect all batch has ProtectionInfo or none of them.
+    // 2. for memtable_as_log_index WALs we need to check each batch.
+    // 3. for non memtable_as_log_index WALs this code also works because
+    //    WriteWAL_GetNext() is always nullptr for non memtable_as_log_index.
+    for (auto writer : write_group) {
+      auto batch = writer->batch;
+      if (UNLIKELY(batch->HasProtectionInfo() && !writer->CallbackFailed())) {
+        log_entry = WriteBatchInternal::Contents(batch);
+        TEST_SYNC_POINT_CALLBACK("DBImpl::WriteToWAL:log_entry", &log_entry);
+        auto s = batch->VerifyChecksum();
+        if (!s.ok())
+          return status_to_io_status(std::move(s));
+      }
     }
   }
   // When two_write_queues_ WriteToWAL has to be protected from concurretn calls
@@ -1425,12 +1406,53 @@ IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
   }
 }
 #endif
+  IOStatus io_s;
+  size_t log_size_sum = 0;
   if (immutable_db_options_.memtable_as_log_index) {
-    merged_batch.SetWAL({log_writer->mmap_reader(),
-                         log_writer->get_log_number(),
-                         log_writer->get_log_offset()});
+    auto offset = log_writer->get_log_offset();
+    auto logno = log_writer->get_log_number();
+    auto iovec = (Slice*)alloca(sizeof(Slice) * (1 + write_group.size));
+    // iovec[0] is reserved for AddRecordv to add the header
+    uint32_t cnt = 0;
+    size_t mgnum = 0;
+    for (auto writer : write_group) {
+      if (writer->CallbackFailed())
+        continue;
+      auto batch = writer->batch;
+      Slice rec = WriteBatchInternal::Contents(batch);
+      if (auto& t = batch->GetWalTerminationPoint(); t.is_cleared()) {
+        cnt += WriteBatchInternal::Count(batch);
+      } else {
+        cnt += t.count;
+        rec.size_ = t.size;
+      }
+      if (mgnum > 0) {
+        const size_t kHeader = WriteBatchInternal::kHeader;
+        rec.remove_prefix(kHeader);
+        batch->SetWAL({log_writer->mmap_reader(), logno, offset - kHeader});
+      } else {
+        batch->SetWAL({log_writer->mmap_reader(), logno, offset});
+        ROCKSDB_ASSERT_EQ(batch, &merged_batch);
+      }
+      offset += rec.size();
+      log_size_sum += rec.size();
+      iovec[++mgnum] = rec;
+    }
+    ROCKSDB_ASSERT_LE(mgnum, write_group.size);
+    if (LIKELY(mgnum)) {
+      uint32_t old_cnt = merged_batch.Count();
+      WriteBatchInternal::SetCount(const_cast<WriteBatch*>(&merged_batch), cnt);
+      io_s = log_writer->AddRecordv(iovec, 1 + mgnum, rate_limiter_priority);
+      WriteBatchInternal::SetCount(const_cast<WriteBatch*>(&merged_batch), old_cnt);
+    } else {
+      // there is nothing need to write
+      io_s = IOStatus::OK();
+    }
   }
-  IOStatus io_s = log_writer->AddRecord(log_entry, rate_limiter_priority);
+  else {
+    io_s = log_writer->AddRecord(log_entry, rate_limiter_priority);
+    log_size_sum = log_entry.size();
+  }
 
   if (UNLIKELY(needs_locking)) {
     log_write_mutex_.Unlock();
@@ -1438,8 +1460,9 @@ IOStatus DBImpl::WriteToWAL(const WriteBatch& merged_batch,
   if (log_used != nullptr) {
     *log_used = logfile_number_;
   }
-  total_log_size_.fetch_add(log_entry.size(), std::memory_order_relaxed);
-  log_file_number_size.AddSize(log_entry.size());
+  *log_size = log_size_sum; // out param log_size is the sum of the sizes
+  total_log_size_.fetch_add(log_size_sum, std::memory_order_relaxed);
+  log_file_number_size.AddSize(log_size_sum);
   log_empty_ = false;
   return io_s;
 }
@@ -1462,21 +1485,17 @@ IOStatus DBImpl::WriteToWAL(const WriteThread::WriteGroup& write_group,
     return io_s;
   }
 
-  if (merged_batch == write_group.leader->batch) {
-    write_group.leader->log_used = logfile_number_;
-  } else if (write_with_wal > 1) {
-    for (auto writer : write_group) {
-      writer->log_used = logfile_number_;
-    }
+  for (auto writer : write_group) {
+    writer->log_used = logfile_number_;
   }
 
   WriteBatchInternal::SetSequence(merged_batch, sequence);
 
-  uint64_t log_size = merged_batch->GetDataSize();
-  io_s = WriteToWAL(*merged_batch, log_writer, log_used,
+  uint64_t log_size;
+  io_s = DoWriteWAL(*merged_batch, log_writer, log_used, &log_size,
+                    write_group,
                     write_group.leader->rate_limiter_priority,
                     log_file_number_size);
-  WriteGroupSetWAL(write_group, *merged_batch);
   if (to_be_cached_state) {
     cached_recoverable_state_ = *to_be_cached_state;
     cached_recoverable_state_empty_ = false;
@@ -1562,12 +1581,8 @@ IOStatus DBImpl::ConcurrentWriteToWAL(
   // We need to lock log_write_mutex_ since logs_ and alive_log_files might be
   // pushed back concurrently
   log_write_mutex_.Lock();
-  if (merged_batch == write_group.leader->batch) {
-    write_group.leader->log_used = logfile_number_;
-  } else if (write_with_wal > 1) {
-    for (auto writer : write_group) {
-      writer->log_used = logfile_number_;
-    }
+  for (auto writer : write_group) {
+    writer->log_used = logfile_number_;
   }
   *last_sequence = versions_->FetchAddLastAllocatedSequence(seq_inc);
   auto sequence = *last_sequence + 1;
@@ -1578,11 +1593,11 @@ IOStatus DBImpl::ConcurrentWriteToWAL(
 
   assert(log_writer->get_log_number() == log_file_number_size.number);
 
-  uint64_t log_size = merged_batch->GetDataSize();
-  io_s = WriteToWAL(*merged_batch, log_writer, log_used,
+  uint64_t log_size;
+  io_s = DoWriteWAL(*merged_batch, log_writer, log_used, &log_size,
+                    write_group,
                     write_group.leader->rate_limiter_priority,
                     log_file_number_size);
-  WriteGroupSetWAL(write_group, *merged_batch);
   if (to_be_cached_state) {
     cached_recoverable_state_ = *to_be_cached_state;
     cached_recoverable_state_empty_ = false;

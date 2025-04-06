@@ -2078,13 +2078,13 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
         WriteBatch empty_batch;
         WriteBatchInternal::SetSequence(&empty_batch, recovered_seq);
         WriteOptions write_options;
-        uint64_t log_used;
+        uint64_t log_used, log_size;
         log::Writer* log_writer = impl->logs_.back().writer;
         LogFileNumberSize& log_file_number_size = impl->alive_log_files_.back();
 
         assert(log_writer->get_log_number() == log_file_number_size.number);
         impl->mutex_.AssertHeld();
-        s = impl->WriteToWAL(empty_batch, log_writer, &log_used,
+        s = impl->WriteToWAL(empty_batch, log_writer, &log_used, &log_size,
                              Env::IO_TOTAL, log_file_number_size);
         if (s.ok()) {
           // Need to fsync, otherwise it might get lost after a power reset.
