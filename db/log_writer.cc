@@ -311,6 +311,68 @@ IOStatus Writer::MaybeAddUserDefinedTimestampSizeRecord(
 
 bool Writer::BufferIsEmpty() { return dest_->BufferIsEmpty(); }
 
+IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts,
+                            Env::IOPriority rate_limiter_priority) {
+  assert(memtable_as_log_index_);
+  assert(num_parts > 0);
+  assert(parts != nullptr);
+  size_t len = sizeof(RawRecHeader);
+  for (size_t i = 1; i < num_parts; ++i) {
+    len += parts[i].size();
+  }
+  size_t mmap_size = mmap_reader_->size_;
+  if (size_t beg = *log_offset_, end = beg + len; UNLIKELY(end > mmap_size)) {
+    dest_->Sync(false).PermitUncheckedError(); // Sync before return error
+    char msg1[192];
+    sprintf(msg1, "memtable_as_log_index log::Writer::AddRecordv: "
+                  "write offset %zd : %zd, len %zd, exceeds mmap size %zd "
+                  "by %zd bytes",
+            beg, end, len, mmap_size, end - mmap_size);
+    return IOStatus::IOFenced(msg1, fname_);
+  }
+  uint32_t payload_crc = 0;
+  for (size_t i = 1; i < num_parts; ++i) {
+    Slice part = parts[i];
+    payload_crc = crc32c::Extend(payload_crc, part.data(), part.size());
+  }
+  RawRecHeader header;
+  header.length = len - sizeof(RawRecHeader);
+  header.rec_type = kFullType;
+  header.checksum = payload_crc;
+  header.header_checksum = crc32c::Value(header.hbytes, sizeof(header.hbytes));
+  parts[0] = Slice((char*)&header, sizeof(RawRecHeader));
+  if (LIKELY(g_WAL_USE_WRITEV)) {
+    IOStatus s = dest_->Appendv({parts, (int)num_parts},
+        0 /* crc32c_checksum */, rate_limiter_priority);
+    if (LIKELY(s.ok())) {
+      *log_offset_ += len;
+    }
+    return s;
+  }
+  // just for unit test
+  IOStatus s = dest_->Append(Slice((char*)&header, sizeof(RawRecHeader)),
+                             0 /* crc32c_checksum */, rate_limiter_priority);
+  if (!s.ok()) {
+    return s;
+  }
+  for (size_t i = 1; i < num_parts; ++i) {
+    Slice part = parts[i];
+   #if defined(ROCKSDB_UNIT_TEST)
+    uint32_t part_crc = crc32c::Value(part.data_, part.size_);
+   #else
+    uint32_t part_crc = 0;
+   #endif
+    s = dest_->Append(part, part_crc, rate_limiter_priority);
+    if (!s.ok())
+      return s;
+  }
+  if (UNLIKELY(!manual_flush_)) {
+    s = dest_->Flush();
+  }
+  *log_offset_ += len;
+  return s;
+}
+
 IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
                                     Env::IOPriority rate_limiter_priority) {
   if (LIKELY(memtable_as_log_index_)) {
