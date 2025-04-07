@@ -718,6 +718,7 @@ Status CompactionJob::RunLocal() {
     state.RemoveLastEmptyOutput();
   }
 
+if (stats_) {
   for (size_t i = 0; i < compact_->sub_compact_states.size(); i++) {
     auto& sub = compact_->sub_compact_states[i];
     for (size_t j = 0; j < sub.outputs.size(); ++j) {
@@ -742,6 +743,7 @@ Status CompactionJob::RunLocal() {
   RecordTimeToHistogram(stats_, COMPACTION_TIME, compaction_stats_.stats.micros);
   RecordTimeToHistogram(stats_, COMPACTION_CPU_TIME,
                         compaction_stats_.stats.cpu_micros);
+}
 
   TEST_SYNC_POINT("CompactionJob::Run:BeforeVerify");
 
@@ -1168,8 +1170,10 @@ try {
   MoveTK(REMOTE_COMPACT_READ_BYTES,  COMPACT_READ_BYTES);
   MoveTK(REMOTE_COMPACT_WRITE_BYTES, COMPACT_WRITE_BYTES);
 
+if (stats_) {
   stats_->Merge(rpc_results.statistics.tickers,
                 rpc_results.statistics.histograms);
+}
 
   LogFlush(db_options_.info_log);
   TEST_SYNC_POINT("CompactionJob::RunRemote():End");
