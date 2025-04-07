@@ -476,21 +476,12 @@ class WriteBatch : public WriteBatchBase {
     uint64_t file_number = UINT64_MAX;
     uint64_t file_offset = UINT64_MAX;
   };
-  void SetOffsetOfWAL(uint64_t offset) {
-    wal_ref_[0].file_offset = offset;
-  }
-  WALFileRef& GetWAL(size_t which) const {
-    assert(which <= 1);
-    return wal_ref_[which];
-  }
-  void SetWAL(WALFileRef wal, size_t which = 0) const {
-    assert(which <= 1);
-    wal_ref_[which] = std::move(wal);
-  }
+  void SetOffsetOfWAL(uint64_t offset) { wal_ref_.file_offset = offset; }
+  void SetWAL(WALFileRef wal) const { wal_ref_ = std::move(wal); }
   void PresetWAL(const WriteBatch& src, ptrdiff_t diff = 0);
   void StartWriteMemTable(bool b) const { is_write_memtable_ = b; }
   void FinishWriteMemTable() const { is_write_memtable_ = false; }
-  bool HasMmapWAL() const { return wal_ref_[0].file_mmap != nullptr; }
+  bool HasMmapWAL() const { return wal_ref_.file_mmap != nullptr; }
   bool HasProtectionInfo() const { return prot_info_ != nullptr; }
 
  private:
@@ -535,7 +526,7 @@ class WriteBatch : public WriteBatchBase {
   mutable fake_atomic<uint32_t> content_flags_;
 #endif
 
-  mutable WALFileRef wal_ref_[2];
+  mutable WALFileRef wal_ref_;
 
   // Performs deferred computation of content_flags if necessary
   uint32_t ComputeContentFlags() const;

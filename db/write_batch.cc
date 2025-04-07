@@ -198,7 +198,7 @@ WriteBatch::WriteBatch(std::string&& rep)
 WriteBatch::WriteBatch(const WriteBatch& src)
     : write_mem_next_(src.write_mem_next_),
       content_flags_(src.content_flags_.load(std::memory_order_relaxed)),
-      wal_ref_{src.wal_ref_[0], src.wal_ref_[1]},
+      wal_ref_(src.wal_ref_),
       max_bytes_(src.max_bytes_),
       default_cf_ts_sz_(src.default_cf_ts_sz_),
       rep_(src.rep_) {
@@ -216,7 +216,7 @@ WriteBatch::WriteBatch(WriteBatch&& src) noexcept
     : save_points_(std::move(src.save_points_)),
       write_mem_next_(std::move(src.write_mem_next_)),
       content_flags_(src.content_flags_.load(std::memory_order_relaxed)),
-      wal_ref_{std::move(src.wal_ref_[0]), std::move(src.wal_ref_[1])},
+      wal_ref_(std::move(src.wal_ref_)),
       max_bytes_(src.max_bytes_),
       prot_info_(std::move(src.prot_info_)),
       default_cf_ts_sz_(src.default_cf_ts_sz_),
@@ -271,15 +271,14 @@ void WriteBatch::Clear() {
   default_cf_ts_sz_ = 0;
 
   is_write_memtable_ = false;
-  wal_ref_[0] = {};
-  wal_ref_[1] = {};
+  wal_ref_ = {};
 }
 
 void WriteBatch::PresetWAL(const WriteBatch& src, ptrdiff_t diff) {
   size_t my_size = GetDataSize() - WriteBatchInternal::kHeader;
-  wal_ref_[0].file_mmap = src.wal_ref_[0].file_mmap;
-  wal_ref_[0].file_number = src.wal_ref_[0].file_number;
-  wal_ref_[0].file_offset = src.wal_ref_[0].file_offset - my_size + diff;
+  wal_ref_.file_mmap = src.wal_ref_.file_mmap;
+  wal_ref_.file_number = src.wal_ref_.file_number;
+  wal_ref_.file_offset = src.wal_ref_.file_offset - my_size + diff;
 }
 
 uint32_t WriteBatch::Count() const { return WriteBatchInternal::Count(this); }
@@ -548,9 +547,9 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
   KeyValuePassMemTable kv_pmt;
   const bool is_write_memtable = wb->is_write_memtable_;
   const char* base_ptr = wb->rep_.data();
-  kv_pmt.fileno = wb->wal_ref_[0].file_number;
-  kv_pmt.wal_file = wb->wal_ref_[0].file_mmap.get();
-  size_t file_offset = wb->wal_ref_[0].file_offset;
+  kv_pmt.fileno = wb->wal_ref_.file_number;
+  kv_pmt.wal_file = wb->wal_ref_.file_mmap.get();
+  size_t file_offset = wb->wal_ref_.file_offset;
   Slice input(wb->rep_.data() + begin, static_cast<size_t>(end - begin));
   bool whole_batch =
       (begin == WriteBatchInternal::kHeader) && (end == wb->rep_.size());
