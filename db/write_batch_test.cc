@@ -132,7 +132,7 @@ static std::string PrintContents(WriteBatch* b,
     EXPECT_EQ(b->HasSingleDelete(), single_delete_count > 0);
     EXPECT_EQ(b->HasDeleteRange(), delete_range_count > 0);
     EXPECT_EQ(b->HasMerge(), merge_count > 0);
-    if (count != WriteBatchInternal::Count(b)) {
+    if (count != WriteBatchMemTable__Count(b)) {
       state.append("CountMismatch()");
     }
   } else {
@@ -214,8 +214,9 @@ TEST_F(WriteBatchTest, Append) {
   b2.Clear();
   ASSERT_OK(b2.Put("c", "cc"));
   ASSERT_OK(b2.Put("d", "dd"));
-  b2.MarkWalTerminationPoint();
-  ASSERT_OK(b2.Put("e", "ee"));
+  WriteBatch b3;
+  ASSERT_OK(b3.Put("e", "ee"));
+  b2.SetWriteMemNext(&b3);
   ASSERT_OK(WriteBatchInternal::Append(&b1, &b2, /*wal only*/ true));
   ASSERT_EQ(
       "Put(a, va)@200"
@@ -225,13 +226,13 @@ TEST_F(WriteBatchTest, Append) {
       "Put(d, dd)@205"
       "Delete(foo)@203",
       PrintContents(&b1));
-  ASSERT_EQ(6u, b1.Count());
+  ASSERT_EQ(6u, b1.GetWriteMemCount());
   ASSERT_EQ(
       "Put(c, cc)@0"
       "Put(d, dd)@1"
       "Put(e, ee)@2",
       PrintContents(&b2));
-  ASSERT_EQ(3u, b2.Count());
+  ASSERT_EQ(3u, b2.GetWriteMemCount());
 }
 
 TEST_F(WriteBatchTest, SingleDeletion) {

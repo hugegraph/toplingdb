@@ -364,6 +364,7 @@ class WriteBatch : public WriteBatchBase {
     virtual bool Continue();
 
     virtual void SetBeginPrepareNextPtr(const char*) {}
+    virtual void SwitchWorkingWriteBatch(const WriteBatch*) {}
 
    protected:
     friend class WriteBatchInternal;
@@ -459,11 +460,11 @@ class WriteBatch : public WriteBatchBase {
   WriteBatch(WriteBatch&& src) noexcept;
   WriteBatch& operator=(const WriteBatch& src);
   WriteBatch& operator=(WriteBatch&& src);
-
-  // marks this point in the WriteBatch as the last record to
-  // be inserted into the WAL, provided the WAL is enabled
-  void MarkWalTerminationPoint();
-  const SavePoint& GetWalTerminationPoint() const { return wal_term_point_; }
+  auto GetWriteMemNext() const { return write_mem_next_; }
+  void SetWriteMemNext(WriteBatch* next);
+  void ClearWriteMemNext();
+  uint32_t GetWriteMemCount() const;
+  size_t GetWriteMemByteSize() const;
 
   void SetMaxBytes(size_t max_bytes) override { max_bytes_ = max_bytes; }
 
@@ -504,7 +505,7 @@ class WriteBatch : public WriteBatchBase {
   // When sending a WriteBatch through WriteImpl we might want to
   // specify that only the first x records of the batch be written to
   // the WAL.
-  SavePoint wal_term_point_;
+  WriteBatch* write_mem_next_ = nullptr;
 
   // Is the content of the batch the application's latest state that meant only
   // to be used for recovery? Refer to

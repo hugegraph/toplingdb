@@ -625,7 +625,7 @@ void WriteThread::EnterAsMemTableWriter(Writer* leader,
 
   write_group->last_writer = last_writer;
   write_group->last_sequence =
-      last_writer->sequence + WriteBatchInternal::Count(last_writer->batch) - 1;
+      last_writer->sequence + WriteBatchMemTable__Count(last_writer->batch) - 1;
 }
 
 void WriteThread::ExitAsMemTableWriter(Writer* /*self*/,

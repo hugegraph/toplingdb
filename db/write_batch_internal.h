@@ -248,6 +248,14 @@ class WriteBatchInternal {
                                      uint64_t* checksum = nullptr);
 };
 
+inline uint32_t WriteBatchMemTable__Count(const WriteBatch* wb) {
+  return wb->GetWriteMemCount();
+}
+
+inline size_t WriteBatchMemTable__ByteSize(const WriteBatch* wb) {
+  return wb->GetWriteMemByteSize();
+}
+
 // LocalSavePoint is similar to a scope guard
 class LocalSavePoint {
  public:

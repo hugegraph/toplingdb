@@ -2620,8 +2620,9 @@ TEST_F(DBWALTest, WalTermTest) {
 
   WriteBatch batch;
   ASSERT_OK(batch.Put("foo", "bar"));
-  batch.MarkWalTerminationPoint();
-  ASSERT_OK(batch.Put("foo2", "bar2"));
+  WriteBatch batch2;
+  ASSERT_OK(batch2.Put("foo2", "bar2"));
+  batch.SetWriteMemNext(&batch2);
 
   if (options.memtable_as_log_index)
     ASSERT_TRUE(dbfull()->Write(wo, &batch).IsNotSupported());

@@ -196,7 +196,7 @@ WriteBatch::WriteBatch(std::string&& rep)
       rep_(std::move(rep)) {}
 
 WriteBatch::WriteBatch(const WriteBatch& src)
-    : wal_term_point_(src.wal_term_point_),
+    : write_mem_next_(src.write_mem_next_),
       content_flags_(src.content_flags_.load(std::memory_order_relaxed)),
       wal_ref_{src.wal_ref_[0], src.wal_ref_[1]},
       max_bytes_(src.max_bytes_),
@@ -214,7 +214,7 @@ WriteBatch::WriteBatch(const WriteBatch& src)
 
 WriteBatch::WriteBatch(WriteBatch&& src) noexcept
     : save_points_(std::move(src.save_points_)),
-      wal_term_point_(std::move(src.wal_term_point_)),
+      write_mem_next_(std::move(src.write_mem_next_)),
       content_flags_(src.content_flags_.load(std::memory_order_relaxed)),
       wal_ref_{std::move(src.wal_ref_[0]), std::move(src.wal_ref_[1])},
       max_bytes_(src.max_bytes_),
@@ -267,7 +267,7 @@ void WriteBatch::Clear() {
   if (prot_info_ != nullptr) {
     prot_info_->entries_.clear();
   }
-  wal_term_point_.clear();
+  write_mem_next_ = nullptr;
   default_cf_ts_sz_ = 0;
 
   is_write_memtable_ = false;
@@ -301,10 +301,34 @@ uint32_t WriteBatch::ComputeContentFlags() const {
   return rv;
 }
 
-void WriteBatch::MarkWalTerminationPoint() {
-  wal_term_point_.size = GetDataSize();
-  wal_term_point_.count = Count();
-  wal_term_point_.content_flags = content_flags_;
+void WriteBatch::SetWriteMemNext(WriteBatch* next) {
+  assert(next != nullptr);
+  assert(write_mem_next_ == nullptr);
+  write_mem_next_ = next;
+}
+
+void WriteBatch::ClearWriteMemNext() {
+  write_mem_next_ = nullptr;
+}
+
+uint32_t WriteBatch::GetWriteMemCount() const {
+  if (write_mem_next_ != nullptr) {
+    uint32_t this_count = WriteBatchInternal::Count(this);
+    uint32_t next_count = WriteBatchInternal::Count(write_mem_next_);
+    return this_count + next_count;
+  } else {
+    return WriteBatchInternal::Count(this);
+  }
+}
+
+size_t WriteBatch::GetWriteMemByteSize() const {
+  if (write_mem_next_ != nullptr) {
+    size_t this_bytes = WriteBatchInternal::ByteSize(this);
+    size_t next_bytes = WriteBatchInternal::ByteSize(write_mem_next_);
+    return this_bytes + next_bytes - WriteBatchInternal::kHeader;
+  } else {
+    return WriteBatchInternal::ByteSize(this);
+  }
 }
 
 size_t WriteBatch::GetProtectionBytesPerKey() const {
@@ -499,8 +523,18 @@ Status WriteBatch::Iterate(Handler* handler) const {
     return Status::Corruption("malformed WriteBatch (too small)");
   }
 
-  return WriteBatchInternal::Iterate(this, handler, WriteBatchInternal::kHeader,
-                                     rep_.size());
+  size_t begin = WriteBatchInternal::kHeader, end = rep_.size();
+  Status s = WriteBatchInternal::Iterate(this, handler, begin, end);
+  if (WriteBatch* next = write_mem_next_; s.ok() && next) {
+    if (this->is_write_memtable_ && !next->HasMmapWAL()) {
+      return Status::NotSupported(
+        "memtable_as_log_index is true but write_mem_next has no mmap wal");
+    }
+    next->is_write_memtable_ = this->is_write_memtable_;
+    s = next->Iterate(handler);
+    next->is_write_memtable_ = false;
+  }
+  return s;
 }
 
 Status WriteBatchInternal::Iterate(const WriteBatch* wb,
@@ -509,12 +543,14 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
   if (begin > wb->rep_.size() || end > wb->rep_.size() || end < begin) {
     return Status::Corruption("Invalid start/end bounds for Iterate");
   }
+  handler->SwitchWorkingWriteBatch(wb);
   assert(begin <= end);
   KeyValuePassMemTable kv_pmt;
   const bool is_write_memtable = wb->is_write_memtable_;
   const char* base_ptr = wb->rep_.data();
-  const auto wal_term_pos = wb->wal_term_point_.size ? wb->wal_term_point_.size : end;
-  const auto wal_term_ptr = base_ptr + wal_term_pos;
+  kv_pmt.fileno = wb->wal_ref_[0].file_number;
+  kv_pmt.wal_file = wb->wal_ref_[0].file_mmap.get();
+  size_t file_offset = wb->wal_ref_[0].file_offset;
   Slice input(wb->rep_.data() + begin, static_cast<size_t>(end - begin));
   bool whole_batch =
       (begin == WriteBatchInternal::kHeader) && (end == wb->rep_.size());
@@ -543,26 +579,13 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
       tag = 0;
       column_family = 0;  // default
 
-      const char* rec_ptr = input.data_;
       s = ReadRecordFromWriteBatch(&input, &tag, &column_family, &key, &value,
                                    &blob, &xid);
       if (!s.ok()) {
         return s;
       }
       if (is_write_memtable) {
-        if (rec_ptr < wal_term_ptr) {
-          kv_pmt.fileno = wb->wal_ref_[0].file_number;
-          kv_pmt.wal_file = wb->wal_ref_[0].file_mmap.get();
-          kv_pmt.val_pos = wb->wal_ref_[0].file_offset + value.data() - base_ptr;
-        } else {
-          if (UNLIKELY(!wb->wal_ref_[1].file_mmap)) {
-            return Status::NotSupported("memtable_as_log_index", "wal_term_point");
-          }
-          kv_pmt.fileno = wb->wal_ref_[1].file_number;
-          kv_pmt.wal_file = wb->wal_ref_[1].file_mmap.get();
-          kv_pmt.val_pos = wb->wal_ref_[1].file_offset +
-              (value.data() - wal_term_ptr) + WriteBatchInternal::kHeader;
-        }
+        kv_pmt.val_pos = file_offset + value.data() - base_ptr;
         kv_pmt.value = value;
         kv_pmt.key_len = key.size();
         value = {(char*)&kv_pmt, sizeof(kv_pmt)};
@@ -2065,6 +2088,11 @@ class MemTableInserter : public WriteBatch::Handler {
   void SetBeginPrepareNextPtr(const char* curr) final {
     prepare_content_begin_ = curr;
   }
+  void SwitchWorkingWriteBatch(const WriteBatch* wb) final {
+    assert(wb != nullptr);
+    src_batch_ = wb;
+    prepare_content_begin_ = nullptr;
+  }
   const WriteBatch* src_batch_ = nullptr;
   const char* prepare_content_begin_ = nullptr;
 
@@ -3128,7 +3156,6 @@ Status WriteBatchInternal::InsertInto(
     SetSequence(w->batch, inserter.sequence());
     inserter.set_log_number_ref(w->log_ref);
     inserter.set_prot_info(w->batch->prot_info_.get());
-    inserter.src_batch_ = w->batch;
     w->batch->is_write_memtable_ = inserter.memtable_as_log_index();
     w->status = w->batch->Iterate(&inserter);
     w->batch->is_write_memtable_ = false;
@@ -3161,7 +3188,6 @@ Status WriteBatchInternal::InsertInto(
   SetSequence(writer->batch, sequence);
   inserter.set_log_number_ref(writer->log_ref);
   inserter.set_prot_info(writer->batch->prot_info_.get());
-  inserter.src_batch_ = writer->batch;
   writer->batch->is_write_memtable_ = inserter.memtable_as_log_index();
   Status s = writer->batch->Iterate(&inserter);
   writer->batch->is_write_memtable_ = false;
@@ -3185,7 +3211,6 @@ Status WriteBatchInternal::InsertInto(
                             ignore_missing_column_families, log_number, db,
                             concurrent_memtable_writes, batch->prot_info_.get(),
                             has_valid_writes, seq_per_batch, batch_per_txn);
-  inserter.src_batch_ = batch;
   batch->is_write_memtable_ = inserter.memtable_as_log_index();
   Status s = batch->Iterate(&inserter);
   batch->is_write_memtable_ = false;
@@ -3304,17 +3329,9 @@ Status WriteBatchInternal::Append(WriteBatch* dst, const WriteBatch* src,
   int src_count;
   uint32_t src_flags;
 
-  const SavePoint& batch_end = src->GetWalTerminationPoint();
-
-  if (wal_only && !batch_end.is_cleared()) {
-    src_len = batch_end.size - WriteBatchInternal::kHeader;
-    src_count = batch_end.count;
-    src_flags = batch_end.content_flags;
-  } else {
-    src_len = src->rep_.size() - WriteBatchInternal::kHeader;
-    src_count = Count(src);
-    src_flags = src->content_flags_.load(std::memory_order_relaxed);
-  }
+  src_len = src->rep_.size() - WriteBatchInternal::kHeader;
+  src_count = Count(src);
+  src_flags = src->content_flags_.load(std::memory_order_relaxed);
 
   if (src->prot_info_ != nullptr) {
     if (dst->prot_info_ == nullptr) {

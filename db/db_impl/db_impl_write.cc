@@ -291,7 +291,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
     const size_t sub_batch_cnt = batch_cnt != 0
                                      ? batch_cnt
                                      // every key is a sub-batch consuming a seq
-                                     : WriteBatchInternal::Count(my_batch);
+                                     : WriteBatchMemTable__Count(my_batch);
     uint64_t seq = 0;
     // Use a write thread to i) optimize for WAL write, ii) publish last
     // sequence in in increasing order, iii) call pre_release_callback serially
@@ -444,9 +444,9 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
       if (writer->CheckCallback(this)) {
         valid_batches += writer->batch_cnt;
         if (writer->ShouldWriteToMemtable()) {
-          total_count += WriteBatchInternal::Count(writer->batch);
+          total_count += WriteBatchMemTable__Count(writer->batch);
           total_byte_size = WriteBatchInternal::AppendedByteSize(
-              total_byte_size, WriteBatchInternal::ByteSize(writer->batch));
+              total_byte_size, WriteBatchMemTable__ByteSize(writer->batch));
           parallel = parallel && !writer->batch->HasMerge();
         }
         if (writer->pre_release_callback) {
@@ -559,7 +559,7 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
           assert(writer->batch_cnt);
           next_sequence += writer->batch_cnt;
         } else if (writer->ShouldWriteToMemtable()) {
-          next_sequence += WriteBatchInternal::Count(writer->batch);
+          next_sequence += WriteBatchMemTable__Count(writer->batch);
         }
       }
     }
@@ -727,9 +727,9 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
         if (writer->CheckCallback(this)) {
           if (writer->ShouldWriteToMemtable()) {
             writer->sequence = next_sequence;
-            size_t count = WriteBatchInternal::Count(writer->batch);
+            size_t count = WriteBatchMemTable__Count(writer->batch);
             total_byte_size = WriteBatchInternal::AppendedByteSize(
-                total_byte_size, WriteBatchInternal::ByteSize(writer->batch));
+                total_byte_size, WriteBatchMemTable__ByteSize(writer->batch));
             next_sequence += count;
             total_count += count;
           }
@@ -863,7 +863,7 @@ Status DBImpl::UnorderedWriteMemtable(const WriteOptions& write_options,
 
   if (w.CheckCallback(this) && w.ShouldWriteToMemtable()) {
     w.sequence = seq;
-    size_t total_count = WriteBatchInternal::Count(my_batch);
+    size_t total_count = WriteBatchMemTable__Count(my_batch);
     InternalStats* stats = default_cf_internal_stats_;
     stats->AddDBStats(InternalStats::kIntStatsNumKeysWritten, total_count);
     RecordTick(stats_, NUMBER_KEYS_WRITTEN, total_count);
@@ -983,7 +983,7 @@ Status DBImpl::WriteImplWALOnly(
     assert(writer);
     if (writer->CheckCallback(this)) {
       total_byte_size = WriteBatchInternal::AppendedByteSize(
-          total_byte_size, WriteBatchInternal::ByteSize(writer->batch));
+          total_byte_size, WriteBatchMemTable__ByteSize(writer->batch));
       if (writer->pre_release_callback) {
         pre_release_callback_cnt++;
       }
@@ -1302,7 +1302,7 @@ Status DBImpl::MergeBatch(const WriteThread::WriteGroup& write_group,
   auto* leader = write_group.leader;
   assert(!leader->disable_wal);  // Same holds for all in the batch group
   if (write_group.size == 1 && !leader->CallbackFailed() &&
-      leader->batch->GetWalTerminationPoint().is_cleared()) {
+      leader->batch->GetWriteMemNext() == nullptr) {
     // we simply write the first WriteBatch to WAL if the group only
     // contains one batch, that batch should be written to the WAL,
     // and the batch is not wanting to be truncated
@@ -1420,12 +1420,7 @@ IOStatus DBImpl::DoWriteWAL(const WriteBatch& merged_batch,
         continue;
       auto batch = writer->batch;
       Slice rec = WriteBatchInternal::Contents(batch);
-      if (auto& t = batch->GetWalTerminationPoint(); t.is_cleared()) {
-        cnt += WriteBatchInternal::Count(batch);
-      } else {
-        cnt += t.count;
-        rec.size_ = t.size;
-      }
+      cnt += WriteBatchInternal::Count(batch);
       if (mgnum > 0) {
         const size_t kHeader = WriteBatchInternal::kHeader;
         rec.remove_prefix(kHeader);

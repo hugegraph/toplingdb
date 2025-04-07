@@ -790,15 +790,10 @@ Status WriteCommittedTxn::CommitInternal() {
     return s;
   }
 
-  // any operations appended to this working_batch will be ignored from WAL
-  working_batch->MarkWalTerminationPoint();
-  working_batch->SetWAL(wb->GetWAL(0), 1);
-
   // insert prepared batch into Memtable only skipping WAL.
   // Memtable will ignore BeginPrepare/EndPrepare markers
   // in non recovery mode and simply insert the values
-  s = WriteBatchInternal::Append(working_batch, wb);
-  assert(s.ok());
+  working_batch->SetWriteMemNext(wb);
 
   uint64_t seq_used = kMaxSequenceNumber;
   SnapshotCreationCallback snapshot_creation_cb(db_impl_, commit_timestamp_,
@@ -821,6 +816,7 @@ Status WriteCommittedTxn::CommitInternal() {
   if (s.ok()) {
     SetId(seq_used);
   }
+  //working_batch->ClearWriteMemNext(); // not needed, will call Clear() later
   return s;
 }
 
