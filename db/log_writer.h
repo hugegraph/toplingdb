@@ -133,6 +133,7 @@ class Writer {
   std::string fname_;
   FileSystem* fs_;
   bool memtable_as_log_index_;
+  bool use_writev_;
   bool recycle_log_files_;
 
   // crc32c values for all supported record types.  These are

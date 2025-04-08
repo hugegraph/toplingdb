@@ -57,6 +57,10 @@ GetLogWriterFileOffset(FileSystem& fs, const std::string& fname) {
     return nullptr;
 }
 
+// when use writev, skip buffer in WritableFileWriter
+const static bool g_WAL_USE_WRITEV = terark::getEnvBool
+                  ("WAL_USE_WRITEV", TERARK_IF_DEBUG(false, true));
+
 Writer::Writer(std::unique_ptr<WritableFileWriter>&& dest, uint64_t log_number,
                bool recycle_log_files, bool manual_flush,
                CompressionType compression_type)
@@ -73,6 +77,7 @@ Writer::Writer(std::unique_ptr<WritableFileWriter>&& dest, uint64_t log_number,
   }
   fs_ = nullptr;
   memtable_as_log_index_ = false;
+  use_writev_ = g_WAL_USE_WRITEV;
 }
 
 Writer::~Writer() {
@@ -132,10 +137,6 @@ void Writer::InitReaderMmap(FileSystem& fs, size_t mmap_size) {
   TERARK_VERIFY_S(insert_ok, "%s is registered", fname_);
 }
 
-// when use writev, skip buffer in WritableFileWriter
-const static bool g_WAL_USE_WRITEV = terark::getEnvBool
-                  ("WAL_USE_WRITEV", TERARK_IF_DEBUG(false, true));
-
 IOStatus Writer::AddRecord(const Slice& slice,
                            Env::IOPriority rate_limiter_priority) {
   const char* ptr = slice.data();
@@ -143,7 +144,7 @@ IOStatus Writer::AddRecord(const Slice& slice,
 
   if (LIKELY(memtable_as_log_index_)) {
     IOStatus s = EmitPhysicalRecord(kFullType, ptr, left, rate_limiter_priority);
-    if (UNLIKELY(!g_WAL_USE_WRITEV && !manual_flush_ && s.ok())) {
+    if (UNLIKELY(!use_writev_ && !manual_flush_ && s.ok())) {
       s = dest_->Flush();
     }
     return s;
@@ -342,7 +343,7 @@ IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts, size_t sum_len,
   header.checksum = payload_crc;
   header.header_checksum = crc32c::Value(header.hbytes, sizeof(header.hbytes));
   parts[0] = Slice((char*)&header, sizeof(RawRecHeader));
-  if (LIKELY(g_WAL_USE_WRITEV)) {
+  if (LIKELY(use_writev_)) {
     IOStatus s = dest_->Appendv(parts, num_parts, len,
         0 /* crc32c_checksum */, rate_limiter_priority);
     if (LIKELY(s.ok())) {
@@ -393,7 +394,7 @@ IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
     header.length = n;
     header.rec_type = t;
     header.header_checksum = crc32c::Value(header.hbytes, sizeof(header.hbytes));
-    if (LIKELY(g_WAL_USE_WRITEV)) {
+    if (LIKELY(use_writev_)) {
       IOStatus s = dest_->Appendv(
           {Slice((char*)&header, sizeof(RawRecHeader)), Slice(ptr, n)},
           sizeof(RawRecHeader) + n,
