@@ -181,7 +181,6 @@ IOStatus WritableFileWriter::Append(const Slice& data, uint32_t crc32c_checksum,
 
 IOStatus WritableFileWriter::Appendv(const Slice* parts, size_t num,
                                      size_t sum_size,
-                                     uint32_t /*crc32c_checksum*/,
                                      Env::IOPriority op_rate_limiter_priority) {
   if (UNLIKELY(seen_error())) {
     return AssertFalseAndGetStatusForPrevError();

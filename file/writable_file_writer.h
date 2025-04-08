@@ -239,15 +239,13 @@ class WritableFileWriter {
                   Env::IOPriority op_rate_limiter_priority = Env::IO_TOTAL);
 
   IOStatus Appendv(const Slice* parts, size_t num, size_t sum_size,
-                   uint32_t crc32c_checksum = 0,
                    Env::IOPriority op_rate_limiter_priority = Env::IO_TOTAL);
 
   IOStatus Appendv(std::initializer_list<Slice> vec, size_t sum_size,
-                   uint32_t crc32c_checksum = 0,
                    Env::IOPriority op_rate_limiter_priority = Env::IO_TOTAL) {
     const Slice* beg = &*vec.begin();
     const size_t num = vec.size();
-    return Appendv(beg, num, sum_size, crc32c_checksum, op_rate_limiter_priority);
+    return Appendv(beg, num, sum_size, op_rate_limiter_priority);
   }
 
   IOStatus Pad(const size_t pad_bytes,

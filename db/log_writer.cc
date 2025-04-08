@@ -344,8 +344,7 @@ IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts, size_t sum_len,
   header.header_checksum = crc32c::Value(header.hbytes, sizeof(header.hbytes));
   parts[0] = Slice((char*)&header, sizeof(RawRecHeader));
   if (LIKELY(use_writev_)) {
-    IOStatus s = dest_->Appendv(parts, num_parts, len,
-        0 /* crc32c_checksum */, rate_limiter_priority);
+    IOStatus s = dest_->Appendv(parts, num_parts, len, rate_limiter_priority);
     if (LIKELY(s.ok())) {
       *log_offset_ = end;
     }
@@ -397,8 +396,7 @@ IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
     if (LIKELY(use_writev_)) {
       IOStatus s = dest_->Appendv(
           {Slice((char*)&header, sizeof(RawRecHeader)), Slice(ptr, n)},
-          sizeof(RawRecHeader) + n,
-          0 /* crc32c_checksum */, rate_limiter_priority);
+          sizeof(RawRecHeader) + n, rate_limiter_priority);
       if (LIKELY(s.ok())) {
         *log_offset_ += sizeof(RawRecHeader) + n;
       }
