@@ -317,8 +317,9 @@ IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts, size_t sum_len,
   assert(num_parts > 0);
   assert(parts != nullptr);
   size_t len = sizeof(RawRecHeader) + sum_len;
+  size_t beg = *log_offset_, end = beg + len;
   size_t mmap_size = mmap_reader_->size_;
-  if (size_t beg = *log_offset_, end = beg + len; UNLIKELY(end > mmap_size)) {
+  if (UNLIKELY(end > mmap_size)) {
     dest_->Sync(false).PermitUncheckedError(); // Sync before return error
     char msg1[192];
     sprintf(msg1, "memtable_as_log_index log::Writer::AddRecordv: "
@@ -345,7 +346,7 @@ IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts, size_t sum_len,
     IOStatus s = dest_->Appendv(parts, num_parts, len,
         0 /* crc32c_checksum */, rate_limiter_priority);
     if (LIKELY(s.ok())) {
-      *log_offset_ += len;
+      *log_offset_ = end;
     }
     return s;
   }
@@ -369,7 +370,7 @@ IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts, size_t sum_len,
   if (UNLIKELY(!manual_flush_)) {
     s = dest_->Flush();
   }
-  *log_offset_ += len;
+  *log_offset_ = end;
   return s;
 }
 
