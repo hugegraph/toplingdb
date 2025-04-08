@@ -1011,8 +1011,10 @@ class FSWritableFile {
   virtual IOStatus Append(const Slice& data, const IOOptions& options,
                           IODebugContext* dbg) = 0;
 
-  virtual IOStatus Appendv(const SliceParts& parts, const IOOptions& options,
-                           IODebugContext* dbg);
+  // sum_size is the sum of all parts size, it is redundant, pass it as param
+  // is just to avoid calculating it in Appendv.
+  virtual IOStatus Appendv(const Slice* parts, size_t num, size_t sum_size,
+                           const IOOptions&, IODebugContext*);
 
   // Append data with verification information.
   // Note that this API change is experimental and it might be changed in

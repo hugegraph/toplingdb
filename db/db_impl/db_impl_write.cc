@@ -1437,7 +1437,7 @@ IOStatus DBImpl::DoWriteWAL(const WriteBatch& merged_batch,
     if (LIKELY(mgnum)) {
       uint32_t old_cnt = merged_batch.Count();
       WriteBatchInternal::SetCount(const_cast<WriteBatch*>(&merged_batch), cnt);
-      io_s = log_writer->AddRecordv(iovec, 1 + mgnum, rate_limiter_priority);
+      io_s = log_writer->AddRecordv(iovec, 1 + mgnum, log_size_sum, rate_limiter_priority);
       WriteBatchInternal::SetCount(const_cast<WriteBatch*>(&merged_batch), old_cnt);
     } else {
       // there is nothing need to write

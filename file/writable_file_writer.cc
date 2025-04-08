@@ -179,19 +179,16 @@ IOStatus WritableFileWriter::Append(const Slice& data, uint32_t crc32c_checksum,
   return s;
 }
 
-IOStatus WritableFileWriter::Appendv(const SliceParts& parts,
+IOStatus WritableFileWriter::Appendv(const Slice* parts, size_t num,
+                                     size_t sum_size,
                                      uint32_t /*crc32c_checksum*/,
                                      Env::IOPriority op_rate_limiter_priority) {
   if (UNLIKELY(seen_error())) {
     return AssertFalseAndGetStatusForPrevError();
   }
-  size_t sum_size = 0;
-  for (size_t i = 0, n = parts.num_parts; i < n; i++) {
-    sum_size += parts.parts[i].size_;
-  }
-  if (checksum_generator_ != nullptr) {
-    for (size_t i = 0, n = parts.num_parts; i < n; i++)
-      checksum_generator_->Update(parts.parts[i].data_, parts.parts[i].size_);
+  if (UNLIKELY(checksum_generator_ != nullptr)) {
+    for (size_t i = 0; i < num; i++)
+      checksum_generator_->Update(parts[i].data_, parts[i].size_);
   }
   IOStatus ios;
   IOOptions io_options;
@@ -212,7 +209,7 @@ IOStatus WritableFileWriter::Appendv(const SliceParts& parts,
     uint64_t old_size = next_write_offset_;
     {
       IOSTATS_CPU_TIMER_GUARD(cpu_write_nanos, clock_);
-      ios = writable_file_->Appendv(parts, io_options, nullptr);
+      ios = writable_file_->Appendv(parts, num, sum_size, io_options, nullptr);
     }
     auto finish_ts = std::chrono::steady_clock::now();
     NotifyOnFileWriteFinish(old_size, sum_size, start_ts, finish_ts, ios);
@@ -221,7 +218,7 @@ IOStatus WritableFileWriter::Appendv(const SliceParts& parts,
   }
   else {
     IOSTATS_CPU_TIMER_GUARD(cpu_write_nanos, clock_);
-    ios = writable_file_->Appendv(parts, io_options, nullptr);
+    ios = writable_file_->Appendv(parts, num, sum_size, io_options, nullptr);
   }
   if (LIKELY(ios.ok())) {
     next_write_offset_ += sum_size;

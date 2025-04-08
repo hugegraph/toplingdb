@@ -275,11 +275,11 @@ DirFsyncOptions::DirFsyncOptions(FsyncReason fsync_reason) {
   reason = fsync_reason;
 }
 
-IOStatus FSWritableFile::Appendv(const SliceParts& parts,
+IOStatus FSWritableFile::Appendv(const Slice* parts, size_t num, size_t,
                                  const IOOptions& options,
                                  IODebugContext* dbg) {
-  for (ssize_t i = 0, n = parts.num_parts; i < n; i++) {
-    IOStatus ios = Append(parts.parts[i], options, dbg);
+  for (size_t i = 0; i < num; i++) {
+    IOStatus ios = Append(parts[i], options, dbg);
     if (!ios.ok())
       return ios;
   }

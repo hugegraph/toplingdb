@@ -311,15 +311,12 @@ IOStatus Writer::MaybeAddUserDefinedTimestampSizeRecord(
 
 bool Writer::BufferIsEmpty() { return dest_->BufferIsEmpty(); }
 
-IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts,
+IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts, size_t sum_len,
                             Env::IOPriority rate_limiter_priority) {
   assert(memtable_as_log_index_);
   assert(num_parts > 0);
   assert(parts != nullptr);
-  size_t len = sizeof(RawRecHeader);
-  for (size_t i = 1; i < num_parts; ++i) {
-    len += parts[i].size();
-  }
+  size_t len = sizeof(RawRecHeader) + sum_len;
   size_t mmap_size = mmap_reader_->size_;
   if (size_t beg = *log_offset_, end = beg + len; UNLIKELY(end > mmap_size)) {
     dest_->Sync(false).PermitUncheckedError(); // Sync before return error
@@ -330,19 +327,22 @@ IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts,
             beg, end, len, mmap_size, end - mmap_size);
     return IOStatus::IOFenced(msg1, fname_);
   }
+  TERARK_IF_DEBUG(size_t computed_sum_len = 0,);
   uint32_t payload_crc = 0;
   for (size_t i = 1; i < num_parts; ++i) {
     Slice part = parts[i];
     payload_crc = crc32c::Extend(payload_crc, part.data(), part.size());
+    TERARK_IF_DEBUG(computed_sum_len += part.size(),);
   }
+  ROCKSDB_ASSERT_EQ(computed_sum_len, sum_len);
   RawRecHeader header;
-  header.length = len - sizeof(RawRecHeader);
+  header.length = sum_len;
   header.rec_type = kFullType;
   header.checksum = payload_crc;
   header.header_checksum = crc32c::Value(header.hbytes, sizeof(header.hbytes));
   parts[0] = Slice((char*)&header, sizeof(RawRecHeader));
   if (LIKELY(g_WAL_USE_WRITEV)) {
-    IOStatus s = dest_->Appendv({parts, (int)num_parts},
+    IOStatus s = dest_->Appendv(parts, num_parts, len,
         0 /* crc32c_checksum */, rate_limiter_priority);
     if (LIKELY(s.ok())) {
       *log_offset_ += len;
@@ -395,6 +395,7 @@ IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n,
     if (LIKELY(g_WAL_USE_WRITEV)) {
       IOStatus s = dest_->Appendv(
           {Slice((char*)&header, sizeof(RawRecHeader)), Slice(ptr, n)},
+          sizeof(RawRecHeader) + n,
           0 /* crc32c_checksum */, rate_limiter_priority);
       if (LIKELY(s.ok())) {
         *log_offset_ += sizeof(RawRecHeader) + n;

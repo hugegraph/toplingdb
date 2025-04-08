@@ -1332,23 +1332,16 @@ IOStatus PosixWritableFile::Append(const Slice& data, const IOOptions& /*opts*/,
   return IOStatus::OK();
 }
 
-IOStatus PosixWritableFile::Appendv(const SliceParts& parts,
-                                    const IOOptions& options,
+IOStatus PosixWritableFile::Appendv(const Slice* parts, size_t num,
+                                    size_t nbytes, const IOOptions& options,
                                     IODebugContext* dbg) {
   if (UNLIKELY(use_direct_io())) {
-    return FSWritableFile::Appendv(parts, options, dbg);
+    return FSWritableFile::Appendv(parts, num, nbytes, options, dbg);
   }
-  auto pvec = (struct iovec*)parts.parts;
+  auto pvec = (struct iovec*)parts;
   static_assert(sizeof(struct iovec) == sizeof(Slice));
   static_assert(sizeof(pvec->iov_len) == sizeof(size_t));
   static_assert(offsetof(struct iovec, iov_len) == offsetof(Slice, size_));
-  ssize_t nbytes = 0, num = parts.num_parts;
-  for (ssize_t i = 0; i < num; i++) {
-    nbytes += pvec[i].iov_len;
-    if (nbytes < 0 || pvec[i].iov_len < 0) {
-      return IOStatus::InvalidArgument("writev SliceParts sum overflow");
-    }
-  }
   ssize_t done;
   while (true) {
     done = writev(fd_, pvec, num);
@@ -1360,10 +1353,10 @@ IOStatus PosixWritableFile::Appendv(const SliceParts& parts,
     }
     break;
   }
-  if (UNLIKELY(done < nbytes)) {
+  if (UNLIKELY(done < ssize_t(nbytes))) {
     // not written all data, for simple, write remaining parts one by one
     ssize_t sum = 0;
-    for (ssize_t i = 0; i < num; i++) {
+    for (size_t i = 0; i < num; i++) {
       auto cur_len = (const ssize_t)pvec[i].iov_len;
       auto cur_ptr = (const char * )pvec[i].iov_base;
       if (sum + cur_len > done) {
