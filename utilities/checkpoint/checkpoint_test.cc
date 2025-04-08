@@ -31,7 +31,6 @@
 #include "utilities/fault_injection_fs.h"
 
 namespace ROCKSDB_NAMESPACE {
-
 class CheckpointTest : public testing::Test {
  protected:
   // Sequence of option configurations to try

@@ -589,7 +589,6 @@ void AssertExists(DB* db, int from, int to) {
   for (int i = from; i < to; ++i) {
     std::string key = "testkey" + std::to_string(i);
     std::string value;
-    auto s = db->Get(ReadOptions(), Slice(key), &value);
     ASSERT_OK(db->Get(ReadOptions(), Slice(key), &value));
     ASSERT_EQ(value, "testvalue" + std::to_string(i));
   }
