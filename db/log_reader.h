@@ -127,11 +127,11 @@ class Reader {
   std::shared_ptr<Logger> info_log_;
   const std::unique_ptr<SequentialFileReader> file_;
   Reporter* const reporter_;
-  bool const checksum_;
   char* backing_store_;
 
   // Internal state variables used for reading records
   Slice buffer_;
+  bool const checksum_;
   bool eof_;         // Last Read() indicated EOF by returning < kBlockSize
   bool read_error_;  // Error occurred while reading from file
   bool memtable_as_log_index_ = false;
