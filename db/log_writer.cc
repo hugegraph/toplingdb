@@ -65,11 +65,11 @@ Writer::Writer(std::unique_ptr<WritableFileWriter>&& dest, uint64_t log_number,
                bool recycle_log_files, bool manual_flush,
                CompressionType compression_type)
     : dest_(std::move(dest)),
-      block_offset_(0),
       log_number_(log_number),
       recycle_log_files_(recycle_log_files),
       manual_flush_(manual_flush),
       compression_type_(compression_type),
+      block_offset_(0),
       compress_(nullptr) {
   for (int i = 0; i <= kMaxRecordType; i++) {
     char t = static_cast<char>(i);

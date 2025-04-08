@@ -127,14 +127,22 @@ class Writer {
  private:
   std::shared_ptr<ReadonlyFileMmap> mmap_reader_;
   std::unique_ptr<WritableFileWriter> dest_;
-  size_t block_offset_;  // Current offset in block
   uint64_t log_number_;
   std::shared_ptr<uint64_t> log_offset_;
-  std::string fname_;
-  FileSystem* fs_;
   bool memtable_as_log_index_;
   bool use_writev_;
   bool recycle_log_files_;
+
+  // If true, it does not flush after each write. Instead it relies on the upper
+  // layer to manually does the flush by calling ::WriteBuffer()
+  bool manual_flush_;
+
+  // Compression Type
+  CompressionType compression_type_;
+
+  size_t block_offset_;  // Current offset in block
+  std::string fname_;
+  FileSystem* fs_;
 
   // crc32c values for all supported record types.  These are
   // pre-computed to reduce the overhead of computing the crc of the
@@ -145,12 +153,6 @@ class Writer {
       RecordType type, const char* ptr, size_t length,
       Env::IOPriority rate_limiter_priority = Env::IO_TOTAL);
 
-  // If true, it does not flush after each write. Instead it relies on the upper
-  // layer to manually does the flush by calling ::WriteBuffer()
-  bool manual_flush_;
-
-  // Compression Type
-  CompressionType compression_type_;
   StreamingCompress* compress_;
   // Reusable compressed output buffer
   std::unique_ptr<char[]> compressed_buffer_;
