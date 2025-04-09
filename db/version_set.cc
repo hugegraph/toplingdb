@@ -3716,7 +3716,8 @@ inline uint64_t CompensatedFileSizeForScore(const FileMetaData* f) {
     // raw size is stable between compressed level and uncompressed level
     auto fsize = f->fd.GetFileSize();
     auto props = GetProps(rd);
-    auto bytes = std::max(fsize, props->raw_key_size + props->raw_value_size);
+    auto bytes = std::max(fsize, props->raw_key_size + props->raw_value_size
+                               + props->gdic_size);
     return uint64_t(f->compensated_file_size * double(bytes) / fsize);
   }
   return f->compensated_file_size;
