@@ -129,6 +129,7 @@ class WriteThread {
     uint64_t log_used;  // log number that this batch was inserted into
     uint64_t log_ref;   // log number that memtable insert should reference
     WriteCallback* callback;
+    uint32_t crc32c_checksum;    // crc32c checksum of the batch
     std::atomic<uint32_t> state; // write under StateMutex() or pre-link
     WriteGroup* write_group;
     SequenceNumber sequence;  // the sequence number to use for the first key

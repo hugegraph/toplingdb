@@ -313,6 +313,7 @@ IOStatus Writer::MaybeAddUserDefinedTimestampSizeRecord(
 bool Writer::BufferIsEmpty() { return dest_->BufferIsEmpty(); }
 
 IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts, size_t sum_len,
+                            const uint32_t* part_crc32c_checksums,
                             Env::IOPriority rate_limiter_priority) {
   assert(memtable_as_log_index_);
   assert(num_parts > 0);
@@ -333,7 +334,12 @@ IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts, size_t sum_len,
   uint32_t payload_crc = 0;
   for (size_t i = 1; i < num_parts; ++i) {
     Slice part = parts[i];
-    payload_crc = crc32c::Extend(payload_crc, part.data(), part.size());
+    if (part_crc32c_checksums) {
+      uint32_t crc2 = part_crc32c_checksums[i];
+      payload_crc = crc32c::Crc32cCombine(payload_crc, crc2, part.size());
+    } else {
+      payload_crc = crc32c::Extend(payload_crc, part.data(), part.size());
+    }
     TERARK_IF_DEBUG(computed_sum_len += part.size(),);
   }
   ROCKSDB_ASSERT_EQ(computed_sum_len, sum_len);
@@ -358,11 +364,16 @@ IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts, size_t sum_len,
   }
   for (size_t i = 1; i < num_parts; ++i) {
     Slice part = parts[i];
-   #if defined(ROCKSDB_UNIT_TEST)
-    uint32_t part_crc = crc32c::Value(part.data_, part.size_);
-   #else
-    uint32_t part_crc = 0;
-   #endif
+    uint32_t part_crc;
+    if (part_crc32c_checksums) {
+      part_crc = part_crc32c_checksums[i];
+    } else {
+     #if defined(ROCKSDB_UNIT_TEST)
+      part_crc = crc32c::Value(part.data(), part.size());
+     #else
+      part_crc = 0;
+     #endif
+    }
     s = dest_->Append(part, part_crc, rate_limiter_priority);
     if (!s.ok())
       return s;

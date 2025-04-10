@@ -16,6 +16,7 @@
 #include "options/options_helper.h"
 #include "test_util/sync_point.h"
 #include "util/cast_util.h"
+#include "util/crc32c.h"
 
 namespace ROCKSDB_NAMESPACE {
 // Convenience methods
@@ -327,6 +328,11 @@ Status DBImpl::WriteImpl(const WriteOptions& write_options,
                         post_memtable_callback);
   StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
 
+  if (immutable_db_options_.memtable_as_log_index) {
+    auto kHeader = WriteBatchInternal::kHeader;
+    auto payload = WriteBatchInternal::Contents(my_batch).substr(kHeader);
+    w.crc32c_checksum = crc32c::Value(payload.data(), payload.size());
+  }
   write_thread_.JoinBatchGroup(&w);
   if (w.state == WriteThread::STATE_PARALLEL_MEMTABLE_WRITER) {
     // we are a non-leader in a parallel group
@@ -688,6 +694,11 @@ Status DBImpl::PipelinedWriteImpl(const WriteOptions& write_options,
   WriteThread::Writer w(write_options, my_batch, callback, log_ref,
                         disable_memtable, /*_batch_cnt=*/0,
                         /*_pre_release_callback=*/nullptr);
+  if (immutable_db_options_.memtable_as_log_index) {
+    auto kHeader = WriteBatchInternal::kHeader;
+    auto payload = WriteBatchInternal::Contents(my_batch).substr(kHeader);
+    w.crc32c_checksum = crc32c::Value(payload.data(), payload.size());
+  }
   write_thread_.JoinBatchGroup(&w);
   TEST_SYNC_POINT("DBImplWrite::PipelinedWriteImpl:AfterJoinBatchGroup");
   if (w.state == WriteThread::STATE_GROUP_LEADER) {
@@ -912,6 +923,11 @@ Status DBImpl::WriteImplWALOnly(
                         disable_memtable, sub_batch_cnt, pre_release_callback);
   StopWatch write_sw(immutable_db_options_.clock, stats_, DB_WRITE);
 
+  if (immutable_db_options_.memtable_as_log_index) {
+    auto kHeader = WriteBatchInternal::kHeader;
+    auto payload = WriteBatchInternal::Contents(my_batch).substr(kHeader);
+    w.crc32c_checksum = crc32c::Value(payload.data(), payload.size());
+  }
   write_thread->JoinBatchGroup(&w);
   assert(w.state != WriteThread::STATE_PARALLEL_MEMTABLE_WRITER);
   if (w.state == WriteThread::STATE_COMPLETED) {
@@ -1412,7 +1428,9 @@ IOStatus DBImpl::DoWriteWAL(const WriteBatch& merged_batch,
     auto offset = log_writer->get_log_offset();
     auto logno = log_writer->get_log_number();
     auto iovec = (Slice*)alloca(sizeof(Slice) * (1 + write_group.size));
+    auto crc32c_checksums = (uint32_t*)alloca(sizeof(uint32_t) * (1 + write_group.size));
     // iovec[0] is reserved for AddRecordv to add the header
+    // crc32c_checksums[0] is reserved unused to keep parallel with iovec[0]
     uint32_t cnt = 0;
     size_t mgnum = 0;
     for (auto writer : write_group) {
@@ -1432,12 +1450,20 @@ IOStatus DBImpl::DoWriteWAL(const WriteBatch& merged_batch,
       offset += rec.size();
       log_size_sum += rec.size();
       iovec[++mgnum] = rec;
+      crc32c_checksums[mgnum] = writer->crc32c_checksum;
     }
     ROCKSDB_ASSERT_LE(mgnum, write_group.size);
     if (LIKELY(mgnum)) {
       uint32_t old_cnt = merged_batch.Count();
       WriteBatchInternal::SetCount(const_cast<WriteBatch*>(&merged_batch), cnt);
-      io_s = log_writer->AddRecordv(iovec, 1 + mgnum, log_size_sum, rate_limiter_priority);
+      // crc1 is the checksum of the WriteBatch Header, because the header
+      // content is populated until now
+      size_t crc1_len = WriteBatchInternal::kHeader;
+      size_t crc2_len = merged_batch.GetDataSize() - crc1_len;
+      uint32_t crc1 = crc32c::Value(merged_batch.Data().data(), crc1_len);
+      uint32_t crc2 = crc32c_checksums[1];
+      crc32c_checksums[1] = crc32c::Crc32cCombine(crc1, crc2, crc2_len);
+      io_s = log_writer->AddRecordv(iovec, 1 + mgnum, log_size_sum, crc32c_checksums, rate_limiter_priority);
       WriteBatchInternal::SetCount(const_cast<WriteBatch*>(&merged_batch), old_cnt);
     } else {
       // there is nothing need to write
