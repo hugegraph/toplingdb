@@ -1140,6 +1140,7 @@ uint32_t Extend(uint32_t crc, const char* buf, size_t size) {
 // b, m, and p are all bit-reflected.
 //
 // https://en.wikipedia.org/wiki/Finite_field_arithmetic
+#if defined(gf_multiply_sw_slow)
 static constexpr uint32_t gf_multiply_sw_1(
     size_t i, uint32_t p, uint32_t a, uint32_t b, uint32_t m) {
   // clang-format off
@@ -1151,8 +1152,20 @@ static constexpr uint32_t gf_multiply_sw_1(
       /* m = */ m);
   // clang-format on
 }
+#endif
 static constexpr uint32_t gf_multiply_sw(uint32_t a, uint32_t b, uint32_t m) {
+#if defined(gf_multiply_sw_slow)
   return gf_multiply_sw_1(/* i = */ 0, /* p = */ 0, a, b, m);
+#else
+  uint32_t p = 0;
+ #pragma GCC unroll 32
+  for (size_t i = 0; i < 32; i++) {
+    p = p ^ ((0u-((b >> 31) & 1)) & a);
+    a = (a >> 1) ^ ((0u-(a & 1)) & m);
+    b = b << 1;
+  }
+  return p;
+#endif
 }
 
 static constexpr uint32_t gf_square_sw(uint32_t a, uint32_t m) {
