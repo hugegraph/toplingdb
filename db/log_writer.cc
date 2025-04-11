@@ -336,7 +336,11 @@ IOStatus Writer::AddRecordv(Slice* parts, size_t num_parts, size_t sum_len,
     Slice part = parts[i];
     if (part_crc32c_checksums) {
       uint32_t crc2 = part_crc32c_checksums[i];
-      payload_crc = crc32c::Crc32cCombine(payload_crc, crc2, part.size());
+      if (payload_crc == 0) {
+        payload_crc = crc2;
+      } else {
+        payload_crc = crc32c::Crc32cCombine(payload_crc, crc2, part.size());
+      }
     } else {
       payload_crc = crc32c::Extend(payload_crc, part.data(), part.size());
     }
