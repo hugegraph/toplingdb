@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "port/lang.h"
+#include "port/likely.h"
 #include "util/coding.h"
 #include "util/crc32c_arm64.h"
 #include "util/math.h"
@@ -1214,10 +1215,9 @@ static constexpr std::array<uint32_t, 62> const crc32c_powers =
     gf_powers_make<crc32c_m>{}(make_index_sequence<62>{});
 
 // Expects a "pure" crc (see Crc32cCombine)
-static uint32_t Crc32AppendZeroes(
-    uint32_t crc, size_t len_over_4, uint32_t polynomial,
-    std::array<uint32_t, 62> const& powers_array) {
-  auto powers = powers_array.data();
+static uint32_t Crc32AppendZeroesSlow(uint32_t crc, size_t len_over_4) {
+  const uint32_t* powers = crc32c_powers.data();
+  const uint32_t polynomial = crc32c_m;
   // Append by multiplying by consecutive powers of two of the zeroes
   // array
   size_t len_bits = len_over_4;
@@ -1235,6 +1235,44 @@ static uint32_t Crc32AppendZeroes(
   }
 
   return crc;
+}
+
+template<size_t CacheSize>
+struct Crc32AppendZeroesCache {
+  static_assert(CacheSize > 0);
+  static_assert((CacheSize & (CacheSize - 1)) == 0,
+                "CacheSize must be a power of 2");
+  Crc32AppendZeroesCache() {
+    // The result of X^31 mod the crc32c polynomial is 1 in galois-field.
+    // So we can use it to pre-compute the multiplier as small len cache.
+    multiplier[0] = 0x80000000;
+    for (size_t i = 1; i < CacheSize; ++i)
+      multiplier[i] = gf_multiply_sw(crc32c_m, multiplier[i - 1], crc32c_m);
+  }
+  uint32_t AppendZero(uint32_t crc, size_t len_over_4) const {
+    // O(1) quick path.
+    // For example, if len_over_4 = 1024+8+2 = 1034,
+    // Slow path is like crc *= X^2 *= X^8 *= X^1024,
+    // while quick path is like crc *= X^1034 as we already stored
+    // the multiplier[1034]
+    if (size_t cached_part = len_over_4 & (CacheSize - 1)) {
+      crc = gf_multiply_sw(crc, multiplier[cached_part], crc32c_m);
+    }
+    if (UNLIKELY(len_over_4 >= CacheSize)) {
+      // Slow path, O(popcnt(len_over_4))
+      len_over_4 &= ~(CacheSize - 1);
+      crc = Crc32AppendZeroesSlow(crc, len_over_4);
+    }
+    return crc;
+  }
+  uint32_t multiplier[CacheSize];
+};
+static const size_t crc32c_gf_powers_table_cache_size = (1u<<16);
+static const Crc32AppendZeroesCache<crc32c_gf_powers_table_cache_size>
+  g_crc32c_append_zeroes_cache;
+
+static uint32_t Crc32AppendZeroes(uint32_t crc, size_t len_over_4) {
+  return g_crc32c_append_zeroes_cache.AppendZero(crc, len_over_4);
 }
 
 static inline uint32_t InvertedToPure(uint32_t crc) { return ~crc; }
@@ -1302,7 +1340,7 @@ uint32_t Crc32cCombine(uint32_t crc1, uint32_t crc2, size_t crc2len) {
     tmp = PureExtend(tmp, zeros, len);
   }
   return PureToInverted(
-      Crc32AppendZeroes(tmp, crc2len / 4, crc32c_m, crc32c_powers) ^
+      Crc32AppendZeroes(tmp, crc2len / 4) ^
       pure_crc2_with_init);
 }
 
