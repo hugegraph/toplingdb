@@ -624,7 +624,8 @@ void DBImpl::PurgeObsoleteFiles(JobContext& state, bool schedule_only) {
     }
     if (schedule_only) {
       InstrumentedMutexLock guard_lock(&mutex_);
-      SchedulePendingPurge(fname, dir_to_sync, type, number, state.job_id);
+      SchedulePendingPurge(std::move(fname), std::move(dir_to_sync),
+                           type, number, state.job_id);
     } else {
       DeleteObsoleteFileImpl(state.job_id, fname, dir_to_sync, type, number);
     }

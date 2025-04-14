@@ -3016,13 +3016,14 @@ void DBImpl::SchedulePendingCompaction(ColumnFamilyData* cfd) {
   }
 }
 
-void DBImpl::SchedulePendingPurge(std::string fname, std::string dir_to_sync,
+void DBImpl::SchedulePendingPurge(std::string&& fname, std::string&& dir_to_sync,
                                   FileType type, uint64_t number, int job_id) {
   mutex_.AssertHeld();
   if (reject_new_background_jobs_) {
     return;
   }
-  PurgeFileInfo file_info(fname, dir_to_sync, type, number, job_id);
+  PurgeFileInfo file_info(std::move(fname), std::move(dir_to_sync),
+                          type, number, job_id);
   purge_files_.insert({{number, std::move(file_info)}});
 }
 

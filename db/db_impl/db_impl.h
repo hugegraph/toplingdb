@@ -1728,9 +1728,10 @@ class DBImpl : public DB {
     FileType type;
     uint64_t number;
     int job_id;
-    PurgeFileInfo(std::string fn, std::string d, FileType t, uint64_t num,
+    PurgeFileInfo(std::string&& fn, std::string&& d, FileType t, uint64_t num,
                   int jid)
-        : fname(fn), dir_to_sync(d), type(t), number(num), job_id(jid) {}
+        : fname(std::move(fn)), dir_to_sync(std::move(d)),
+          type(t), number(num), job_id(jid) {}
   };
 
   // Argument required by background flush thread.
@@ -2148,7 +2149,7 @@ class DBImpl : public DB {
   void SchedulePendingFlush(const FlushRequest& req);
 
   void SchedulePendingCompaction(ColumnFamilyData* cfd);
-  void SchedulePendingPurge(std::string fname, std::string dir_to_sync,
+  void SchedulePendingPurge(std::string&& fname, std::string&& dir_to_sync,
                             FileType type, uint64_t number, int job_id);
   static void BGWorkCompaction(void* arg);
   // Runs a pre-chosen universal compaction involving bottom level in a
