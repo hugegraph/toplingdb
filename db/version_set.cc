@@ -3704,9 +3704,8 @@ inline uint64_t FileSizeForScore(const FileMetaData* f) {
     //    and realize mmap WAL as BlobFile to be ref'ed by L0 sst, in this
     //    case, L0 FileSize maybe much smaller than raw kv size, so we need
     //    to use raw kv as FileSize
-    // 3. for memtable_as_log_index, gdic_size is for blob(ref wal)
     auto props = GetProps(rd);
-    return std::max(fsize, props->raw_key_size + props->raw_value_size + props->gdic_size);
+    return std::max(fsize, props->raw_key_size + props->raw_value_size);
   }
   return fsize;
 }
@@ -3716,8 +3715,7 @@ inline uint64_t CompensatedFileSizeForScore(const FileMetaData* f) {
     // raw size is stable between compressed level and uncompressed level
     auto fsize = f->fd.GetFileSize();
     auto props = GetProps(rd);
-    auto bytes = std::max(fsize, props->raw_key_size + props->raw_value_size
-                               + props->gdic_size);
+    auto bytes = std::max(fsize, props->raw_key_size + props->raw_value_size);
     return uint64_t(f->compensated_file_size * double(bytes) / fsize);
   }
   return f->compensated_file_size;

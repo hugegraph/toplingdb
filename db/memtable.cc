@@ -719,6 +719,15 @@ VerifyKeyValueWithWAL(bool memtable_as_log_index, Slice key, Slice value) {
  #endif
 }
 
+static size_t GetRealValueSize(Slice value, bool memtable_as_log_index) {
+  if (memtable_as_log_index && value.size_) {
+    auto kv_pmt = (const KeyValuePassMemTable*)value.data_;
+    ROCKSDB_ASSERT_EQ(sizeof(KeyValuePassMemTable), value.size_);
+    return kv_pmt->value.size_;
+  }
+  return value.size_;
+}
+
 ROCKSDB_FLATTEN
 Status MemTable::Add(SequenceNumber s, ValueType type,
                      const Slice& key, /* user key */
@@ -727,6 +736,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
                      bool allow_concurrent,
                      MemTablePostProcessInfo* post_process_info, void** hint) {
   VerifyKeyValueWithWAL(moptions_.memtable_as_log_index, key, value);
+  size_t real_value_size = GetRealValueSize(value, moptions_.memtable_as_log_index);
   if (reject_memtable_as_log_index_ && value.size_) {
     auto kv_pmt = (const KeyValuePassMemTable*)value.data_;
     ROCKSDB_ASSERT_EQ(sizeof(KeyValuePassMemTable), value.size_);
@@ -774,7 +784,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
                      std::memory_order_relaxed);
     raw_key_size_.store(raw_key_size_.load(std::memory_order_relaxed) + key.size_ + 8,
                      std::memory_order_relaxed);
-    raw_value_size_.store(raw_value_size_.load(std::memory_order_relaxed) + value.size_,
+    raw_value_size_.store(raw_value_size_.load(std::memory_order_relaxed) + real_value_size,
                      std::memory_order_relaxed);
     if (type == kTypeDeletion || type == kTypeSingleDeletion ||
         type == kTypeDeletionWithTimestamp) {
@@ -843,7 +853,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
       post_process_info->num_merges++;
     }
     post_process_info->raw_key_size += key.size_ + 8;
-    post_process_info->raw_value_size += value.size_;
+    post_process_info->raw_value_size += real_value_size;
     if (post_process_info->largest_seqno < s) {
         post_process_info->largest_seqno = s;
     }
