@@ -1214,10 +1214,27 @@ static constexpr uint32_t crc32c_m = 0x82f63b78;
 static constexpr std::array<uint32_t, 62> const crc32c_powers =
     gf_powers_make<crc32c_m>{}(make_index_sequence<62>{});
 
+static uint32_t gf_multiply_crc32c_hw(uint64_t crc1, uint64_t crc2) {
+#if defined(__SSE4_2__)
+  const auto crc1_xmm = _mm_set_epi64x(0, crc1);
+  const auto crc2_xmm = _mm_set_epi64x(0, crc2);
+  const auto count = _mm_set_epi64x(0, 1);
+  const auto res0 = _mm_clmulepi64_si128(crc2_xmm, crc1_xmm, 0x00);
+  const auto res1 = _mm_sll_epi64(res0, count);
+
+  // Use hardware crc32c to do reduction from 64 -> 32 bytes
+  const auto res2 = _mm_cvtsi128_si64(res1);
+  const auto res3 = _mm_crc32_u32(0, res2);
+  const auto res4 = _mm_extract_epi32(res1, 1);
+  return res3 ^ res4;
+#else
+  return gf_multiply_sw(crc1, crc2, crc32c_m);
+#endif
+}
+
 // Expects a "pure" crc (see Crc32cCombine)
 static uint32_t Crc32AppendZeroesSlow(uint32_t crc, size_t len_over_4) {
   const uint32_t* powers = crc32c_powers.data();
-  const uint32_t polynomial = crc32c_m;
   // Append by multiplying by consecutive powers of two of the zeroes
   // array
   size_t len_bits = len_over_4;
@@ -1228,7 +1245,7 @@ static uint32_t Crc32AppendZeroesSlow(uint32_t crc, size_t len_over_4) {
     len_bits >>= r;
     powers += r;
 
-    crc = gf_multiply_sw(crc, *powers, polynomial);
+    crc = gf_multiply_crc32c_hw(crc, *powers);
 
     len_bits >>= 1;
     powers++;
@@ -1247,7 +1264,7 @@ struct Crc32AppendZeroesCache {
     // So we can use it to pre-compute the multiplier as small len cache.
     multiplier[0] = 0x80000000;
     for (size_t i = 1; i < CacheSize; ++i)
-      multiplier[i] = gf_multiply_sw(crc32c_m, multiplier[i - 1], crc32c_m);
+      multiplier[i] = gf_multiply_crc32c_hw(crc32c_m, multiplier[i - 1]);
   }
   uint32_t AppendZero(uint32_t crc, size_t len_over_4) const {
     // O(1) quick path.
@@ -1256,7 +1273,7 @@ struct Crc32AppendZeroesCache {
     // while quick path is like crc *= X^1034 as we already stored
     // the multiplier[1034]
     if (size_t cached_part = len_over_4 & (CacheSize - 1)) {
-      crc = gf_multiply_sw(crc, multiplier[cached_part], crc32c_m);
+      crc = gf_multiply_crc32c_hw(crc, multiplier[cached_part]);
     }
     if (UNLIKELY(len_over_4 >= CacheSize)) {
       // Slow path, O(popcnt(len_over_4))
