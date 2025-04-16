@@ -258,10 +258,7 @@ LockTracker::KeyIterator* PointLockTracker::GetKeyIterator(
 
 void PointLockTracker::Clear() {
   for (auto& [cf_id, tk_info] : tracked_keys_) {
-    if (tk_info.bucket_size() > 1000)
-      tk_info.clear(); // will free memory
-    else
-      tk_info.erase_all(); // will not free memory
+    tk_info.erase_all(); // will not free memory
   }
 }
 
