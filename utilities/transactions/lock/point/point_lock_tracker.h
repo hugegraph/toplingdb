@@ -41,14 +41,21 @@ struct TrackedKeyInfos : terark::hash_strmap<TrackedKeyInfo
       , terark::fstring_func::hash_align
       , terark::fstring_func::equal_align
       , terark::ValueInline, terark::FastCopy
-      , unsigned, size_t, false
+      , unsigned, size_t, true
       > {
   TrackedKeyInfos() {
     size_t cap = 8;
     size_t strpool_cap = 1024;
     this->reserve(cap, strpool_cap);
-    //this->enable_freelist();
+    this->enable_freelist();
+    this->disable_auto_compact();
   }
+  auto try_emplace(terark::fstring key, uint64_t seq) {
+    auto ib = lazy_insert_i(key, terark::CopyConsFunc<TrackedKeyInfo>(seq));
+    m_last_hit = ib.first;
+    return std::pair<iterator, bool>(iterator(this, ib.first), ib.second);
+  }
+  size_t m_last_hit = SIZE_MAX;
 };
 #endif
 
@@ -103,6 +110,7 @@ class PointLockTrackerFactory : public LockTrackerFactory {
   }
 
   LockTracker* Create() const override { return new PointLockTracker(); }
+  LockTracker* CreateDelta(const LockTracker*) const override;
 
  private:
   PointLockTrackerFactory() {}

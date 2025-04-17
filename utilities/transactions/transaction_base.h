@@ -334,6 +334,7 @@ class TransactionBaseImpl : public Transaction {
     SavePoint(const std::shared_ptr<const Snapshot>& snapshot, bool snapshot_needed,
               const std::shared_ptr<TransactionNotifier>& snapshot_notifier,
               uint64_t num_puts, uint64_t num_deletes, uint64_t num_merges,
+              const LockTracker* base_locks,
               const LockTrackerFactory& lock_tracker_factory)
         : snapshot_(snapshot),
           snapshot_needed_(snapshot_needed),
@@ -341,10 +342,7 @@ class TransactionBaseImpl : public Transaction {
           num_puts_(num_puts),
           num_deletes_(num_deletes),
           num_merges_(num_merges),
-          new_locks_(lock_tracker_factory.Create()) {}
-
-    explicit SavePoint(const LockTrackerFactory& lock_tracker_factory)
-        : new_locks_(lock_tracker_factory.Create()) {}
+          new_locks_(lock_tracker_factory.CreateDelta(base_locks)) {}
   };
 
   void SavePointTrackKey(const PointLockRequest&);

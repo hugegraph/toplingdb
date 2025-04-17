@@ -221,6 +221,9 @@ class LockTrackerFactory {
  public:
   // Caller owns the returned pointer.
   virtual LockTracker* Create() const = 0;
+  virtual LockTracker* CreateDelta(const LockTracker* /*base*/) const {
+    return Create();
+  }
   virtual ~LockTrackerFactory() {}
 };
 

@@ -178,6 +178,7 @@ Status TransactionBaseImpl::TryLock(ColumnFamilyHandle* column_family,
 void TransactionBaseImpl::SetSavePoint() {
   save_points_->emplace_back(snapshot_, snapshot_needed_, snapshot_notifier_,
                         num_puts_, num_deletes_, num_merges_,
+                        tracked_locks_.get(),
                         lock_tracker_factory_);
   write_batch_.SetSavePoint();
 }
@@ -224,11 +225,10 @@ Status TransactionBaseImpl::PopSavePoint() {
   if (save_points_->size() == 1) {
     save_points_->pop();
   } else {
-    TransactionBaseImpl::SavePoint top(lock_tracker_factory_);
-    std::swap(top, save_points_->top());
+    auto top_new_locks = save_points_->top().new_locks_;
     save_points_->pop();
 
-    save_points_->top().new_locks_->Merge(*top.new_locks_);
+    save_points_->top().new_locks_->Merge(*top_new_locks);
   }
 
   return write_batch_.PopSavePoint();
