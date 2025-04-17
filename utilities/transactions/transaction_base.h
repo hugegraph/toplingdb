@@ -347,6 +347,8 @@ class TransactionBaseImpl : public Transaction {
         : new_locks_(lock_tracker_factory.Create()) {}
   };
 
+  void SavePointTrackKey(const PointLockRequest&);
+
   // Records writes pending in this transaction
   // topling spec: should use union{ptr,ref}, but ref can not be in union
   WriteBatchWithIndex* write_batch_pre_ = nullptr;

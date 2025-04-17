@@ -724,7 +724,10 @@ uint64_t TransactionBaseImpl::GetNumKeys() const {
 void TransactionBaseImpl::TrackKey(const PointLockRequest& r) {
   // Update map of all tracked keys for this transaction
   tracked_locks_->Track(r);
+  SavePointTrackKey(r);
+}
 
+inline void TransactionBaseImpl::SavePointTrackKey(const PointLockRequest& r) {
   if (save_points_ != nullptr && !save_points_->empty()) {
     // Update map of tracked keys in this SavePoint
     save_points_->top().new_locks_->Track(r);
