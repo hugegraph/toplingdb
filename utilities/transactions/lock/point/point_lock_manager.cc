@@ -132,7 +132,10 @@ PointLockManager::PointLockManager(PessimisticTransactionDB* txn_db,
       dlock_buffer_(opt.max_num_deadlocks),
       mutex_factory_(opt.custom_mutex_factory
                          ? opt.custom_mutex_factory
-                         : std::make_shared<TransactionDBMutexFactoryImpl>()) {}
+                         : std::make_shared<TransactionDBMutexFactoryImpl>())
+{
+  m_is_point_lock_supported = true;
+}
 
 terark_forceinline
 size_t LockMap::GetStripe(const LockString& key) const {

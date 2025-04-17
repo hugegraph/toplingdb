@@ -65,11 +65,6 @@ class RangeTreeLockManager : public RangeLockManagerBase,
 
   Counters GetStatus() override;
 
-  bool IsPointLockSupported() const override {
-    // One could have acquired a point lock (it is reduced to range lock)
-    return true;
-  }
-
   PointLockStatus GetPointLockStatus() override;
 
   // This is from LockManager
@@ -80,8 +75,6 @@ class RangeTreeLockManager : public RangeLockManagerBase,
   RangeLockManagerHandle::RangeLockStatus GetRangeLockStatusData() override {
     return GetRangeLockStatus();
   }
-
-  bool IsRangeLockSupported() const override { return true; }
 
   const LockTrackerFactory& GetLockTrackerFactory() const override {
     return RangeTreeLockTrackerFactory::Get();

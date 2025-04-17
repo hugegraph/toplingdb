@@ -4812,8 +4812,6 @@ Status DBImpl::ApproximateKeyAnchors(ColumnFamilyHandle* column_family,
 
 const std::string& DBImpl::GetName() const { return dbname_; }
 
-Env* DBImpl::GetEnv() const { return env_; }
-
 FileSystem* DB::GetFileSystem() const {
   const auto& fs = GetEnv()->GetFileSystem();
   return fs.get();

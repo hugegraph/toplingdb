@@ -47,6 +47,10 @@ class TrackedKeysIterator : public LockTracker::KeyIterator {
 }  // namespace
 
 PointLockTracker::PointLockTracker() : tracked_keys_(0) {
+  m_is_point_lock_supported = true;
+}
+
+PointLockTracker::~PointLockTracker() {
 }
 
 void PointLockTracker::Track(const PointLockRequest& r) {

@@ -74,14 +74,18 @@ enum class UntrackStatus {
 // In OptimisticTransaction, since there is no LockMgr, it tracks the lock
 // intention. Not thread-safe.
 class LockTracker {
+ protected:
+  bool m_is_point_lock_supported = false;
+  bool m_is_range_lock_supported = false;
+
  public:
   virtual ~LockTracker() {}
 
   // Whether supports locking a specific key.
-  virtual bool IsPointLockSupported() const = 0;
+  bool IsPointLockSupported() const { return m_is_point_lock_supported; }
 
   // Whether supports locking a range of keys.
-  virtual bool IsRangeLockSupported() const = 0;
+  bool IsRangeLockSupported() const { return m_is_range_lock_supported; }
 
   // Tracks the acquirement of a lock on key.
   //

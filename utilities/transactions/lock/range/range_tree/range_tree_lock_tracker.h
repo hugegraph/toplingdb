@@ -64,19 +64,17 @@ class RangeLockList {
 // A LockTracker-based object that is used together with RangeTreeLockManager.
 class RangeTreeLockTracker : public LockTracker {
  public:
-  RangeTreeLockTracker() : range_list_(nullptr) {}
+  RangeTreeLockTracker() : range_list_(nullptr) {
+    // This indicates that we don't implement GetPointLockStatus()
+    m_is_point_lock_supported = false;
+    m_is_range_lock_supported = true;
+  }
 
   RangeTreeLockTracker(const RangeTreeLockTracker&) = delete;
   RangeTreeLockTracker& operator=(const RangeTreeLockTracker&) = delete;
 
   void Track(const PointLockRequest&) override;
   void Track(const RangeLockRequest&) override;
-
-  bool IsPointLockSupported() const override {
-    // This indicates that we don't implement GetPointLockStatus()
-    return false;
-  }
-  bool IsRangeLockSupported() const override { return true; }
 
   // a Not-supported dummy implementation.
   UntrackStatus Untrack(const RangeLockRequest& /*lock_request*/) override {

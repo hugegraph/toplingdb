@@ -430,7 +430,7 @@ class DBImpl : public DB {
   virtual int Level0StopWriteTrigger(
       ColumnFamilyHandle* column_family) override;
   virtual const std::string& GetName() const override;
-  virtual Env* GetEnv() const override;
+  virtual Env* GetEnv() const final { return env_; }
   virtual FileSystem* GetFileSystem() const override;
   using DB::GetOptions;
   virtual Options GetOptions(ColumnFamilyHandle* column_family) const override;

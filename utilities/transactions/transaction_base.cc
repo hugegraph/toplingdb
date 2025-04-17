@@ -306,7 +306,7 @@ Status TransactionBaseImpl::GetForUpdate(const ReadOptions& read_options,
                                          const Slice& key, std::string* value,
                                          bool exclusive,
                                          const bool do_validate) {
-  if (!do_validate && read_options.snapshot != nullptr) {
+  if (UNLIKELY(!do_validate && read_options.snapshot != nullptr)) {
     return Status::InvalidArgument(
         "If do_validate is false then GetForUpdate with snapshot is not "
         "defined.");

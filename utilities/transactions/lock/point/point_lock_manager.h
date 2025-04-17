@@ -119,10 +119,6 @@ class PointLockManager : public LockManager {
 
   ~PointLockManager() override {}
 
-  bool IsPointLockSupported() const override { return true; }
-
-  bool IsRangeLockSupported() const override { return false; }
-
   const LockTrackerFactory& GetLockTrackerFactory() const override {
     return PointLockTrackerFactory::Get();
   }

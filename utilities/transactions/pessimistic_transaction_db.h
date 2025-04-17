@@ -180,6 +180,8 @@ class PessimisticTransactionDB : public TransactionDB {
                                  std::vector<std::shared_ptr<const Snapshot>>&
                                      timestamped_snapshots) const override;
 
+  Env* GetEnv() const final { return db_impl_->GetEnv(); }
+
  protected:
   DBImpl* db_impl_;
   std::shared_ptr<Logger> info_log_;

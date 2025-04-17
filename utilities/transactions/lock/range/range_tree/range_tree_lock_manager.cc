@@ -262,6 +262,8 @@ RangeTreeLockManager::RangeTreeLockManager(
     : mutex_factory_(mutex_factory),
       ltree_lookup_cache_(&UnrefLockTreeMapsCache),
       dlock_buffer_(10) {
+  m_is_point_lock_supported = true;
+  m_is_range_lock_supported = true;
   ltm_.create(on_create, on_destroy, on_escalate, nullptr, mutex_factory_);
 }
 

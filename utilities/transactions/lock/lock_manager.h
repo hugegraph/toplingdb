@@ -16,14 +16,18 @@ namespace ROCKSDB_NAMESPACE {
 class PessimisticTransactionDB;
 
 class LockManager {
+ protected:
+  bool m_is_point_lock_supported = false;
+  bool m_is_range_lock_supported = false;
+
  public:
   virtual ~LockManager() {}
 
   // Whether supports locking a specific key.
-  virtual bool IsPointLockSupported() const = 0;
+  bool IsPointLockSupported() const { return m_is_point_lock_supported; }
 
   // Whether supports locking a range of keys.
-  virtual bool IsRangeLockSupported() const = 0;
+  bool IsRangeLockSupported() const { return m_is_range_lock_supported; }
 
   // Locks acquired through this LockManager should be tracked by
   // the LockTrackers created through the returned factory.
