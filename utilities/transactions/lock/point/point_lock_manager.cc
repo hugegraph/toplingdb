@@ -601,9 +601,9 @@ void PointLockManager::UnLockKey(PessimisticTransaction* txn,
   auto stripe_iter = stripe->keys.find(key);
   if (stripe_iter != stripe->keys.end()) {
     auto& txns = stripe_iter->second.txn_ids;
-    auto txn_it = std::find(txns.begin(), txns.end(), txn_id);
+    auto txn_it = txns.find(txn_id);
     // Found the key we locked.  unlock it.
-    if (txn_it != txns.end()) {
+    if (txn_it) {
       if (txns.num_stack_items() == 1) {
         stripe->keys.erase(stripe_iter);
       } else {
