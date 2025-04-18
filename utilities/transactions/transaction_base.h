@@ -362,7 +362,27 @@ class TransactionBaseImpl : public Transaction {
 
   // Stack of the Snapshot saved at each save point. Saved snapshots may be
   // nullptr if there was no snapshot at the time SetSavePoint() was called.
+ #if 0
   std::unique_ptr<autovector<SavePoint>> save_points_;
+ #endif
+ #if 0
+  // We want to remove the unnesscesary cost of unique_ptr<autovector...> and
+  // minimize code changes(check save_points_ for null and change `->` to `.`).
+  // This should be simple and perfect, but compiler warn address will never
+  // be null, it is very ugly and non-portable to suppress the warning.
+  autovector<SavePoint> save_points_[1];
+ #else
+  // this is just to suppress compiler warn address will never be null, I know
+  // #pragma GCC diagnostic ignored "-Waddress" works, but it is not portable.
+  struct SavePointAsPtr : autovector<SavePoint> {
+    bool operator==(std::nullptr_t) const { return false; }
+    bool operator!=(std::nullptr_t) const { return true; }
+    operator bool() const { return true; } // for if (save_points_)
+    auto operator->() const { return this; }
+    auto operator->() { return this; }
+  };
+  SavePointAsPtr save_points_;
+ #endif
 
  private:
   friend class WriteCommittedTxn;
