@@ -369,6 +369,24 @@ PointLockTrackerDelta::PointLockTrackerDelta(const PointLockTracker* base) {
   }
 }
 
+template<class Vec>
+inline auto& EnsureGetLikelyPushBack(Vec& v, size_t i) {
+  if (LIKELY(i < v.capacity())) {
+    auto ptr = v.data();
+    if (LIKELY(v.size() == i)) {
+      // act as push_back({})
+      using ValueType = typename Vec::value_type;
+      new(&ptr[i])ValueType();
+      v.risk_set_size(i + 1);
+      return ptr[i];
+    }
+    if (LIKELY(i < v.size())) {
+      return ptr[i];
+    }
+  }
+  return v.ensure_get(i);
+}
+
 void PointLockTrackerDelta::Track(const PointLockRequest& r) {
   auto& base_map = base_tracker_->tracked_keys_.at(r.column_family_id);
   assert(base_map.end_i() > 0);
@@ -386,7 +404,7 @@ void PointLockTrackerDelta::Track(const PointLockRequest& r) {
  #endif
   auto& delta_vec = cf_delta_vec_[r.column_family_id];
   terark::minimize(delta_vec.min_idx, idx);
-  auto& info = delta_vec.ensure_get(idx);
+  auto& info = EnsureGetLikelyPushBack(delta_vec, idx);
   if (!info.is_in_use) {
     delta_vec.num_locks++;
     info.is_in_use = 1;
