@@ -130,8 +130,9 @@ class PointLockManager : public LockManager {
   // this column family is no longer in use.
   void RemoveColumnFamily(const ColumnFamilyHandle* cf) override;
 
+  using LockManager::TryLock;
   Status TryLock(PessimisticTransaction* txn, ColumnFamilyId column_family_id,
-                 const Slice& key, Env* env, bool exclusive) override;
+                 const Slice& key, size_t hash, Env*, bool exclusive) override;
   Status TryLock(PessimisticTransaction* txn, ColumnFamilyId column_family_id,
                  const Endpoint& start, const Endpoint& end, Env* env,
                  bool exclusive) override;
@@ -216,6 +217,7 @@ class PointLockManager : public LockManager {
                        uint64_t* wait_time, autovector<TransactionID>* txn_ids);
 
   void UnLockKey(PessimisticTransaction* txn, const LockString& key,
+                 size_t key_hash,
                  LockMapStripe* stripe, LockMap* lock_map, Env* env);
 
   bool IncrementWaiters(const PessimisticTransaction* txn,

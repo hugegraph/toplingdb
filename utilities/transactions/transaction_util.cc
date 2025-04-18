@@ -181,7 +181,8 @@ Status TransactionUtil::CheckKeysForConflicts(DBImpl* db_impl,
     assert(key_it != nullptr);
     while (key_it->HasNext()) {
       const auto& key = key_it->Next();
-      PointLockStatus status = tracker.GetPointLockStatus(cf, key);
+      size_t key_hash = NPHash64(key.data(), key.size());
+      PointLockStatus status = tracker.GetPointLockStatus(cf, key, key_hash);
       const SequenceNumber key_seq = status.seq;
 
       // TODO: support timestamp-based conflict checking.

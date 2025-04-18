@@ -33,6 +33,8 @@ struct LockInfo {
   // Transaction locks are not valid after this time in us
   uint64_t expiration_time;
 
+  size_t key_hash;
+
   LockInfo(TransactionID id, uint64_t time, bool ex)
       : expiration_time(time) {
     exclusive() = ex;
@@ -61,7 +63,7 @@ struct LockMapStripe : private boost::noncopyable {
 #if 0
   UnorderedMap<std::string, LockInfo> keys;
 #else
-  struct KeyStrMap : terark::hash_strmap<LockInfo> {
+  struct KeyStrMap : terark::hash_strmap<LockInfo, StrNPHash64> {
     KeyStrMap() {
       size_t cap = 8;
       size_t strpool_cap = 1024;
@@ -106,7 +108,7 @@ struct LockMap : private boost::noncopyable {
   // (Only maintained if PointLockManager::max_num_locks_ is positive.)
   std::atomic<int64_t> lock_cnt{0};
 
-  size_t GetStripe(const LockString& key) const;
+  size_t GetStripe(const LockString& key, size_t hash) const;
 };
 
 #if defined(ROCKSDB_DYNAMIC_CREATE_CF)
@@ -138,9 +140,9 @@ PointLockManager::PointLockManager(PessimisticTransactionDB* txn_db,
 }
 
 terark_forceinline
-size_t LockMap::GetStripe(const LockString& key) const {
+size_t LockMap::GetStripe(const LockString& key, size_t hash) const {
   assert(num_stripes_ > 0);
-  auto col = GetSliceNPHash64(key) % num_stripes_;
+  auto col = hash % num_stripes_;
   if (1 == super_stripes_) {
     return col;
   } else {
@@ -269,7 +271,7 @@ bool PointLockManager::IsLockExpired(TransactionID txn_id,
 
 Status PointLockManager::TryLock(PessimisticTransaction* txn,
                                  ColumnFamilyId column_family_id,
-                                 const Slice& key, Env* env,
+                                 const Slice& key, size_t key_hash, Env* env,
                                  bool exclusive) {
   // Lookup lock map for this column family id
   LockMap* lock_map = GetLockMap(column_family_id);
@@ -282,11 +284,13 @@ Status PointLockManager::TryLock(PessimisticTransaction* txn,
   }
 
   // Need to lock the mutex for the stripe that this key hashes to
-  size_t stripe_num = lock_map->GetStripe(key);
+  size_t stripe_num = lock_map->GetStripe(key, key_hash);
   assert(lock_map->lock_map_stripes_.size() > stripe_num);
   LockMapStripe* stripe = &lock_map->lock_map_stripes_[stripe_num];
 
   LockInfo lock_info(txn->GetID(), txn->GetExpirationTime(), exclusive);
+  lock_info.key_hash = key_hash;
+
   int64_t timeout = txn->GetLockTimeout();
 
   return AcquireWithTimeout(txn, lock_map, stripe, column_family_id, key, env,
@@ -546,7 +550,8 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
     }
     return true; // ok, insert the key
   };
-  auto [idx, miss] = stripe->keys.lazy_insert_i(key, cons, check);
+  auto [idx, miss] = stripe->keys.lazy_insert_with_hash_i
+                    (key, txn_lock_info.key_hash, cons, check);
   if (!miss) {
     LockInfo& lock_info = stripe->keys.val(idx);
     assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive());
@@ -591,21 +596,22 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
 }
 
 void PointLockManager::UnLockKey(PessimisticTransaction* txn,
-                                 const LockString& key, LockMapStripe* stripe,
+                                 const LockString& key, size_t key_hash,
+                                 LockMapStripe* stripe,
                                  LockMap* lock_map, Env* env) {
 #ifdef NDEBUG
   (void)env;
 #endif
   TransactionID txn_id = txn->GetID();
 
-  auto stripe_iter = stripe->keys.find(key);
-  if (stripe_iter != stripe->keys.end()) {
-    auto& txns = stripe_iter->second.txn_ids;
+  const size_t indx = stripe->keys.find_with_hash_i(key, key_hash);
+  if (indx != stripe->keys.end_i()) {
+    auto& txns = stripe->keys.val(indx).txn_ids;
     auto txn_it = txns.find(txn_id);
     // Found the key we locked.  unlock it.
     if (txn_it) {
       if (txns.num_stack_items() == 1) {
-        stripe->keys.erase(stripe_iter);
+        stripe->keys.erase_with_hash_i(indx, key_hash);
       } else {
         *txn_it = std::move(txns.back());
         txns.pop_back();
@@ -635,12 +641,13 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
   }
 
   // Lock the mutex for the stripe that this key hashes to
-  size_t stripe_num = lock_map->GetStripe(key);
+  size_t key_hash = NPHash64(key.data(), key.size());
+  size_t stripe_num = lock_map->GetStripe(key, key_hash);
   assert(lock_map->lock_map_stripes_.size() > stripe_num);
   LockMapStripe* stripe = &lock_map->lock_map_stripes_[stripe_num];
 
   stripe->stripe_mutex->Lock().PermitUncheckedError();
-  UnLockKey(txn, key, stripe, lock_map, env);
+  UnLockKey(txn, key, key_hash, stripe, lock_map, env);
   stripe->stripe_mutex->UnLock();
 
   // Signal waiting threads to retry locking
@@ -665,7 +672,8 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
     for (size_t idx = 0; idx < max_key_idx; idx++) {
       if (!keyinfos.is_deleted(idx)) {
         const fstring key = keyinfos.key(idx);
-        size_t strip_idx = lock_map->GetStripe(key);
+        const auto&   val = keyinfos.val(idx);
+        size_t strip_idx = lock_map->GetStripe(key, val.key_hash);
         keys_link[idx] = stripe_heads[strip_idx]; // insert to single
         stripe_heads[strip_idx] = uint32_t(idx);  // list front
       }
@@ -677,7 +685,8 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
       stripe->stripe_mutex->Lock().PermitUncheckedError();
       for (uint32_t idx = head; nil != idx; idx = keys_link[idx]) {
         const fstring key = keyinfos.key(idx);
-        UnLockKey(txn, key, stripe, lock_map, env);
+        const auto&   val = keyinfos.val(idx);
+        UnLockKey(txn, key, val.key_hash, stripe, lock_map, env);
       }
       stripe->stripe_mutex->UnLock();
       stripe->stripe_cv->NotifyAll();

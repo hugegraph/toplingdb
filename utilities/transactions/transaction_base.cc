@@ -15,6 +15,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/status.h"
 #include "util/cast_util.h"
+#include "util/hash.h"
 #include "util/string_util.h"
 #include "utilities/transactions/lock/lock_tracker.h"
 
@@ -153,6 +154,13 @@ void TransactionBaseImpl::SetSnapshotIfNeeded() {
       notifier->SnapshotCreated(GetSnapshot());
     }
   }
+}
+
+Status Transaction::TryLock(ColumnFamilyHandle* cf, const Slice& key,
+                            bool read_only, bool exclusive,
+                            bool do_validate, bool assume_tracked) {
+  size_t h = NPHash64(key.data(), key.size());
+  return TryLock(cf, key, h, read_only, exclusive, do_validate, assume_tracked);
 }
 
 Status TransactionBaseImpl::TryLock(ColumnFamilyHandle* column_family,
@@ -759,6 +767,7 @@ void TransactionBaseImpl::UndoGetForUpdate(ColumnFamilyHandle* column_family,
   PointLockRequest r;
   r.column_family_id = GetColumnFamilyID(column_family);
   r.key = key;
+  r.key_hash = NPHash64(key.data_, key.size_);
   r.read_only = true;
 
   bool can_untrack = false;

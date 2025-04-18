@@ -45,7 +45,13 @@ class LockManager {
   // is responsible for calling UnLock() on this key.
   virtual Status TryLock(PessimisticTransaction* txn,
                          ColumnFamilyId column_family_id,
-                         const Slice& key, Env* env, bool exclusive) = 0;
+                         const Slice& key, size_t key_hash,
+                         Env* env, bool exclusive) = 0;
+#if defined(ROCKSDB_UNIT_TEST)
+  Status TryLock(PessimisticTransaction* txn, ColumnFamilyId,
+                 const Slice& key, Env*, bool exclusive);
+#endif
+
   // The range [start, end] are inclusive at both sides.
   virtual Status TryLock(PessimisticTransaction* txn,
                          ColumnFamilyId column_family_id, const Endpoint& start,

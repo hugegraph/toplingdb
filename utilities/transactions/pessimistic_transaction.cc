@@ -939,7 +939,8 @@ Status PessimisticTransaction::LockBatch(WriteBatch* batch,
     for (const auto& key_iter : cfh_keys) {
       const std::string& key = key_iter;
 
-      s = txn_db_impl_->TryLock(this, cfh_id, key, true /* exclusive */);
+      size_t key_hash = NPHash64(key.data(), key.size());
+      s = txn_db_impl_->TryLock(this, cfh_id, key, key_hash, true /* exclusive */);
       if (!s.ok()) {
         break;
       }
@@ -949,6 +950,7 @@ Status PessimisticTransaction::LockBatch(WriteBatch* batch,
       r.seq = kMaxSequenceNumber;
       r.read_only = false;
       r.exclusive = true;
+      r.key_hash = key_hash;
       keys_to_unlock->Track(r);
     }
 
@@ -970,7 +972,8 @@ Status PessimisticTransaction::LockBatch(WriteBatch* batch,
 // this key will only be locked if there have been no writes to this key since
 // the snapshot time.
 Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
-                                       const Slice& key, bool read_only,
+                                       const Slice& key, size_t key_hash,
+                                       bool read_only,
                                        bool exclusive, const bool do_validate,
                                        const bool assume_tracked) {
   assert(!assume_tracked || !do_validate);
@@ -987,7 +990,7 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
   bool lock_upgrade;
   bool previously_locked;
   if (tracked_locks_->IsPointLockSupported()) {
-    status = tracked_locks_->GetPointLockStatus(cfh_id, key);
+    status = tracked_locks_->GetPointLockStatus(cfh_id, key, key_hash);
     previously_locked = status.locked;
     lock_upgrade = previously_locked && exclusive && !status.exclusive;
   } else {
@@ -1000,7 +1003,7 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
   // Lock this key if this transactions hasn't already locked it or we require
   // an upgrade.
   if (!previously_locked || lock_upgrade) {
-    s = txn_db_impl_->TryLock(this, cfh_id, key, exclusive);
+    s = txn_db_impl_->TryLock(this, cfh_id, key, key_hash, exclusive);
   }
 
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
@@ -1052,7 +1055,7 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
       // Failed to validate key
       // Unlock key we just locked
       if (lock_upgrade) {
-        s = txn_db_impl_->TryLock(this, cfh_id, key, false /* exclusive */);
+        s = txn_db_impl_->TryLock(this, cfh_id, key, key_hash, false /* exclusive */);
         assert(s.ok());
       } else if (!previously_locked) {
         txn_db_impl_->UnLock(this, cfh_id, key);
@@ -1074,12 +1077,12 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
     // setting, and at a lower sequence number, so skipping here should be
     // safe.
     if (!assume_tracked) {
-      TrackKey({cfh_id, key, tracked_at_seq, read_only, exclusive});
+      TrackKey({cfh_id, key, tracked_at_seq, read_only, exclusive, key_hash});
     } else {
 #ifndef NDEBUG
       if (tracked_locks_->IsPointLockSupported()) {
         PointLockStatus lock_status =
-            tracked_locks_->GetPointLockStatus(cfh_id, key);
+            tracked_locks_->GetPointLockStatus(cfh_id, key, key_hash);
         assert(lock_status.locked);
         assert(lock_status.seq <= tracked_at_seq);
         assert(lock_status.exclusive == exclusive);

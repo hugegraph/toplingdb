@@ -11,6 +11,8 @@
 #include "rocksdb/status.h"
 #include "rocksdb/types.h"
 #include "rocksdb/utilities/transaction_db.h"
+#include "util/hash.h"
+
 #include <terark/fstring.hpp>
 
 namespace ROCKSDB_NAMESPACE {
@@ -19,6 +21,12 @@ using LockString = std::string;
 #else
 using LockString = terark::fstring;
 #endif
+
+struct StrNPHash64 {
+  size_t operator()(LockString key) const {
+    return NPHash64(key.p, key.n);
+  }
+};
 
 // Request for locking a single key.
 struct PointLockRequest {
@@ -32,12 +40,18 @@ struct PointLockRequest {
   bool read_only = false;
   // Whether the lock is in exclusive mode.
   bool exclusive = true;
+  size_t key_hash;
 
   PointLockRequest() = default;
   PointLockRequest(ColumnFamilyId cfh_id, Slice k, SequenceNumber s,
                    bool rdonly, bool exclusive1)
     : key(k), seq(s), column_family_id(cfh_id),
-      read_only(rdonly), exclusive(exclusive1) {}
+      read_only(rdonly), exclusive(exclusive1),
+      key_hash(NPHash64(k.data_, key.size_)) {}
+  PointLockRequest(ColumnFamilyId cfh_id, Slice k, SequenceNumber s,
+                   bool rdonly, bool exclusive1, size_t h)
+    : key(k), seq(s), column_family_id(cfh_id),
+      read_only(rdonly), exclusive(exclusive1), key_hash(h) {}
 };
 
 // Request for locking a range of keys.
@@ -161,7 +175,7 @@ class LockTracker {
   // locked=false.
   virtual PointLockStatus GetPointLockStatus(
       ColumnFamilyId /*column_family_id*/,
-      const LockString& /*key*/) const = 0;
+      const LockString& /*key*/, size_t key_hash) const = 0;
 
   // Gets number of tracked point locks.
   //

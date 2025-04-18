@@ -160,7 +160,8 @@ Status OptimisticTransaction::Rollback() {
 //
 // 'exclusive' is unused for OptimisticTransaction.
 Status OptimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
-                                      const Slice& key, bool read_only,
+                                      const Slice& key, size_t key_hash,
+                                      bool read_only,
                                       bool exclusive, const bool do_validate,
                                       const bool assume_tracked) {
   assert(!assume_tracked);  // not supported
@@ -179,7 +180,7 @@ Status OptimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
     seq = db_->GetLatestSequenceNumber();
   }
 
-  TrackKey({cfh_id, key, seq, read_only, exclusive});
+  TrackKey({cfh_id, key, seq, read_only, exclusive, key_hash});
 
   // Always return OK. Confilct checking will happen at commit time.
   return Status::OK();

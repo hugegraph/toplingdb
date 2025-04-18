@@ -100,7 +100,8 @@ class RangeTreeLockTracker : public LockTracker {
   }
 
   PointLockStatus GetPointLockStatus(ColumnFamilyId column_family_id,
-                                     const LockString& key) const override;
+                                     const LockString& key,
+                                     size_t key_hash) const override;
 
   // The return value is only used for tests
   uint64_t GetNumPointLocks() const override { return 0; }

@@ -41,10 +41,12 @@ class TransactionBaseImpl : public Transaction {
   // returns non-OK, the Put/Merge/Delete/GetForUpdate will be failed.
   // do_validate will be false if called from PutUntracked, DeleteUntracked,
   // MergeUntracked, or GetForUpdate(do_validate=false)
+  using Transaction::TryLock;
   virtual Status TryLock(ColumnFamilyHandle* column_family, const Slice& key,
+                         size_t key_hash,
                          bool read_only, bool exclusive,
-                         const bool do_validate = true,
-                         const bool assume_tracked = false) override = 0;
+                         const bool do_validate,
+                         const bool assume_tracked) override = 0;
 
   void SetSavePoint() override;
 
@@ -381,10 +383,6 @@ class TransactionBaseImpl : public Transaction {
   };
   SavePointAsPtr save_points_;
  #endif
-
- private:
-  friend class WriteCommittedTxn;
-  friend class WritePreparedTxn;
 
   // Extra data to be persisted with the commit. Note this is only used when
   // prepare phase is not skipped.

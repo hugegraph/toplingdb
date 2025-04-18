@@ -299,10 +299,11 @@ Status WriteUnpreparedTxn::FlushWriteBatchToDBInternal(bool prepared) {
 
     Status AddUntrackedKey(uint32_t cf, const Slice& key) {
       auto str = key.ToString();
+      size_t key_hash = NPHash64(key.data(), key.size());
       PointLockStatus lock_status =
-          txn_->tracked_locks_->GetPointLockStatus(cf, str);
+          txn_->tracked_locks_->GetPointLockStatus(cf, key, key_hash);
       if (!lock_status.locked) {
-        txn_->untracked_keys_[cf].push_back(str);
+        txn_->untracked_keys_[cf].push_back(std::move(str));
       }
       return Status::OK();
     }

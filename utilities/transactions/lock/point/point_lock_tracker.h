@@ -22,6 +22,7 @@ struct TrackedKeyInfo {
   uint32_t num_writes : 31;
   uint32_t exclusive  :  1;
   uint32_t num_reads;
+  size_t   key_hash;
 
   explicit TrackedKeyInfo(SequenceNumber seq_no)
       : seq(seq_no), num_writes(0), exclusive(false), num_reads(0) {}
@@ -38,7 +39,7 @@ struct TrackedKeyInfo {
 using TrackedKeyInfos = std::unordered_map<std::string, TrackedKeyInfo>;
 #else
 struct TrackedKeyInfos : terark::hash_strmap<TrackedKeyInfo
-      , terark::fstring_func::hash_align
+      , StrNPHash64
       , terark::fstring_func::equal_align
       , terark::ValueInline, terark::FastCopy
       , unsigned, size_t, true
@@ -50,8 +51,9 @@ struct TrackedKeyInfos : terark::hash_strmap<TrackedKeyInfo
     this->enable_freelist();
     this->disable_auto_compact();
   }
-  auto try_emplace(terark::fstring key, uint64_t seq) {
-    auto ib = lazy_insert_i(key, terark::CopyConsFunc<TrackedKeyInfo>(seq));
+  auto try_emplace(terark::fstring key, size_t key_hash, uint64_t seq) {
+    auto ib = lazy_insert_with_hash_i(key, key_hash,
+                  terark::CopyConsFunc<TrackedKeyInfo>(seq));
     m_last_hit = ib.first;
     return std::pair<iterator, bool>(iterator(this, ib.first), ib.second);
   }
@@ -90,7 +92,8 @@ class PointLockTracker : public LockTracker {
       const LockTracker& save_point_tracker) const override;
 
   PointLockStatus GetPointLockStatus(ColumnFamilyId column_family_id,
-                                     const LockString& key) const override;
+                                     const LockString& key,
+                                     size_t key_hash) const override;
 
   uint64_t GetNumPointLocks() const override;
 

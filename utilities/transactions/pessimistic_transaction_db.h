@@ -116,7 +116,7 @@ class PessimisticTransactionDB : public TransactionDB {
       const std::vector<ColumnFamilyHandle*>& column_families) override;
 
   Status TryLock(PessimisticTransaction* txn, uint32_t cfh_id,
-                 const Slice& key, bool exclusive);
+                 const Slice& key, size_t key_hash, bool exclusive);
   Status TryRangeLock(PessimisticTransaction* txn, uint32_t cfh_id,
                       const Endpoint& start_endp, const Endpoint& end_endp);
 

@@ -580,8 +580,9 @@ Status PessimisticTransactionDB::DropColumnFamilies(
 Status PessimisticTransactionDB::TryLock(PessimisticTransaction* txn,
                                          uint32_t cfh_id,
                                          const Slice& key,
+                                         size_t khash,
                                          bool exclusive) {
-  return lock_manager_->TryLock(txn, cfh_id, key, GetEnv(), exclusive);
+  return lock_manager_->TryLock(txn, cfh_id, key, khash, GetEnv(), exclusive);
 }
 
 Status PessimisticTransactionDB::TryRangeLock(PessimisticTransaction* txn,

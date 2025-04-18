@@ -75,7 +75,7 @@ struct PointLockTrackerDelta : public LockTracker {
   void Subtract(const LockTracker&) override;
   void Clear() override;
   LockTracker* GetTrackedLocksSinceSavePoint(const LockTracker&) const override;
-  PointLockStatus GetPointLockStatus(ColumnFamilyId, const LockString&) const override;
+  PointLockStatus GetPointLockStatus(ColumnFamilyId, const LockString& key, size_t key_hash) const override;
   uint64_t GetNumPointLocks() const override;
   ColumnFamilyIterator* GetColumnFamilyIterator() const override;
   KeyIterator* GetKeyIterator(ColumnFamilyId) const override;
@@ -90,7 +90,7 @@ PointLockTracker::~PointLockTracker() {
 
 void PointLockTracker::Track(const PointLockRequest& r) {
   auto& keys = tracked_keys_[r.column_family_id];
-  auto result = keys.try_emplace(r.key, r.seq);
+  auto result = keys.try_emplace(r.key, r.key_hash, r.seq);
   auto it = result.first;
   if (!result.second && r.seq < it->second.seq) {
     // Now tracking this key with an earlier sequence number
@@ -108,6 +108,7 @@ void PointLockTracker::Track(const PointLockRequest& r) {
   }
 
   it->second.exclusive = it->second.exclusive || r.exclusive;
+  it->second.key_hash = r.key_hash;
 }
 
 UntrackStatus PointLockTracker::Untrack(const PointLockRequest& r) {
@@ -117,13 +118,13 @@ UntrackStatus PointLockTracker::Untrack(const PointLockRequest& r) {
   }
 
   auto& keys = cf_keys->second;
-  auto it = keys.find(r.key);
-  if (it == keys.end()) {
+  const size_t idx = keys.find_with_hash_i(r.key, r.key_hash);
+  if (idx >= keys.end_i()) {
     return UntrackStatus::NOT_TRACKED;
   }
 
   bool untracked = false;
-  auto& info = it->second;
+  auto& info = keys.val(idx);
   if (r.read_only) {
     if (info.num_reads > 0) {
       info.num_reads--;
@@ -138,7 +139,7 @@ UntrackStatus PointLockTracker::Untrack(const PointLockRequest& r) {
 
   bool removed = false;
   if (info.num_reads == 0 && info.num_writes == 0) {
-    keys.erase(it);
+    keys.erase_with_hash_i(idx, r.key_hash);
     if (keys.empty()) {
       keys.erase_all(); // set to clean state and keep memory
     }
@@ -176,7 +177,8 @@ void PointLockTracker::Merge(const LockTracker& tracker) {
           current_info->second.Merge(info);
         }
       #else
-        auto [idx, success] = current_keys.insert_i(key, info);
+        auto [idx, success] = current_keys.lazy_insert_with_hash_i
+             (key, info.key_hash, terark::CopyConsFunc<TrackedKeyInfo>(info));
         if (!success) {
           current_keys.val(idx).Merge(info);
         }
@@ -206,7 +208,7 @@ void PointLockTracker::Subtract(const LockTracker& tracker) {
         if (delta_info.num_writes > 0)
           base_info.num_writes -= delta_info.num_writes;
         if (base_info.num_reads == 0 && base_info.num_writes == 0)
-          base_map.erase_i(i);
+          base_map.erase_with_hash_i(i, base_info.key_hash);
       }
     }
   }
@@ -273,6 +275,7 @@ LockTracker* PointLockTracker::GetTrackedLocksSinceSavePoint(
         r.column_family_id = cf_id;
         r.key = Slice(key.data(), key.size());
         r.seq = base_info.seq;
+        r.key_hash = base_info.key_hash;
         r.read_only = (delta_info.num_writes == 0);
         r.exclusive = delta_info.exclusive;
         t->Track(r);
@@ -316,12 +319,12 @@ LockTracker* PointLockTracker::GetTrackedLocksSinceSavePoint(
 }
 
 PointLockStatus PointLockTracker::GetPointLockStatus(
-    ColumnFamilyId column_family_id, const LockString& key) const {
+    ColumnFamilyId column_family_id, const LockString& key, size_t key_hash) const {
   assert(IsPointLockSupported());
   PointLockStatus status;
   auto keys = tracked_keys_.get_value_ptr(column_family_id);
   if (LIKELY(nullptr != keys)) {
-    auto idx = keys->find_i(key);
+    auto idx = keys->find_with_hash_i(key, key_hash);
     if (LIKELY(idx < keys->end_i())) {
       const TrackedKeyInfo& key_info = keys->val(idx);
       status.locked = true;
@@ -515,12 +518,13 @@ LockTracker* PointLockTrackerDelta::GetTrackedLocksSinceSavePoint(
 
 PointLockStatus
 PointLockTrackerDelta::GetPointLockStatus(ColumnFamilyId cf_id,
-                                          const LockString& key) const {
+                                          const LockString& key,
+                                          size_t key_hash) const {
   PointLockStatus status;
   auto base_map = base_tracker_->tracked_keys_.get_value_ptr(cf_id);
   auto delta_vec = cf_delta_vec_.get_value_ptr(cf_id);
   if (LIKELY(base_map && delta_vec)) {
-    auto idx = base_map->find_i(key);
+    auto idx = base_map->find_with_hash_i(key, key_hash);
     if (LIKELY(idx < base_map->end_i() && idx < delta_vec->size())) {
       const auto& delta_info = delta_vec->at(idx);
       if (delta_info.is_in_use) {
