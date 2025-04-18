@@ -390,21 +390,22 @@ Status WriteCommittedTxn::Merge(ColumnFamilyHandle* column_family,
                  });
 }
 
+static const Slice& ArgKey(const Slice& k) { return k; }
+static std::string  ArgKey(SliceParts p) {
+  std::string buf;
+  Slice contiguous_key(p, &buf); // discard tmp contiguous_key
+  return buf;
+}
 template <typename TKey, typename TOperation>
 Status WriteCommittedTxn::Operate(ColumnFamilyHandle* column_family,
                                   const TKey& key, const bool do_validate,
                                   const bool assume_tracked,
                                   TOperation&& operation) {
-  Status s;
-  if constexpr (std::is_same_v<Slice, TKey>) {
-    s = TryLock(column_family, key, /*read_only=*/false, /*exclusive=*/true,
-                do_validate, assume_tracked);
-  } else if constexpr (std::is_same_v<SliceParts, TKey>) {
-    std::string key_buf;
-    Slice contiguous_key(key, &key_buf);
-    s = TryLock(column_family, contiguous_key, /*read_only=*/false,
-                /*exclusive=*/true, do_validate, assume_tracked);
-  }
+  // ArgKey(SliceParts) returns a std::string which lifetime is the whole
+  // expression of the TryLock function call, the std::string is implicit
+  // converted to Slice
+  Status s = TryLock(column_family, ArgKey(key), /*read_only=*/false,
+                     /*exclusive=*/true, do_validate, assume_tracked);
   if (!s.ok()) {
     return s;
   }
