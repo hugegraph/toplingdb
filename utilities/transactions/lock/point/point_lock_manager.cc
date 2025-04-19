@@ -609,7 +609,7 @@ void PointLockManager::UnLockKey(PessimisticTransaction* txn,
   const size_t indx = stripe->keys.find_with_hash_i(key, key_hash);
   if (indx != stripe->keys.end_i()) {
     auto& txns = stripe->keys.val(indx).txn_ids;
-    auto txn_it = txns.find(txn_id);
+    auto txn_it = txns.find_p(txn_id);
     // Found the key we locked.  unlock it.
     if (txn_it) {
       if (txns.num_stack_items() == 1) {

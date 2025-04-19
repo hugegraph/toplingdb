@@ -425,7 +425,7 @@ class autovector {
     return const_reverse_iterator(begin());
   }
 
-  const T* cfind(const T& key) const {
+  const T* cfind_p(const T& key) const {
     for (size_t i = 0, n = num_stack_items_; i < n; i++) {
       if (values_[i] == key)
         return &values_[i];
@@ -436,8 +436,8 @@ class autovector {
     }
     return nullptr;
   }
-  const T* find(const T& key) const { return cfind(key); }
-        T* find(const T& key)       { return const_cast<T*>(cfind(key)); }
+  const T* find_p(const T& key) const { return cfind_p(key); }
+        T* find_p(const T& key)       { return const_cast<T*>(cfind_p(key)); }
 
   const T& top() const noexcept { return back(); }
   T& top() noexcept { return back(); }
