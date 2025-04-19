@@ -43,7 +43,10 @@ namespace ROCKSDB_NAMESPACE {
 //     operations.
 //
 // Naming style of public methods almost follows that of the STL's.
-template <class T, size_t kSize = 8>
+template <class T, size_t kSize = 8,
+          class HeapVector = std::conditional_t<
+                                  std::is_trivially_destructible_v<T>,
+                                  terark::valvec32<T>, std::vector<T> > >
 class autovector {
  public:
   // General STL-style container member types.
@@ -456,8 +459,6 @@ class autovector {
 
   // used only if there are more than `kSize` items.
   static_assert(kSize <= 255);
-  using HeapVector = std::conditional_t<std::is_trivially_destructible_v<T>,
-                                        terark::valvec32<T>, std::vector<T> >;
   HeapVector vect_;
   uint8_t  num_stack_items_ = 0;  // current number of items
   uint8_t  pad_u08_ = 0;
