@@ -723,7 +723,7 @@ PointLockManager::PointLockStatus PointLockManager::GetPointLockStatus() {
         for (const auto& id : it.second.txn_ids) {
           info.ids.push_back(id);
         }
-        data.insert({i, info});
+        data.emplace(i, std::move(info));
       }
     }
   }
