@@ -439,6 +439,102 @@ class autovector {
   const T* find_p(const T& key) const { return cfind_p(key); }
         T* find_p(const T& key)       { return const_cast<T*>(cfind_p(key)); }
 
+  size_t find_i(const T& key) const {
+    size_t num_stack = num_stack_items_;
+    for (size_t i = 0; i < num_stack; i++) {
+      if (values_[i] == key)
+        return i;
+    }
+    auto ptr_heap = vect_.data();
+    auto num_heap = vect_.size();
+    for (size_t i = 0; i < num_heap; i++) {
+      if (ptr_heap[i] == key)
+        return kSize + i;
+    }
+    return num_stack + num_heap; // covers the case which stack is not full
+  }
+  auto find(const T& key) const { return const_iterator(this, find_i(key)); }
+  auto find(const T& key)       { return       iterator(this, find_i(key)); }
+
+private:
+  template<class Pred, class Self> // bool pred(value)
+  auto find_if_p_impl(Self* self, Pred pred) const {
+    size_t num_stack = self->num_stack_items_;
+    for (size_t i = 0; i < num_stack; i++) {
+      if (pred(self->values_[i]))
+        return&self->values_[i];
+    }
+    auto ptr_heap = self->vect_.data();
+    auto num_heap = self->vect_.size();
+    for (size_t i = 0; i < num_heap; i++) {
+      if (pred(ptr_heap[i]))
+        return&ptr_heap[i];
+    }
+    return decltype(&self->values_[0])(nullptr);
+  }
+public:
+  template<class Pred> // bool pred(value)
+  const T* find_if_p(Pred pred) const {
+    return find_if_p_impl<Pred>(this, pred);
+  }
+
+  ///@param pred can also modify value
+  template<class Pred> // bool pred(value)
+  T* find_if_p(Pred pred) { return find_if_p_impl<Pred>(this, pred); }
+
+  template<class Pred> // bool pred(value)
+  size_t find_if_i(Pred pred) const {
+    size_t num_stack = num_stack_items_;
+    for (size_t i = 0; i < num_stack; i++) {
+      if (pred(values_[i]))
+        return i;
+    }
+    auto ptr_heap = vect_.data();
+    auto num_heap = vect_.size();
+    for (size_t i = 0; i < num_heap; i++) {
+      if (pred(ptr_heap[i]))
+        return kSize + i;
+    }
+    return num_stack + num_heap; // covers the case which stack is not full
+  }
+
+  template<class Pred> // bool pred(value)
+  auto find_if(Pred pred) const { return const_iterator(this, find_if_i(pred)); }
+
+  template<class Pred> // bool pred(value)
+  auto find_if(Pred pred) { return iterator(this, find_if_i(pred)); }
+
+  template<class OP>
+  auto for_each(OP op) const -> decltype(op(front()), (void)0) {
+    for (size_t i = 0, n = num_stack_items_; i < n; i++)
+      op(values_[i]);
+    for (const T& x : vect_)
+      op(x);
+  }
+  template<class OP>
+  auto for_each(OP op) -> decltype(op(front()), (void)0) {
+    for (size_t i = 0, n = num_stack_items_; i < n; i++)
+      op(values_[i]);
+    for (T& x : vect_)
+      op(x);
+  }
+  template<class OP>
+  auto for_each(OP op) const -> decltype(op(1, front()), (void)0) {
+    for (size_t i = 0, n = num_stack_items_; i < n; i++)
+      op(i, values_[i]);
+    const T* heap = vect_.data();
+    for (size_t i = 0, n = vect_.size(); i < n; i++)
+      op(kSize + i, heap[i]);
+  }
+  template<class OP>
+  auto for_each(OP op) -> decltype(op(1, front()), (void)0) {
+    for (size_t i = 0, n = num_stack_items_; i < n; i++)
+      op(i, values_[i]);
+    T* heap = vect_.data();
+    for (size_t i = 0, n = vect_.size(); i < n; i++)
+      op(kSize + i, heap[i]);
+  }
+
   const T& top() const noexcept { return back(); }
   T& top() noexcept { return back(); }
   void pop() { pop_back(); }
