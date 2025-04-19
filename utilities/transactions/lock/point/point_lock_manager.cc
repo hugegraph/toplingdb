@@ -65,6 +65,8 @@ struct LockMapStripe : private boost::noncopyable {
 #else
   struct KeyStrMap : terark::hash_strmap<LockInfo, StrNPHash64> {
     KeyStrMap() {
+      static_assert(KeyStrMap::with_free_list);
+      this->disable_auto_compact(); // ensure disabled
       size_t cap = 8;
       size_t strpool_cap = 1024;
       this->reserve(cap, strpool_cap);
