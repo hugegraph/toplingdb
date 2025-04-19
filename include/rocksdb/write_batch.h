@@ -48,7 +48,7 @@ struct KeyValuePassMemTable {
   Slice    value;
   uint64_t val_pos;
   uint32_t key_len;
-  uint32_t fileno;
+  uint64_t fileno;
   const ReadonlyFileMmap* wal_file;
 };
 
