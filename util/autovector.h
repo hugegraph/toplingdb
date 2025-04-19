@@ -341,7 +341,16 @@ class autovector {
   }
 
   // -- Copy and Assignment
-  autovector& assign(const autovector& other);
+  autovector& assign(const autovector& other) {
+    vect_.assign(other.vect_.begin(), other.vect_.end());
+    destroy(values_, num_stack_items_);
+    num_stack_items_ = other.num_stack_items_;
+    pad_u08_ = other.pad_u08_;
+    pad_u16_ = other.pad_u16_;
+    pad_u32_ = other.pad_u32_;
+    std::uninitialized_copy_n(other.values_, num_stack_items_, values_);
+    return *this;
+  }
 
   autovector(const autovector& other) : vect_(other.vect_) {
     num_stack_items_ = other.num_stack_items_;
@@ -379,7 +388,18 @@ class autovector {
   #endif
     other.num_stack_items_ = 0;
   }
-  autovector& operator=(autovector&& other) noexcept;
+  autovector& operator=(autovector&& other) noexcept {
+    vect_ = std::move(other.vect_);
+    destroy(values_, num_stack_items_);
+    size_t n = other.num_stack_items_;
+    num_stack_items_ = n;
+    pad_u08_ = other.pad_u08_;
+    pad_u16_ = other.pad_u16_;
+    pad_u32_ = other.pad_u32_;
+    other.num_stack_items_ = 0;
+    std::uninitialized_move_n(other.values_, n, values_);
+    return *this;
+  }
 
   // -- Iterator Operations
   iterator begin() { return iterator(this, 0); }
@@ -447,38 +467,6 @@ class autovector {
     value_type values_[kSize];
   };
 };
-
-template <class T, size_t kSize>
-inline autovector<T, kSize>& autovector<T, kSize>::assign(
-    const autovector<T, kSize>& other) {
-  // copy the internal vector
-  vect_.assign(other.vect_.begin(), other.vect_.end());
-
-  destroy(values_, num_stack_items_);
-  // copy array
-  num_stack_items_ = other.num_stack_items_;
-  pad_u08_ = other.pad_u08_;
-  pad_u16_ = other.pad_u16_;
-  pad_u32_ = other.pad_u32_;
-  std::uninitialized_copy_n(other.values_, num_stack_items_, values_);
-
-  return *this;
-}
-
-template <class T, size_t kSize>
-inline autovector<T, kSize>& autovector<T, kSize>::operator=(
-    autovector<T, kSize>&& other) noexcept {
-  vect_ = std::move(other.vect_);
-  destroy(values_, num_stack_items_);
-  size_t n = other.num_stack_items_;
-  num_stack_items_ = n;
-  pad_u08_ = other.pad_u08_;
-  pad_u16_ = other.pad_u16_;
-  pad_u32_ = other.pad_u32_;
-  other.num_stack_items_ = 0;
-  std::uninitialized_move_n(other.values_, n, values_);
-  return *this;
-}
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop
