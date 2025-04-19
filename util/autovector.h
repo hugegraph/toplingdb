@@ -301,8 +301,8 @@ class autovector {
   reference emplace_back(Args&&... args) {
     size_t oldsize = num_stack_items_;
     if (oldsize < kSize) {
-      new ((void*)(&values_[oldsize]))
-                   value_type(std::forward<Args>(args)...);
+      new(&values_[oldsize]) T (std::forward<Args>(args)...);
+      num_stack_items_ = oldsize + 1;
       return values_[oldsize];
     } else {
       return vect_.emplace_back(std::forward<Args>(args)...);
@@ -312,7 +312,7 @@ class autovector {
   void emplace_back(Args&&... args) {
     size_t oldsize = num_stack_items_;
     if (oldsize < kSize) {
-      new ((void*)(&values_[oldsize])) T (std::forward<Args>(args)...);
+      new(&values_[oldsize]) T (std::forward<Args>(args)...);
       num_stack_items_ = oldsize + 1;
     } else {
       vect_.emplace_back(std::forward<Args>(args)...);
