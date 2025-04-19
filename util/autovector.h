@@ -347,6 +347,7 @@ class autovector {
     num_stack_items_ = other.num_stack_items_;
     pad_u08_ = other.pad_u08_;
     pad_u16_ = other.pad_u16_;
+    pad_u32_ = other.pad_u32_;
   #if 0
     std::uninitialized_copy_n(other.values_, other.num_stack_items_, values_);
   #else
@@ -365,6 +366,7 @@ class autovector {
     num_stack_items_ = other.num_stack_items_;
     pad_u08_ = other.pad_u08_;
     pad_u16_ = other.pad_u16_;
+    pad_u32_ = other.pad_u32_;
   #if 0
     std::uninitialized_move_n(other.values_, other.num_stack_items_, values_);
   #else
@@ -420,8 +422,10 @@ class autovector {
 
   uint8_t   pad_u08() const { return pad_u08_; }
   uint16_t  pad_u16() const { return pad_u16_; }
+  uint32_t  pad_u32() const { return pad_u32_; }
   uint8_t & pad_u08() { return pad_u08_; }
   uint16_t& pad_u16() { return pad_u16_; }
+  uint32_t& pad_u32() { return pad_u32_; }
 
  private:
   static void destroy(value_type* p, size_t n) {
@@ -438,6 +442,7 @@ class autovector {
   uint8_t  num_stack_items_ = 0;  // current number of items
   uint8_t  pad_u08_ = 0;
   uint16_t pad_u16_ = 0;
+  uint32_t pad_u32_ = 0;
   union {
     value_type values_[kSize];
   };
@@ -454,6 +459,7 @@ inline autovector<T, kSize>& autovector<T, kSize>::assign(
   num_stack_items_ = other.num_stack_items_;
   pad_u08_ = other.pad_u08_;
   pad_u16_ = other.pad_u16_;
+  pad_u32_ = other.pad_u32_;
   std::uninitialized_copy_n(other.values_, num_stack_items_, values_);
 
   return *this;
@@ -468,6 +474,7 @@ inline autovector<T, kSize>& autovector<T, kSize>::operator=(
   num_stack_items_ = n;
   pad_u08_ = other.pad_u08_;
   pad_u16_ = other.pad_u16_;
+  pad_u32_ = other.pad_u32_;
   other.num_stack_items_ = 0;
   std::uninitialized_move_n(other.values_, n, values_);
   return *this;
