@@ -370,11 +370,11 @@ class TransactionBaseImpl : public Transaction {
   // minimize code changes(check save_points_ for null and change `->` to `.`).
   // This should be simple and perfect, but compiler warn address will never
   // be null, it is very ugly and non-portable to suppress the warning.
-  autovector<SavePoint> save_points_[1];
+  autovector<SavePoint, 4, terark::valvec32<SavePoint> > save_points_[1];
  #else
   // this is just to suppress compiler warn address will never be null, I know
   // #pragma GCC diagnostic ignored "-Waddress" works, but it is not portable.
-  struct SavePointAsPtr : autovector<SavePoint> {
+  struct SavePointAsPtr : autovector<SavePoint, 4, terark::valvec32<SavePoint> > {
     bool operator==(std::nullptr_t) const { return false; }
     bool operator!=(std::nullptr_t) const { return true; }
     operator bool() const { return true; } // for if (save_points_)
