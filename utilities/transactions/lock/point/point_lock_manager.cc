@@ -668,7 +668,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
     using namespace terark;
     const size_t max_key_idx = keyinfos.end_i();
     const size_t num_stripes = lock_map->lock_map_stripes_.size();
-    auto stripe_heads = (uint32_t*)alloca(sizeof(uint32_t) * num_stripes);
+    auto stripe_heads = new uint32_t[num_stripes]; // note: delete at loop end
     std::fill_n(stripe_heads, num_stripes, nil);
     valvec<uint32_t> keys_link(max_key_idx, valvec_no_init());
     for (size_t idx = 0; idx < max_key_idx; idx++) {
@@ -693,6 +693,7 @@ void PointLockManager::UnLock(PessimisticTransaction* txn,
       stripe->stripe_mutex->UnLock();
       stripe->stripe_cv->NotifyAll();
     }
+    delete []stripe_heads;
   }
 }
 
