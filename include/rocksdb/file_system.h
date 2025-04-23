@@ -1930,6 +1930,12 @@ public:
   ~ReadonlyFileMmap();
   static std::shared_ptr<ReadonlyFileMmap>
   New(IOStatus* s, FileSystem& fs, size_t fileno, const std::string& fname, size_t mmap_size = 0);
+  static IOStatus New(std::shared_ptr<ReadonlyFileMmap>* fp, FileSystem& fs,
+                      size_t fileno, const std::string& fname, size_t mmap_size = 0) {
+    IOStatus s;
+    *fp = New(&s, fs, fileno, fname, mmap_size);
+    return s;
+  }
   static std::pair<std::shared_ptr<ReadonlyFileMmap>, IOStatus>
   New(FileSystem& fs, size_t fileno, const std::string& fname, size_t mmap_size = 0) {
     IOStatus ios;

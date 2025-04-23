@@ -123,8 +123,7 @@ void Writer::InitReaderMmap(FileSystem& fs, size_t mmap_size) {
   if (0 == mmap_size) {
     mmap_size = size_t(1) << 30; // 1G
   }
-  IOStatus s;
-  mmap_reader_ = ReadonlyFileMmap::New(&s, fs, log_number_, fname, mmap_size);
+  auto s = ReadonlyFileMmap::New(&mmap_reader_, fs, log_number_, fname, mmap_size);
   TERARK_VERIFY_S(s.ok(), "mmap size %zd for %s, %s", mmap_size, fname, s.ToString());
   TERARK_VERIFY_GE(mmap_reader_->size_, mmap_size);
   fname_ = fname;

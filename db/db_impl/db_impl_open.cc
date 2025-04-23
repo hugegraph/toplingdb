@@ -1204,8 +1204,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
     std::shared_ptr<ReadonlyFileMmap> fmap;
     if (immutable_db_options_.memtable_as_log_index) {
       reader.InitSetMemTableAsLogIndex(*fs_);
-      IOStatus ios;
-      fmap = ReadonlyFileMmap::New(&ios, *fs_, wal_number, fname);
+      IOStatus ios = ReadonlyFileMmap::New(&fmap, *fs_, wal_number, fname);
       if (!ios.ok() && ios.ToString() != "Invalid argument: Empty File")
         return Status(ios);
       if (fmap)
