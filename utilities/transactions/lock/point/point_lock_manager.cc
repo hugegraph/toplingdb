@@ -622,7 +622,7 @@ void PointLockManager::UnLockKey(PessimisticTransaction* txn,
       if (max_num_locks_ > 0) {
         // Maintain lock count if there is a limit on the number of locks.
         assert(lock_map->lock_cnt.load(std::memory_order_relaxed) > 0);
-        lock_map->lock_cnt--;
+        lock_map->lock_cnt.fetch_sub(1, std::memory_order_relaxed);
       }
     }
   } else {
