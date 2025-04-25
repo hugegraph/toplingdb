@@ -13,6 +13,7 @@ ToplingDB has much more key features than RocksDB:
 1. MultiGet with concurrent IO by fiber/coroutine + io_uring, much faster than RocksDB's async MultiGet
 1. Topling [de-virtualization](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Principle), de-virtualize hotspot (virtual) functions, and key prefix caches, [bechmarks](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Benchmark)
 1. Topling zero copy for point search(Get/MultiGet) and Iterator
+1. Topling memtable as log index, omit memtable flush to L0
 1. Builtin SidePlugin**s** for existing RocksDB components(Cache, Comparator, TableFactory, MemTableFactory...)
 1. Builtin Prometheus metrics support, this is based on [Embedded Http Server](https://github.com/topling/rockside/wiki/WebView)
 1. Many bugfixes for RocksDB, a small part of such fixes was [Pull Requested](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet) to [upstream RocksDB](https://github.com/facebook/rocksdb)
