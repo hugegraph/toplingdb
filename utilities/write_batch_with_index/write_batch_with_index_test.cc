@@ -1828,6 +1828,11 @@ TEST_P(WriteBatchWithIndexTest, SavePointTest) {
       batch_->NewIteratorWithBase(new KVIter(&empty_map)));
   std::unique_ptr<Iterator> cf1_iter(
       batch_->NewIteratorWithBase(&cf1, new KVIter(&empty_map)));
+
+  // test for cspp_wbwi ClearIndex check null
+  std::unique_ptr<Iterator> cf2_iter_unused(
+    batch_->NewIteratorWithBase(new KVIter(&empty_map)));
+
   Status s;
   KVMap kvm_cf0_0 = {{"A", "aa"}, {"B", "b"}};
   KVMap kvm_cf1_0 = {{"A", "a1"}, {"C", "c1"}, {"E", "e1"}};
