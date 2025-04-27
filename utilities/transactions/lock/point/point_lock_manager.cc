@@ -25,22 +25,156 @@
 namespace ROCKSDB_NAMESPACE {
 
 struct LockInfo {
+  size_t key_hash; // near key
+  // Transaction locks are not valid after this time in us
+  uint64_t expiration_time;
+
   static_assert(sizeof(bool) == 1);
   bool& exclusive() { return reinterpret_cast<bool&>(txn_ids.pad_u08()); }
   bool exclusive() const { return txn_ids.pad_u08() != 0; }
   autovector<TransactionID> txn_ids;
-
-  // Transaction locks are not valid after this time in us
-  uint64_t expiration_time;
-
-  size_t key_hash;
 
   LockInfo(TransactionID id, uint64_t time, bool ex)
       : expiration_time(time) {
     exclusive() = ex;
     txn_ids.push_back(id);
   }
+  LockInfo(LockInfo&& y)
+    : key_hash(y.key_hash)
+    , expiration_time(y.expiration_time)
+    , txn_ids(std::move(y.txn_ids))
+  {
+    txn_ids.pad_u08() = y.txn_ids.pad_u08();
+  }
+  LockInfo(const LockInfo&) = delete;
+  LockInfo& operator=(LockInfo&&) = delete;
+  LockInfo& operator=(const LockInfo&) = delete;
 };
+
+struct PointLockNode { // behave like std::pair<fstring, LockInfo>
+  using key_big_t = terark::valvec<char>;
+  union KeyPart {
+    char key_local[32];
+    key_big_t key_big;
+  };
+  struct KeyType {
+    KeyPart  m_key;
+    LockInfo m_val;
+    operator terark::fstring() const { return get_key(); }
+    terark::fstring  get_key() const {
+      size_t sso_len = m_val.txn_ids.pad_u16();
+      if (sso_len <= sizeof(m_key.key_local)) {
+        return terark::fstring(m_key.key_local, sso_len);
+      } else {
+        return m_key.key_big;
+      }
+    }
+    const char* data() const {
+      size_t sso_len = m_val.txn_ids.pad_u16();
+      if (sso_len <= sizeof(m_key.key_local)) {
+        return m_key.key_local;
+      } else {
+        return m_key.key_big.data();
+      }
+    }
+    size_t size() const {
+      size_t sso_len = m_val.txn_ids.pad_u16();
+      if (sso_len <= sizeof(m_key.key_local)) {
+        return sso_len;
+      } else { // may be larger than UINT16_MAX
+        return m_key.key_big.size();
+      }
+    }
+    void ConsKeyAfterConsValue(terark::fstring k) {
+      if (k.size() <= sizeof(m_key.key_local)) {
+        memcpy(m_key.key_local, k.data(), k.size());
+        m_val.txn_ids.pad_u16() = k.size();
+      } else {
+        new(&m_key.key_big)key_big_t(k.data(), k.size());
+        m_val.txn_ids.pad_u16() = std::min(k.size(), size_t(UINT16_MAX));
+      }
+    }
+  };
+  struct KeyPartStorage {
+    unsigned char key_part_storage[sizeof(KeyPart)];
+  };
+  struct ValueType : KeyPartStorage, LockInfo {
+    using LockInfo::LockInfo;
+  };
+  union {
+    KeyType   first;  // behave like fstring
+    ValueType second; // behave like LockInfo
+  };
+  template<class ConsValue>
+  void construct(terark::fstring k, ConsValue cons) {
+    cons(&first.m_val);
+    first.ConsKeyAfterConsValue(k);
+  }
+  ~PointLockNode() {
+    if (second.txn_ids.pad_u16() > sizeof(first.m_key.key_local)) {
+      first.m_key.key_big.~key_big_t();
+    }
+    first.m_val.~LockInfo();
+  }
+  PointLockNode(const PointLockNode&) = delete;
+};
+
+struct PointLockNodeLayout {
+  enum { is_value_out = 0, is_fast_copy = 1 };
+  typedef terark::FastCopy copy_strategy;
+  typedef PointLockNode Node;
+  typedef unsigned link_t, Link;
+  typedef       Node*       iterator;
+  typedef const Node* const_iterator;
+
+  Node* aNode = nullptr;
+  bool is_null() const { return NULL == aNode; }
+
+        iterator begin()       { return       iterator(aNode); }
+  const_iterator begin() const { return const_iterator(aNode); }
+
+        Node& data(size_t index)       { return aNode[index]; }
+  const Node& data(size_t index) const { return aNode[index]; }
+        Link& link(size_t index)       { return aNode[index].second.txn_ids.pad_u32(); }
+  const Link& link(size_t index) const { return aNode[index].second.txn_ids.pad_u32(); }
+
+  void free() { if (aNode) ::free(aNode), aNode = NULL; }
+
+  void reserve(size_t old_size, size_t new_capacity, ...) {
+    assert(old_size < new_capacity);
+    TERARK_UNUSED_VAR(old_size);
+    Node* pn = (Node*)realloc((void*)aNode, sizeof(Node)*new_capacity);
+    TERARK_VERIFY_F(pn != nullptr, "realloc(%zd * num(%zd) = %zd)",
+                    sizeof(Node), new_capacity, sizeof(Node)*new_capacity);
+    this->aNode = pn;
+  }
+};
+struct PointLockKeyExtractor {
+  terark::fstring operator()(const PointLockNode& x) const
+    { return x.first.get_key(); }
+};
+using HashEqual = terark::hash_and_equal<terark::fstring, StrNPHash64>;
+using GoldenLockMapBase = terark::gold_hash_tab<terark::fstring, PointLockNode,
+                        HashEqual, PointLockKeyExtractor, PointLockNodeLayout>;
+struct GoldenLockMap : GoldenLockMapBase {
+  GoldenLockMap() {
+    size_t cap = 8;
+    this->disable_auto_compact(); // ensure disabled
+    this->enable_freelist();
+    this->reserve(cap);
+  }
+  template<class ConsValue, class PreInsert>
+  std::pair<size_t, bool>
+  lazy_insert_with_hash_i(terark::fstring key, size_t h,
+                          const ConsValue& cons_val, PreInsert pre_insert) {
+    auto cons = [&](PointLockNode* node) { node->construct(key, cons_val); };
+    return this->lazy_insert_elem_with_hash_i(key, h, cons, pre_insert);
+  }
+        LockInfo& val(size_t i)       { return elem_at(i).second; }
+  const LockInfo& val(size_t i) const { return elem_at(i).second; }
+};
+
+#define USE_GoldenLockMap
 
 struct LockMapStripe : private boost::noncopyable {
   explicit LockMapStripe(TransactionDBMutexFactory* factory) {
@@ -62,6 +196,8 @@ struct LockMapStripe : private boost::noncopyable {
   // TODO(agiardullo): Explore performance of other data structures.
 #if 0
   UnorderedMap<std::string, LockInfo> keys;
+#elif defined(USE_GoldenLockMap)
+  GoldenLockMap keys;
 #else
   struct KeyStrMap : terark::hash_strmap<LockInfo, StrNPHash64> {
     KeyStrMap() {
@@ -78,7 +214,11 @@ struct LockMapStripe : private boost::noncopyable {
 };
 
 #if !defined(_MSC_VER) // MSVC false fail
+#if defined(USE_GoldenLockMap)
+static_assert(sizeof(LockMapStripe) == 96); // with GoldenLockMap
+#else
 static_assert(sizeof(LockMapStripe) == 128);
+#endif
 #endif
 
 // Map of #num_stripes LockMapStripes
