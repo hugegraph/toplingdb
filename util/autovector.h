@@ -348,18 +348,12 @@ class autovector {
     vect_.assign(other.vect_.begin(), other.vect_.end());
     destroy(values_, num_stack_items_);
     num_stack_items_ = other.num_stack_items_;
-    pad_u08_ = other.pad_u08_;
-    pad_u16_ = other.pad_u16_;
-    pad_u32_ = other.pad_u32_;
     std::uninitialized_copy_n(other.values_, num_stack_items_, values_);
     return *this;
   }
 
   autovector(const autovector& other) : vect_(other.vect_) {
     num_stack_items_ = other.num_stack_items_;
-    pad_u08_ = other.pad_u08_;
-    pad_u16_ = other.pad_u16_;
-    pad_u32_ = other.pad_u32_;
   #if 0
     std::uninitialized_copy_n(other.values_, other.num_stack_items_, values_);
   #else
@@ -376,9 +370,6 @@ class autovector {
 
   autovector(autovector&& other) noexcept : vect_(std::move(other.vect_)) {
     num_stack_items_ = other.num_stack_items_;
-    pad_u08_ = other.pad_u08_;
-    pad_u16_ = other.pad_u16_;
-    pad_u32_ = other.pad_u32_;
   #if 0
     std::uninitialized_move_n(other.values_, other.num_stack_items_, values_);
   #else
@@ -396,9 +387,6 @@ class autovector {
     destroy(values_, num_stack_items_);
     size_t n = other.num_stack_items_;
     num_stack_items_ = n;
-    pad_u08_ = other.pad_u08_;
-    pad_u16_ = other.pad_u16_;
-    pad_u32_ = other.pad_u32_;
     other.num_stack_items_ = 0;
     std::uninitialized_move_n(other.values_, n, values_);
     return *this;
@@ -557,9 +545,9 @@ public:
   static_assert(kSize <= 255);
   HeapVector vect_;
   uint8_t  num_stack_items_ = 0;  // current number of items
-  uint8_t  pad_u08_ = 0;
-  uint16_t pad_u16_ = 0;
-  uint32_t pad_u32_ = 0;
+  uint8_t  pad_u08_;
+  uint16_t pad_u16_;
+  uint32_t pad_u32_;
   union {
     value_type values_[kSize];
   };
