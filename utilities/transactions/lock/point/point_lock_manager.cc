@@ -183,14 +183,16 @@ struct LockMapStripe : private boost::noncopyable {
     assert(stripe_mutex);
     assert(stripe_cv);
   }
+  ~LockMapStripe() {
+    delete stripe_cv;
+    delete stripe_mutex;
+  }
 
   // Mutex must be held before modifying keys map
-  std::shared_ptr<TransactionDBMutex> stripe_mutex;
+  TransactionDBMutex* stripe_mutex;
 
   // Condition Variable per stripe for waiting on a lock
-  std::shared_ptr<TransactionDBCondVar> stripe_cv;
-
-  size_t padding[2] = {0};
+  TransactionDBCondVar* stripe_cv;
 
   // Locked keys mapped to the info about the transactions that locked them.
   // TODO(agiardullo): Explore performance of other data structures.
@@ -210,12 +212,13 @@ struct LockMapStripe : private boost::noncopyable {
     }
   };
   KeyStrMap keys;
+  size_t padding[4] = {0};
 #endif
 };
 
 #if !defined(_MSC_VER) // MSVC false fail
 #if defined(USE_GoldenLockMap)
-static_assert(sizeof(LockMapStripe) == 96); // with GoldenLockMap
+static_assert(sizeof(LockMapStripe) == 64); // with GoldenLockMap
 #else
 static_assert(sizeof(LockMapStripe) == 128);
 #endif
