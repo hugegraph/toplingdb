@@ -46,6 +46,7 @@ struct LockInfo {
   {
     txn_ids.pad_u08() = y.txn_ids.pad_u08();
   }
+  explicit LockInfo(Slice* /* just_as_tag */) {}
   LockInfo(const LockInfo&) = delete;
   LockInfo& operator=(LockInfo&&) = delete;
   LockInfo& operator=(const LockInfo&) = delete;
@@ -175,8 +176,6 @@ struct GoldenLockMap : GoldenLockMapBase {
   const LockInfo& val(size_t i) const { return elem_at(i).second; }
 };
 
-#define USE_GoldenLockMap
-
 struct LockMapStripe : private boost::noncopyable {
   explicit LockMapStripe(TransactionDBMutexFactory* factory) {
     stripe_mutex = factory->AllocateMutex();
@@ -199,8 +198,31 @@ struct LockMapStripe : private boost::noncopyable {
   // TODO(agiardullo): Explore performance of other data structures.
 #if 0
   UnorderedMap<std::string, LockInfo> keys;
-#elif defined(USE_GoldenLockMap)
+#elif POINT_LOCK_HASH_MAP_TYPE == 2
   GoldenLockMap keys;
+#elif POINT_LOCK_HASH_MAP_TYPE == 0
+  struct KeyStrMap : std::unordered_map<std::string, LockInfo, StrNPHash64> {
+    auto& key(iterator i) { return i->first; }
+    auto& val(iterator i) { return i->second; }
+    auto end_i() { return end(); }
+    auto find_with_hash_i(LockString key, size_t) { return find(key.str()); }
+    void erase_with_hash_i(iterator i, size_t) { erase(i); }
+    template<class Cons, class Check>
+    auto lazy_insert_with_hash_i(Slice key, size_t, Cons cons, Check check) {
+      auto ib = try_emplace(key.ToString(), &key);
+      if (ib.second) {
+        if (check(nullptr)) {
+          cons(&ib.first->second);
+        } else {
+          erase(ib.first);
+          ib.first = end();
+        }
+      }
+      return ib;
+    }
+  };
+  KeyStrMap keys;
+  size_t padding[7] = {0}; // pad to 128 bytes
 #else
   struct KeyStrMap : terark::hash_strmap<LockInfo, StrNPHash64> {
     KeyStrMap() {
@@ -218,7 +240,7 @@ struct LockMapStripe : private boost::noncopyable {
 };
 
 #if !defined(_MSC_VER) // MSVC false fail
-#if defined(USE_GoldenLockMap)
+#if POINT_LOCK_HASH_MAP_TYPE == 2
 static_assert(sizeof(LockMapStripe) == 64); // with GoldenLockMap
 #else
 static_assert(sizeof(LockMapStripe) == 128);
@@ -750,7 +772,7 @@ void PointLockManager::UnLockKey(PessimisticTransaction* txn,
 #endif
   TransactionID txn_id = txn->GetID();
 
-  const size_t indx = stripe->keys.find_with_hash_i(key, key_hash);
+  const auto indx = stripe->keys.find_with_hash_i(key, key_hash);
   if (indx != stripe->keys.end_i()) {
     auto& txns = stripe->keys.val(indx).txn_ids;
     auto txn_it = txns.find_p(txn_id);

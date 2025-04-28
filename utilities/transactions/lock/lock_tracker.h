@@ -21,6 +21,7 @@ using LockString = std::string;
 #else
 using LockString = terark::fstring;
 #endif
+#define POINT_LOCK_HASH_MAP_TYPE 2
 
 struct StrNPHash64 {
   size_t operator()(LockString key) const {
