@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <terark/gold_hash_map.hpp>
 #include <terark/hash_strmap.hpp>
 #include <terark/util/vec_idx_map.hpp>
 
@@ -37,6 +38,58 @@ struct TrackedKeyInfo {
 
 #if 0
 using TrackedKeyInfos = std::unordered_map<std::string, TrackedKeyInfo>;
+#elif POINT_LOCK_HASH_MAP_TYPE == 2
+#pragma pack(push, 4)
+struct TrackedKeyAndInfo {
+  using KeySSO = terark::minimal_sso<36, false, 4>;
+  TrackedKeyInfo second; // here, second should before first
+  KeySSO first;
+  // uint32_t link will be added by gold_hash_tab here
+};
+#pragma pack(pop)
+static_assert(sizeof(TrackedKeyAndInfo) == 60);
+struct TrackedKeyExtractor {
+  terark::fstring operator()(const TrackedKeyAndInfo& x) const
+    { return x.first.to<terark::fstring>(); }
+};
+struct TrackedKeyInfos : terark::gold_hash_tab<terark::fstring
+     , TrackedKeyAndInfo
+     , terark::hash_and_equal<terark::fstring, StrNPHash64
+                             ,terark::fstring_func::equal_align
+                             >
+     , TrackedKeyExtractor
+     , terark::node_layout<TrackedKeyAndInfo, uint32_t,
+                           terark::FastCopy, terark::ValueInline>
+     > {
+  TrackedKeyInfos() {
+    size_t cap = 8;
+    this->reserve(cap);
+    this->enable_freelist();
+    this->disable_auto_compact();
+  }
+  auto try_emplace(terark::fstring key, size_t key_hash, uint64_t seq) {
+    auto cons_kv = [=](TrackedKeyAndInfo* pair) {
+      new(&pair->first)TrackedKeyAndInfo::KeySSO(key);
+      new(&pair->second)TrackedKeyInfo(seq);
+    };
+    auto ib = lazy_insert_elem_with_hash_i(key, key_hash, cons_kv);
+    m_last_hit = ib.first;
+    return std::pair<iterator, bool>(iterator(this, ib.first), ib.second);
+  }
+  template<class ConsValue>
+  auto lazy_insert_with_hash_i(terark::fstring key, size_t h, ConsValue cons) {
+    auto cons_kv = [=](TrackedKeyAndInfo* pair) {
+      new(&pair->first)TrackedKeyAndInfo::KeySSO(key);
+      cons(&pair->second);
+    };
+    return lazy_insert_elem_with_hash_i(key, h, cons_kv);
+  }
+  // key must return by value, gold_hash_tab::key is return by ref
+  auto  key(size_t i) const { return elem_at(i).first.to<terark::fstring>(); }
+  auto& val(size_t i) const { return elem_at(i).second; }
+  auto& val(size_t i)       { return elem_at(i).second; }
+  size_t m_last_hit = SIZE_MAX;
+};
 #else
 struct TrackedKeyInfos : terark::hash_strmap<TrackedKeyInfo
       , StrNPHash64
