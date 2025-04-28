@@ -470,7 +470,6 @@ Status PointLockManager::AcquireWithTimeout(
     PessimisticTransaction* txn, LockMap* lock_map, LockMapStripe* stripe,
     ColumnFamilyId column_family_id, const Slice& key, Env* env,
     int64_t timeout, LockInfo&& lock_info) {
-  Status result;
   uint64_t end_time = 0;
 
   if (timeout > 0) {
@@ -478,21 +477,22 @@ Status PointLockManager::AcquireWithTimeout(
     end_time = start_time + timeout;
   }
 
-  if (timeout < 0) {
-    // If timeout is negative, we wait indefinitely to acquire the lock
-    result = stripe->stripe_mutex->Lock();
-  } else {
-    result = stripe->stripe_mutex->TryLockFor(timeout);
-  }
+  {
+    Status result = (timeout < 0) ?
+      // If timeout is negative, we wait indefinitely to acquire the lock
+      stripe->stripe_mutex->Lock() :
+      stripe->stripe_mutex->TryLockFor(timeout);
 
-  if (!result.ok()) {
-    // failed to acquire mutex
-    return result;
+    if (!result.ok()) {
+      // failed to acquire mutex
+      return result;
+    }
   }
 
   // Acquire lock if we are able to
   uint64_t expire_time_hint = 0;
   autovector<TransactionID> wait_ids(0); // init to size and cap = 0
+  Status
   result = AcquireLocked(lock_map, stripe, key, env, std::move(lock_info),
                          &expire_time_hint, &wait_ids);
 
