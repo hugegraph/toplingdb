@@ -153,7 +153,8 @@ struct PointLockKeyExtractor {
   terark::fstring operator()(const PointLockNode& x) const
     { return x.first.get_key(); }
 };
-using HashEqual = terark::hash_and_equal<terark::fstring, StrNPHash64>;
+using FstrEqual = terark::fstring_func::equal_align;
+using HashEqual = terark::hash_and_equal<terark::fstring, StrNPHash64, FstrEqual>;
 using GoldenLockMapBase = terark::gold_hash_tab<terark::fstring, PointLockNode,
                         HashEqual, PointLockKeyExtractor, PointLockNodeLayout>;
 struct GoldenLockMap : GoldenLockMapBase {
