@@ -576,6 +576,7 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
       tag = 0;
       column_family = 0;  // default
 
+      Status
       s = ReadRecordFromWriteBatch(&input, &tag, &column_family, &key, &value,
                                    &blob, &xid);
       if (!s.ok()) {
