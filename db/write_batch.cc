@@ -576,7 +576,7 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
       Status
       s = ReadRecordFromWriteBatch(&input, &tag, &column_family, &key, &value,
                                    &blob, &xid);
-      if (!s.ok()) {
+      if (UNLIKELY(!s.ok())) {
         return s;
       }
       if (is_write_memtable) {
