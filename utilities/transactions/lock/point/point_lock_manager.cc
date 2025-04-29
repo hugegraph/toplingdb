@@ -25,7 +25,6 @@
 namespace ROCKSDB_NAMESPACE {
 
 struct LockInfo {
-  size_t key_hash; // near key
   // Transaction locks are not valid after this time in us
   uint64_t expiration_time;
 
@@ -40,8 +39,7 @@ struct LockInfo {
     txn_ids.push_back(id);
   }
   LockInfo(LockInfo&& y)
-    : key_hash(y.key_hash)
-    , expiration_time(y.expiration_time)
+    : expiration_time(y.expiration_time)
     , txn_ids(std::move(y.txn_ids))
   {
     txn_ids.pad_u08() = y.txn_ids.pad_u08();
@@ -119,6 +117,7 @@ struct PointLockNode { // behave like std::pair<fstring, LockInfo>
   }
   PointLockNode(const PointLockNode&) = delete;
 };
+static_assert(sizeof(PointLockNode) == 128);
 
 struct PointLockNodeLayout {
   enum { is_value_out = 0, is_fast_copy = 1 };
@@ -144,7 +143,8 @@ struct PointLockNodeLayout {
   void reserve(size_t old_size, size_t new_capacity, ...) {
     assert(old_size < new_capacity);
     TERARK_UNUSED_VAR(old_size);
-    Node* pn = (Node*)realloc((void*)aNode, sizeof(Node)*new_capacity);
+		using M = terark::PreferAlignAlloc<Node>;
+    Node* pn = (Node*)M::pa_realloc((void*)aNode, sizeof(Node)*new_capacity);
     TERARK_VERIFY_F(pn != nullptr, "realloc(%zd * num(%zd) = %zd)",
                     sizeof(Node), new_capacity, sizeof(Node)*new_capacity);
     this->aNode = pn;
@@ -457,19 +457,18 @@ Status PointLockManager::TryLock(PessimisticTransaction* txn,
   LockMapStripe* stripe = &lock_map->lock_map_stripes_[stripe_num];
 
   LockInfo lock_info(txn->GetID(), txn->GetExpirationTime(), exclusive);
-  lock_info.key_hash = key_hash;
 
   int64_t timeout = txn->GetLockTimeout();
 
   return AcquireWithTimeout(txn, lock_map, stripe, column_family_id, key, env,
-                            timeout, std::move(lock_info));
+                            timeout, std::move(lock_info), key_hash);
 }
 
 // Helper function for TryLock().
 Status PointLockManager::AcquireWithTimeout(
     PessimisticTransaction* txn, LockMap* lock_map, LockMapStripe* stripe,
     ColumnFamilyId column_family_id, const Slice& key, Env* env,
-    int64_t timeout, LockInfo&& lock_info) {
+    int64_t timeout, LockInfo&& lock_info, size_t key_hash) {
   uint64_t end_time = 0;
 
   if (timeout > 0) {
@@ -494,6 +493,7 @@ Status PointLockManager::AcquireWithTimeout(
   autovector<TransactionID> wait_ids(0); // init to size and cap = 0
   Status
   result = AcquireLocked(lock_map, stripe, key, env, std::move(lock_info),
+                         key_hash,
                          &expire_time_hint, &wait_ids);
 
   if (!result.ok() && timeout != 0) {
@@ -557,6 +557,7 @@ Status PointLockManager::AcquireWithTimeout(
 
       if (result.ok() || result.IsTimedOut()) {
         result = AcquireLocked(lock_map, stripe, key, env, std::move(lock_info),
+                               key_hash,
                                &expire_time_hint, &wait_ids);
       }
     } while (!result.ok() && !timed_out);
@@ -698,6 +699,7 @@ bool PointLockManager::IncrementWaiters(
 Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
                                        const Slice& key, Env* env,
                                        LockInfo&& txn_lock_info,
+                                       size_t key_hash,
                                        uint64_t* expire_time,
                                        autovector<TransactionID>* txn_ids) {
   assert(txn_lock_info.txn_ids.size() == 1);
@@ -719,7 +721,7 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
     return true; // ok, insert the key
   };
   auto [idx, miss] = stripe->keys.lazy_insert_with_hash_i
-                    (key, txn_lock_info.key_hash, cons, check);
+                    (key, key_hash, cons, check);
   if (!miss) {
     LockInfo& lock_info = stripe->keys.val(idx);
     assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive());
