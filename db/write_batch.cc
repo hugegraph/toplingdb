@@ -573,9 +573,6 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
 
     if (LIKELY(!s.IsTryAgain())) {
       last_was_try_again = false;
-      tag = 0;
-      column_family = 0;  // default
-
       Status
       s = ReadRecordFromWriteBatch(&input, &tag, &column_family, &key, &value,
                                    &blob, &xid);
