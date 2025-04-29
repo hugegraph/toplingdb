@@ -533,6 +533,7 @@ Status WriteBatch::Iterate(Handler* handler) const {
   return s;
 }
 
+ROCKSDB_FLATTEN
 Status WriteBatchInternal::Iterate(const WriteBatch* wb,
                                    WriteBatch::Handler* handler, size_t begin,
                                    size_t end) {
