@@ -744,18 +744,17 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
     }
   } else {  // Lock not held.
     // Check lock limit
-    if (max_num_locks_ > 0 &&
-        lock_map->lock_cnt.load(std::memory_order_relaxed) >= max_num_locks_) {
-      result = Status::Busy(Status::SubCode::kLockLimit);
-    } else {
-      // acquire lock
+    if (max_num_locks_ > 0) {
+      if (UNLIKELY(lock_map->lock_cnt.load(std::memory_order_relaxed) >= max_num_locks_)) {
+        result = Status::Busy(Status::SubCode::kLockLimit);
+      } else {
+        // Maintain lock count if there is a limit on the number of locks
+        lock_map->lock_cnt.fetch_add(1, std::memory_order_relaxed);
+        goto AcquireLockInsertKey;
+      }
+    } else { AcquireLockInsertKey:
       auto cons = terark::MoveConsFunc<LockInfo>(std::move(txn_lock_info));
       stripe->keys.hint_insert_with_hash_i(key, key_hash, hint, cons);
-
-      // Maintain lock count if there is a limit on the number of locks
-      if (max_num_locks_) {
-        lock_map->lock_cnt.fetch_add(1, std::memory_order_relaxed);
-      }
     }
   }
 
