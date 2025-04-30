@@ -165,12 +165,11 @@ struct GoldenLockMap : GoldenLockMapBase {
     this->enable_freelist();
     this->reserve(cap);
   }
-  template<class ConsValue, class PreInsert>
-  std::pair<size_t, bool>
-  lazy_insert_with_hash_i(terark::fstring key, size_t h,
-                          const ConsValue& cons_val, PreInsert pre_insert) {
+  template<class ConsValue>
+  size_t hint_insert_with_hash_i(terark::fstring key, size_t h, size_t hint,
+                                 ConsValue cons_val) {
     auto cons = [&](PointLockNode* node) { node->construct(key, cons_val); };
-    return this->lazy_insert_elem_with_hash_i(key, h, cons, pre_insert);
+    return this->hint_insert_elem_with_hash_i(key, h, hint, cons);
   }
         LockInfo& val(size_t i)       { return elem_at(i).second; }
   const LockInfo& val(size_t i) const { return elem_at(i).second; }
@@ -207,8 +206,8 @@ struct LockMapStripe : private boost::noncopyable {
     auto end_i() { return end(); }
     auto find_with_hash_i(LockString key, size_t) { return find(key.str()); }
     void erase_with_hash_i(iterator i, size_t) { erase(i); }
-    template<class Cons, class Check>
-    auto lazy_insert_with_hash_i(Slice key, size_t, Cons cons, Check check) {
+    template<class Cons>
+    auto hint_insert_with_hash_i(Slice key, size_t, size_t, Cons cons) {
       auto ib = try_emplace(key.ToString(), &key);
       if (ib.second) {
         if (check(nullptr)) {
@@ -457,7 +456,6 @@ Status PointLockManager::TryLock(PessimisticTransaction* txn,
   LockMapStripe* stripe = &lock_map->lock_map_stripes_[stripe_num];
 
   LockInfo lock_info(txn->GetID(), txn->GetExpirationTime(), exclusive);
-
   int64_t timeout = txn->GetLockTimeout();
 
   return AcquireWithTimeout(txn, lock_map, stripe, column_family_id, key, env,
@@ -706,23 +704,9 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
 
   Status result;
   // Check if this key is already locked
-  // topling: use lazy_insert_i(key, cons, check) reduce a find
-  auto cons = terark::MoveConsFunc<LockInfo>(std::move(txn_lock_info));
-  auto check = [this,&result,lock_map](auto/*keys*/) {
-    // max_num_locks_ is signed int64_t
-    if (0 != max_num_locks_) {
-      if (max_num_locks_ > 0 &&
-          lock_map->lock_cnt.load(std::memory_order_acquire) >= max_num_locks_) {
-        result = Status::Busy(Status::SubCode::kLockLimit);
-        return false; // can not insert the key
-      }
-      lock_map->lock_cnt.fetch_add(1, std::memory_order_relaxed);
-    }
-    return true; // ok, insert the key
-  };
-  auto [idx, miss] = stripe->keys.lazy_insert_with_hash_i
-                    (key, key_hash, cons, check);
-  if (!miss) {
+  auto [idx, hint] = stripe->keys.find_hint_with_hash_i(key, key_hash);
+  if (idx < stripe->keys.end_i()) {
+    // Lock already held
     LockInfo& lock_info = stripe->keys.val(idx);
     assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive());
 
@@ -759,7 +743,20 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
           std::max(lock_info.expiration_time, txn_lock_info.expiration_time);
     }
   } else {  // Lock not held.
-  // do nothing
+    // Check lock limit
+    if (max_num_locks_ > 0 &&
+        lock_map->lock_cnt.load(std::memory_order_relaxed) >= max_num_locks_) {
+      result = Status::Busy(Status::SubCode::kLockLimit);
+    } else {
+      // acquire lock
+      auto cons = terark::MoveConsFunc<LockInfo>(std::move(txn_lock_info));
+      stripe->keys.hint_insert_with_hash_i(key, key_hash, hint, cons);
+
+      // Maintain lock count if there is a limit on the number of locks
+      if (max_num_locks_) {
+        lock_map->lock_cnt.fetch_add(1, std::memory_order_relaxed);
+      }
+    }
   }
 
   return result;
