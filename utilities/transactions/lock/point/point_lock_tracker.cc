@@ -90,6 +90,33 @@ PointLockTracker::~PointLockTracker() {
 
 void PointLockTracker::Track(const PointLockRequest& r) {
   auto& keys = tracked_keys_[r.column_family_id];
+  if (r.hint != SIZE_MAX) {
+    if (r.iter >= keys.end_i()) {
+      auto  cons = terark::CopyConsFunc<TrackedKeyInfo>(r.seq);
+      auto  iter = keys.hint_insert_with_hash_i(r.key, r.key_hash, r.hint, cons);
+      auto& info = keys.val(iter);
+      if (r.read_only) {
+        info.num_reads = 1;
+      } else {
+        info.num_writes = 1;
+      }
+      info.exclusive = r.exclusive;
+      info.key_hash = r.key_hash;
+      keys.m_last_hit = iter;
+    } else {
+      keys.m_last_hit = r.iter;
+      auto& info = keys.val(r.iter);
+      if (r.read_only) {
+        info.num_reads++;
+      } else {
+        info.num_writes++;
+      }
+      info.exclusive = r.exclusive || info.exclusive;
+      ROCKSDB_ASSERT_EQ(info.key_hash, r.key_hash);
+      assert(r.key == keys.key(r.iter));
+    }
+    return;
+  }
   auto result = keys.try_emplace(r.key, r.key_hash, r.seq);
   auto it = result.first;
   if (!result.second && r.seq < it->second.seq) {
@@ -324,13 +351,15 @@ PointLockStatus PointLockTracker::GetPointLockStatus(
   PointLockStatus status;
   auto keys = tracked_keys_.get_value_ptr(column_family_id);
   if (LIKELY(nullptr != keys)) {
-    auto idx = keys->find_with_hash_i(key, key_hash);
+    auto [idx, hint] = keys->find_hint_with_hash_i(key, key_hash);
     if (LIKELY(idx < keys->end_i())) {
       const TrackedKeyInfo& key_info = keys->val(idx);
       status.locked = true;
       status.exclusive = key_info.exclusive;
       status.seq = key_info.seq;
+      status.iter = idx;
     }
+    status.hint = hint;
   }
   return status;
 }

@@ -1077,7 +1077,8 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
     // setting, and at a lower sequence number, so skipping here should be
     // safe.
     if (!assume_tracked) {
-      TrackKey({cfh_id, key, tracked_at_seq, read_only, exclusive, key_hash});
+      TrackKey({cfh_id, key, tracked_at_seq, read_only, exclusive, key_hash,
+                status.iter, status.hint});
     } else {
 #ifndef NDEBUG
       if (tracked_locks_->IsPointLockSupported()) {

@@ -42,6 +42,8 @@ struct PointLockRequest {
   // Whether the lock is in exclusive mode.
   bool exclusive = true;
   size_t key_hash;
+  size_t iter = SIZE_MAX;
+  size_t hint = SIZE_MAX;
 
   PointLockRequest() = default;
   PointLockRequest(ColumnFamilyId cfh_id, Slice k, SequenceNumber s,
@@ -50,9 +52,11 @@ struct PointLockRequest {
       read_only(rdonly), exclusive(exclusive1),
       key_hash(NPHash64(k.data_, key.size_)) {}
   PointLockRequest(ColumnFamilyId cfh_id, Slice k, SequenceNumber s,
-                   bool rdonly, bool exclusive1, size_t h)
+                   bool rdonly, bool exclusive1, size_t h,
+                   size_t _iter = SIZE_MAX, size_t _hint = SIZE_MAX)
     : key(k), seq(s), column_family_id(cfh_id),
-      read_only(rdonly), exclusive(exclusive1), key_hash(h) {}
+      read_only(rdonly), exclusive(exclusive1), key_hash(h),
+      iter(_iter), hint(_hint) {}
 };
 
 // Request for locking a range of keys.
@@ -70,6 +74,8 @@ struct PointLockStatus {
   bool locked = false;
   // Whether the key is locked in exclusive mode.
   bool exclusive = true;
+  uint32_t iter = UINT32_MAX;
+  size_t hint = SIZE_MAX;
   // The sequence number in the tracked PointLockRequest.
   SequenceNumber seq = 0;
 };

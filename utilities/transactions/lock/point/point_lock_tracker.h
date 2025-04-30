@@ -84,6 +84,15 @@ struct TrackedKeyInfos : terark::gold_hash_tab<terark::fstring
     };
     return lazy_insert_elem_with_hash_i(key, h, cons_kv);
   }
+  template<class ConsValue>
+  size_t hint_insert_with_hash_i(terark::fstring key, size_t key_hash,
+                                 size_t hint, ConsValue cons) {
+    auto cons_kv = [=](TrackedKeyAndInfo* pair) {
+      new(&pair->first)TrackedKeyAndInfo::KeySSO(key);
+      cons(&pair->second);
+    };
+    return hint_insert_elem_with_hash_i(key, key_hash, hint, cons_kv);
+  }
   // key must return by value, gold_hash_tab::key is return by ref
   auto  key(size_t i) const { return elem_at(i).first.to<terark::fstring>(); }
   auto& val(size_t i) const { return elem_at(i).second; }
