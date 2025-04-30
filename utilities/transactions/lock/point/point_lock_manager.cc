@@ -29,20 +29,32 @@ struct LockInfo {
   uint64_t expiration_time;
 
   static_assert(sizeof(bool) == 1);
-  bool& exclusive() { return reinterpret_cast<bool&>(txn_ids.pad_u08()); }
-  bool exclusive() const { return txn_ids.pad_u08() != 0; }
-  autovector<TransactionID> txn_ids;
-
+  struct ExclusiveBoolForMinDiffToUpstream : autovector<TransactionID> {
+    operator bool&() { return reinterpret_cast<bool&>(pad_u08()); }
+    operator bool() const { return pad_u08() != 0; }
+    bool& operator=(bool b) { pad_u08() = b; return *this; }
+    bool& operator=(const ExclusiveBoolForMinDiffToUpstream& b) {
+      pad_u08() = b.pad_u08();
+      return reinterpret_cast<bool&>(pad_u08());
+    }
+  };
+  union {
+    autovector<TransactionID> txn_ids;
+    ExclusiveBoolForMinDiffToUpstream exclusive;
+  };
+  ~LockInfo() {
+    txn_ids.~autovector<TransactionID>();
+  }
   LockInfo(TransactionID id, uint64_t time, bool ex)
-      : expiration_time(time) {
-    exclusive() = ex;
+      : expiration_time(time), txn_ids() {
+    exclusive = ex;
     txn_ids.push_back(id);
   }
   LockInfo(LockInfo&& y)
     : expiration_time(y.expiration_time)
     , txn_ids(std::move(y.txn_ids))
   {
-    txn_ids.pad_u08() = y.txn_ids.pad_u08();
+    exclusive = y.exclusive;
   }
   explicit LockInfo(Slice* /* just_as_tag */) {}
   LockInfo(const LockInfo&) = delete;
@@ -166,9 +178,8 @@ struct GoldenLockMap : GoldenLockMapBase {
     this->reserve(cap);
   }
   template<class ConsValue>
-  std::pair<size_t, bool>
-  hint_insert_with_hash_i(terark::fstring key, size_t h, size_t hint,
-                          ConsValue cons_val) {
+  size_t hint_insert_with_hash_i(terark::fstring key, size_t h, size_t hint,
+                                 ConsValue cons_val) {
     auto cons = [&](PointLockNode* node) { node->construct(key, cons_val); };
     return this->hint_insert_elem_with_hash_i(key, h, hint, cons);
   }
@@ -187,6 +198,7 @@ struct LockMapStripe : private boost::noncopyable {
     delete stripe_cv;
     delete stripe_mutex;
   }
+  auto operator->() const { return this; } // act like a pointer
 
   // Mutex must be held before modifying keys map
   TransactionDBMutex* stripe_mutex;
@@ -519,7 +531,7 @@ Status PointLockManager::AcquireWithTimeout(
       if (!wait_ids.empty()) {
         if (txn->IsDeadlockDetect()) {
           if (IncrementWaiters(txn, wait_ids, key, column_family_id,
-                               lock_info.exclusive(), env)) {
+                               lock_info.exclusive, env)) {
             result = Status::Busy(Status::SubCode::kDeadlock);
             stripe->stripe_mutex->UnLock();
             return result;
@@ -709,13 +721,13 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
   if (idx < stripe->keys.end_i()) {
     // Lock already held
     LockInfo& lock_info = stripe->keys.val(idx);
-    assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive());
+    assert(lock_info.txn_ids.size() == 1 || !lock_info.exclusive);
 
-    if (lock_info.exclusive() || txn_lock_info.exclusive()) {
+    if (lock_info.exclusive || txn_lock_info.exclusive) {
       if (lock_info.txn_ids.num_stack_items() == 1 &&
           lock_info.txn_ids[0] == txn_lock_info.txn_ids[0]) {
         // The list contains one txn and we're it, so just take it.
-        lock_info.exclusive() = txn_lock_info.exclusive();
+        lock_info.exclusive = txn_lock_info.exclusive;
         lock_info.expiration_time = txn_lock_info.expiration_time;
       } else {
         // Check if it's expired. Skips over txn_lock_info.txn_ids[0] in case
@@ -725,7 +737,7 @@ Status PointLockManager::AcquireLocked(LockMap* lock_map, LockMapStripe* stripe,
                           expire_time)) {
           // lock is expired, can steal it
           lock_info.txn_ids = std::move(txn_lock_info.txn_ids);
-          lock_info.exclusive() = txn_lock_info.exclusive();
+          lock_info.exclusive = txn_lock_info.exclusive;
           lock_info.expiration_time = txn_lock_info.expiration_time;
           // lock_cnt does not change
         } else {
@@ -870,24 +882,20 @@ PointLockManager::PointLockStatus PointLockManager::GetPointLockStatus() {
   // ascending order.
   InstrumentedMutexLock l(&lock_map_mutex_);
 
-  // cf num is generally small, very large cf num is ill
-  auto cf_ids = (uint32_t*)alloca(sizeof(uint32_t) * lock_maps_.size());
-  size_t cf_num = 0;
+  std::vector<uint32_t> cf_ids;
   for (const auto& map : lock_maps_) {
-    cf_ids[cf_num++] = map.first;
+    cf_ids.push_back(map.first);
   }
-  ROCKSDB_ASSERT_EQ(cf_num, lock_maps_.size());
-  std::sort(cf_ids, cf_ids + cf_num);
+  std::sort(cf_ids.begin(), cf_ids.end());
 
-  for (size_t k = 0; k < cf_num; ++k) {
-    auto i = cf_ids[k];
+  for (auto i : cf_ids) {
     const auto& stripes = lock_maps_[i]->lock_map_stripes_;
     // Iterate and lock all stripes in ascending order.
     for (const auto& j : stripes) {
-      j.stripe_mutex->Lock().PermitUncheckedError();
-      for (const auto& it : j.keys) {
+      j->stripe_mutex->Lock().PermitUncheckedError();
+      for (const auto& it : j->keys) {
         struct KeyLockInfo info;
-        info.exclusive = it.second.exclusive();
+        info.exclusive = it.second.exclusive;
         info.key.assign(it.first.data(), it.first.size());
         for (const auto& id : it.second.txn_ids) {
           info.ids.push_back(id);
@@ -898,11 +906,10 @@ PointLockManager::PointLockStatus PointLockManager::GetPointLockStatus() {
   }
 
   // Unlock everything. Unlocking order is not important.
-  for (size_t k = 0; k < cf_num; ++k) {
-    auto i = cf_ids[k];
+  for (auto i : cf_ids) {
     const auto& stripes = lock_maps_[i]->lock_map_stripes_;
     for (const auto& j : stripes) {
-      j.stripe_mutex->UnLock();
+      j->stripe_mutex->UnLock();
     }
   }
 
