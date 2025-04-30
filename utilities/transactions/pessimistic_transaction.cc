@@ -977,8 +977,9 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
                                        bool exclusive, const bool do_validate,
                                        const bool assume_tracked) {
   assert(!assume_tracked || !do_validate);
+  Status s;
   if (UNLIKELY(skip_concurrency_control_)) {
-    return Status::OK();
+    return s;
   }
   const ColumnFamilyHandle* const cfh =
       column_family ? column_family : db_impl_->DefaultColumnFamily();
@@ -1001,9 +1002,9 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
 
   // Lock this key if this transactions hasn't already locked it or we require
   // an upgrade.
-  Status s = (!previously_locked || lock_upgrade)
-           ? txn_db_impl_->TryLock(this, cfh_id, key, key_hash, exclusive)
-           : Status::OK();
+  if (!previously_locked || lock_upgrade) {
+    s = txn_db_impl_->TryLock(this, cfh_id, key, key_hash, exclusive);
+  }
 
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Comparator* const ucmp = cfh->GetComparator();
@@ -1048,10 +1049,9 @@ Status PessimisticTransaction::TryLock(ColumnFamilyHandle* column_family,
     // since the snapshot.  This must be done after we locked the key.
     // If we already have validated an earilier snapshot it must has been
     // reflected in tracked_at_seq and ValidateSnapshot will return OK.
-    Status s2 = ValidateSnapshot(column_family, key, &tracked_at_seq);
+    s = ValidateSnapshot(column_family, key, &tracked_at_seq);
 
-    if (UNLIKELY(!s2.ok())) {
-      s = s2; // unlikely branch copy has no significant impact
+    if (!s.ok()) {
       // Failed to validate key
       // Unlock key we just locked
       if (lock_upgrade) {
