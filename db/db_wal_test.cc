@@ -822,10 +822,12 @@ TEST_F(DBWALTest, WALWithChecksumHandoff) {
     writeOpt.disableWAL = false;
     // Data is persisted in the WAL
     ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "zoo", "v3"));
+  if (!terark::getEnvBool("WAL_USE_WRITEV")) {
     // The hash does not match, write fails
     fault_fs->SetChecksumHandoffFuncType(ChecksumType::kxxHash);
     writeOpt.disableWAL = false;
     ASSERT_NOK(dbfull()->Put(writeOpt, handles_[1], "foo", "v3"));
+  }
 
     ReopenWithColumnFamilies({"default", "pikachu"}, options);
     // Due to the write failure, Get should not find
@@ -840,8 +842,10 @@ TEST_F(DBWALTest, WALWithChecksumHandoff) {
       writeOpt.disableWAL = true;
       ASSERT_OK(dbfull()->Put(writeOpt, handles_[1], "bar", "v4"));
     }
+  if (!terark::getEnvBool("WAL_USE_WRITEV")) {
     writeOpt.disableWAL = false;
     ASSERT_NOK(dbfull()->Put(writeOpt, handles_[1], "foo", "v4"));
+  }
     ReopenWithColumnFamilies({"default", "pikachu"}, options);
     ASSERT_NE("v4", Get(1, "foo"));
     ASSERT_NE("v4", Get(1, "bar"));

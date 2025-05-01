@@ -155,6 +155,7 @@ class WritableFileWriter {
   // in debug mode.
   std::atomic<bool> sync_without_flush_called_ = false;
 #endif  // NDEBUG
+  bool allow_fallocate_;
   uint64_t last_sync_size_;
   uint64_t bytes_per_sync_;
   RateLimiter* rate_limiter_;
@@ -216,6 +217,7 @@ class WritableFileWriter {
           file_checksum_gen_factory->CreateFileChecksumGenerator(
               checksum_gen_context);
     }
+    allow_fallocate_ = options.allow_fallocate;
   }
 
   static IOStatus Create(const std::shared_ptr<FileSystem>& fs,

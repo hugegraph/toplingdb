@@ -192,7 +192,16 @@ IOStatus WritableFileWriter::Appendv(const Slice* parts, size_t num,
   IOStatus ios;
   IOOptions io_options;
   pending_sync_ = true;
-  if (rate_limiter_) {
+  if (UNLIKELY(allow_fallocate_)) {
+    io_options.rate_limiter_priority =
+        WritableFileWriter::DecideRateLimiterPriority(
+            writable_file_->GetIOPriority(), op_rate_limiter_priority);
+    IOSTATS_TIMER_GUARD(prepare_write_nanos);
+    TEST_SYNC_POINT("WritableFileWriter::Append:BeforePrepareWrite");
+    writable_file_->PrepareWrite(static_cast<size_t>(GetFileSize()), sum_size,
+                                 io_options, nullptr);
+  }
+  if (UNLIKELY(rate_limiter_ != nullptr)) {
     io_options.rate_limiter_priority =
         WritableFileWriter::DecideRateLimiterPriority(
             writable_file_->GetIOPriority(), op_rate_limiter_priority);
@@ -225,6 +234,23 @@ IOStatus WritableFileWriter::Appendv(const Slice* parts, size_t num,
     filesize_.fetch_add(sum_size, std::memory_order_relaxed);
   } else {
     set_seen_error();
+  }
+  if (UNLIKELY(bytes_per_sync_ > 0)) {
+    uint64_t kBytesNotSyncRange = 1024 * 1024; // recent 1MB is not synced.
+    uint64_t kBytesAlignWhenSync = 4 * 1024;  // Align 4KB.
+    uint64_t cur_size = filesize_.load(std::memory_order_acquire);
+    if (ios.ok() && cur_size > kBytesNotSyncRange) {
+      uint64_t offset_sync_to = cur_size - kBytesNotSyncRange;
+      offset_sync_to -= offset_sync_to % kBytesAlignWhenSync;
+      assert(offset_sync_to >= last_sync_size_);
+      if (offset_sync_to - last_sync_size_ >= bytes_per_sync_) {
+        ios = RangeSync(last_sync_size_, offset_sync_to - last_sync_size_);
+        if (!ios.ok()) {
+          set_seen_error();
+        }
+        last_sync_size_ = offset_sync_to;
+      }
+    }
   }
   return ios;
 }
