@@ -206,7 +206,7 @@ IOStatus WritableFileWriter::Appendv(const Slice* parts, size_t num,
         WritableFileWriter::DecideRateLimiterPriority(
             writable_file_->GetIOPriority(), op_rate_limiter_priority);
     if (io_options.rate_limiter_priority != Env::IO_TOTAL) {
-      for (size_t remain = sum_size; remain > 0; )
+      for (ssize_t remain = sum_size; remain > 0; )
         remain -= rate_limiter_->RequestToken(remain, 4096,
           io_options.rate_limiter_priority, stats_, RateLimiter::OpType::kWrite);
     }
