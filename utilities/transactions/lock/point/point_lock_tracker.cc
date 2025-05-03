@@ -458,7 +458,7 @@ UntrackStatus PointLockTrackerDelta::Untrack(const PointLockRequest& r) {
   auto& base_map = base_tracker_->tracked_keys_.at(r.column_family_id);
   auto& delta_vec = cf_delta_vec_[r.column_family_id];
   ROCKSDB_ASSERT_LE(delta_vec.size(), base_map.end_i());
-  size_t idx = base_map.find_i(r.key);
+  size_t idx = base_map.find_with_hash_i(r.key, r.key_hash);
   if (UNLIKELY(idx >= delta_vec.size())) {
     return UntrackStatus::NOT_TRACKED;
   }
