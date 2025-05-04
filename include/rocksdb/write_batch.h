@@ -364,7 +364,7 @@ class WriteBatch : public WriteBatchBase {
     virtual bool Continue();
 
     virtual void SetBeginPrepareNextPtr(const char*) {}
-    virtual void SwitchWorkingWriteBatch(const WriteBatch*) {}
+    virtual bool SwitchWorkingWriteBatch(const WriteBatch*) { return false; }
 
    protected:
     friend class WriteBatchInternal;
@@ -479,8 +479,6 @@ class WriteBatch : public WriteBatchBase {
   void SetOffsetOfWAL(uint64_t offset) { wal_ref_.file_offset = offset; }
   void SetWAL(WALFileRef wal) const { wal_ref_ = std::move(wal); }
   void PresetWAL(const WriteBatch& src, ptrdiff_t diff = 0);
-  void StartWriteMemTable(bool b) const { is_write_memtable_ = b; }
-  void FinishWriteMemTable() const { is_write_memtable_ = false; }
   bool HasMmapWAL() const { return wal_ref_.file_mmap != nullptr; }
   bool HasProtectionInfo() const { return prot_info_ != nullptr; }
 
@@ -516,8 +514,6 @@ class WriteBatch : public WriteBatchBase {
   // True if the write batch contains at least one key from a column family
   // that enables user-defined timestamp.
   bool has_key_with_ts_ = false;
-
-  mutable bool is_write_memtable_ = false;
 
   // For HasXYZ.  Mutable to allow lazy computation of results
 #if 0

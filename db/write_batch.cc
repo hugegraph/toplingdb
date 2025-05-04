@@ -267,7 +267,6 @@ void WriteBatch::Clear() {
   write_mem_next_ = nullptr;
   default_cf_ts_sz_ = 0;
 
-  is_write_memtable_ = false;
   wal_ref_ = {};
 }
 
@@ -522,13 +521,7 @@ Status WriteBatch::Iterate(Handler* handler) const {
   size_t begin = WriteBatchInternal::kHeader, end = rep_.size();
   Status s = WriteBatchInternal::Iterate(this, handler, begin, end);
   if (WriteBatch* next = write_mem_next_; s.ok() && next) {
-    if (this->is_write_memtable_ && !next->HasMmapWAL()) {
-      return Status::NotSupported(
-        "memtable_as_log_index is true but write_mem_next has no mmap wal");
-    }
-    next->is_write_memtable_ = this->is_write_memtable_;
     s = next->Iterate(handler);
-    next->is_write_memtable_ = false;
   }
   return s;
 }
@@ -540,10 +533,13 @@ Status WriteBatchInternal::Iterate(const WriteBatch* wb,
   if (begin > wb->rep_.size() || end > wb->rep_.size() || end < begin) {
     return Status::Corruption("Invalid start/end bounds for Iterate");
   }
-  handler->SwitchWorkingWriteBatch(wb);
+  const bool is_write_memtable = handler->SwitchWorkingWriteBatch(wb);
+  if (UNLIKELY(is_write_memtable && !wb->HasMmapWAL())) {
+    return Status::NotSupported(
+      "memtable_as_log_index is true but WriteBatch has no mmap wal");
+  }
   assert(begin <= end);
   KeyValuePassMemTable kv_pmt;
-  const bool is_write_memtable = wb->is_write_memtable_;
   const char* base_ptr = wb->rep_.data();
   kv_pmt.fileno = wb->wal_ref_.file_number;
   kv_pmt.wal_file = wb->wal_ref_.file_mmap.get();
@@ -2083,10 +2079,11 @@ class MemTableInserter : public WriteBatch::Handler {
   void SetBeginPrepareNextPtr(const char* curr) final {
     prepare_content_begin_ = curr;
   }
-  void SwitchWorkingWriteBatch(const WriteBatch* wb) final {
+  bool SwitchWorkingWriteBatch(const WriteBatch* wb) final {
     assert(wb != nullptr);
     src_batch_ = wb;
     prepare_content_begin_ = nullptr;
+    return memtable_as_log_index_;
   }
   const WriteBatch* src_batch_ = nullptr;
   const char* prepare_content_begin_ = nullptr;
@@ -2986,9 +2983,7 @@ class MemTableInserter : public WriteBatch::Handler {
           // all inserts must reference this trx log number
           log_number_ref_ = batch_info.log_number_;
           ResetProtectionInfo();
-          batch_info.batch_->StartWriteMemTable(memtable_as_log_index_);
           s = batch_info.batch_->Iterate(this);
-          batch_info.batch_->FinishWriteMemTable();
           log_number_ref_ = 0;
         }
         // else the values are already inserted before the commit
@@ -3151,9 +3146,7 @@ Status WriteBatchInternal::InsertInto(
     SetSequence(w->batch, inserter.sequence());
     inserter.set_log_number_ref(w->log_ref);
     inserter.set_prot_info(w->batch->prot_info_.get());
-    w->batch->is_write_memtable_ = inserter.memtable_as_log_index();
     w->status = w->batch->Iterate(&inserter);
-    w->batch->is_write_memtable_ = false;
     if (!w->status.ok()) {
       return w->status;
     }
@@ -3183,9 +3176,7 @@ Status WriteBatchInternal::InsertInto(
   SetSequence(writer->batch, sequence);
   inserter.set_log_number_ref(writer->log_ref);
   inserter.set_prot_info(writer->batch->prot_info_.get());
-  writer->batch->is_write_memtable_ = inserter.memtable_as_log_index();
   Status s = writer->batch->Iterate(&inserter);
-  writer->batch->is_write_memtable_ = false;
   assert(!seq_per_batch || batch_cnt != 0);
   assert(!seq_per_batch || inserter.sequence() - sequence == batch_cnt);
   if (concurrent_memtable_writes) {
@@ -3206,9 +3197,7 @@ Status WriteBatchInternal::InsertInto(
                             ignore_missing_column_families, log_number, db,
                             concurrent_memtable_writes, batch->prot_info_.get(),
                             has_valid_writes, seq_per_batch, batch_per_txn);
-  batch->is_write_memtable_ = inserter.memtable_as_log_index();
   Status s = batch->Iterate(&inserter);
-  batch->is_write_memtable_ = false;
   if (next_seq != nullptr) {
     *next_seq = inserter.sequence();
   }
