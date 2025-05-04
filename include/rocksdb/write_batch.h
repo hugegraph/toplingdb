@@ -515,6 +515,8 @@ class WriteBatch : public WriteBatchBase {
   // that enables user-defined timestamp.
   bool has_key_with_ts_ = false;
 
+  uint8_t default_cf_ts_sz_ = 0;
+
   // For HasXYZ.  Mutable to allow lazy computation of results
 #if 0
   mutable std::atomic<uint32_t> content_flags_;
@@ -531,8 +533,6 @@ class WriteBatch : public WriteBatchBase {
   size_t max_bytes_;
 
   std::unique_ptr<ProtectionInfo> prot_info_;
-
-  size_t default_cf_ts_sz_ = 0;
 
  protected:
   std::string rep_;  // See comment in write_batch.cc for the format of rep_

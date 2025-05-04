@@ -173,8 +173,8 @@ WriteBatch::WriteBatch(size_t reserved_bytes, size_t max_bytes,
                        size_t protection_bytes_per_key, size_t default_cf_ts_sz)
     : content_flags_(0),
       max_bytes_(max_bytes),
-      default_cf_ts_sz_(default_cf_ts_sz),
       rep_() {
+  default_cf_ts_sz_ = default_cf_ts_sz;
   // Currently `protection_bytes_per_key` can only be enabled at 8 bytes per
   // entry.
   assert(protection_bytes_per_key == 0 || protection_bytes_per_key == 8);
@@ -197,10 +197,10 @@ WriteBatch::WriteBatch(std::string&& rep)
 
 WriteBatch::WriteBatch(const WriteBatch& src)
     : write_mem_next_(src.write_mem_next_),
+      default_cf_ts_sz_(src.default_cf_ts_sz_),
       content_flags_(src.content_flags_.load(std::memory_order_relaxed)),
       wal_ref_(src.wal_ref_),
       max_bytes_(src.max_bytes_),
-      default_cf_ts_sz_(src.default_cf_ts_sz_),
       rep_(src.rep_) {
   if (src.save_points_ != nullptr) {
     save_points_.reset(new SavePoints());
@@ -215,11 +215,11 @@ WriteBatch::WriteBatch(const WriteBatch& src)
 WriteBatch::WriteBatch(WriteBatch&& src) noexcept
     : save_points_(std::move(src.save_points_)),
       write_mem_next_(std::move(src.write_mem_next_)),
+      default_cf_ts_sz_(src.default_cf_ts_sz_),
       content_flags_(src.content_flags_.load(std::memory_order_relaxed)),
       wal_ref_(std::move(src.wal_ref_)),
       max_bytes_(src.max_bytes_),
       prot_info_(std::move(src.prot_info_)),
-      default_cf_ts_sz_(src.default_cf_ts_sz_),
       rep_(std::move(src.rep_)) {}
 
 WriteBatch& WriteBatch::operator=(const WriteBatch& src) {
