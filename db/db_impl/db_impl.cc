@@ -5029,7 +5029,7 @@ terark_pure_func inline static size_t ThisThreadID() {
 #endif
 }
 
-struct ReadOptionsTLS {
+struct ReadOptionsTLS : std::enable_shared_from_this<ReadOptionsTLS> {
   size_t thread_id = size_t(-1);
   SuperVersion* sv = nullptr;
   DBImpl* db_impl = nullptr;
@@ -5071,6 +5071,11 @@ void ReadOptionsTLS::FinishPin() {
   cfsv.resize(0);
   db_impl = nullptr;
 }
+
+ReadOptions::ReadOptions(const ReadOptions&) = default;
+ReadOptions::ReadOptions(ReadOptions&&) = default;
+ReadOptions& ReadOptions::operator=(const ReadOptions&) = default;
+ReadOptions& ReadOptions::operator=(ReadOptions&&) = default;
 
 void ReadOptions::StartPin() {
   if (!pinning_tls) {

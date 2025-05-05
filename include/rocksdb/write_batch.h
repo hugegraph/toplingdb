@@ -35,6 +35,7 @@
 #include "rocksdb/status.h"
 #include "rocksdb/write_batch_base.h"
 #include "fake_atomic.h"
+#include <terark/util/function.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -472,7 +473,7 @@ class WriteBatch : public WriteBatchBase {
   size_t GetProtectionBytesPerKey() const;
 
   struct WALFileRef {
-    std::shared_ptr<ReadonlyFileMmap> file_mmap;
+    terark::narrow_shared_ptr<ReadonlyFileMmap> file_mmap;
     uint64_t file_number = UINT64_MAX;
     uint64_t file_offset = UINT64_MAX;
   };

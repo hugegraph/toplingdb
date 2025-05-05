@@ -1793,7 +1793,7 @@ struct ReadOptions {
   // used for ToplingDB fiber MultiGet
   mutable class ReadCallback* read_callback = nullptr;
 
-  std::shared_ptr<struct ReadOptionsTLS> pinning_tls = nullptr;
+  terark::narrow_shared_ptr<struct ReadOptionsTLS> pinning_tls = nullptr;
 
   // *** END options for RocksDB internal use only ***
 
@@ -1804,6 +1804,10 @@ struct ReadOptions {
   ReadOptions() {}
   ReadOptions(bool _verify_checksums, bool _fill_cache);
   explicit ReadOptions(Env::IOActivity _io_activity);
+  ReadOptions(const ReadOptions&);
+  ReadOptions(ReadOptions&&);
+  ReadOptions& operator=(const ReadOptions&);
+  ReadOptions& operator=(ReadOptions&&);
   ~ReadOptions();
 };
 
