@@ -17,26 +17,6 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-void* CacheAlignedNewDelete::operator new(size_t size) {
-#if defined(_MSC_VER)
-  return _aligned_malloc(size, CACHE_LINE_SIZE);
-#else
-  void* p = nullptr;
-  if (posix_memalign(&p, CACHE_LINE_SIZE, size)) {
-    ROCKSDB_DIE("posix_memalign(%d, %zd) = %m", CACHE_LINE_SIZE, size);
-  }
-  return p;
-#endif
-}
-
-void CacheAlignedNewDelete::operator delete(void* p, size_t) {
-#if defined(_MSC_VER)
-  _aligned_free(p);
-#else
-  free(p);
-#endif
-}
-
 Cleanable::Cleanable() {
   cleanup_.function = nullptr;
   cleanup_.next = nullptr;

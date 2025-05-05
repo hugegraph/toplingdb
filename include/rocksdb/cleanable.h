@@ -11,16 +11,11 @@
 #include "rocksdb/rocksdb_namespace.h"
 #include <stddef.h>
 #include <stdlib.h>
+#include <terark/util/function.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
-class CacheAlignedNewDelete {
-public:
-  void* operator new(size_t size);
-  void* operator new(size_t, void* mem) { return mem; } // placement new
-  void operator delete(void* p, size_t);
-  void operator delete(void*, void*) { abort(); }  // suppress warn
-};
+using terark::CacheAlignedNewDelete;
 
 class Cleanable : public CacheAlignedNewDelete {
  public:
