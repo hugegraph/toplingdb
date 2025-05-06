@@ -88,6 +88,7 @@ Feature|Control MACRO
 Dynamic creation of ColumnFamily | ROCKSDB_DYNAMIC_CREATE_CF
 User level timestamp on key | TOPLINGDB_WITH_TIMESTAMP
 Wide Columns | TOPLINGDB_WITH_WIDE_COLUMNS
+fabricated features for read | TOPLINGDB_WITH_FABRICATED_COMPLEXITY
 
 **Note**: Dynamic creation of ColumnFamily is not supported by SidePlugin
 

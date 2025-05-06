@@ -84,6 +84,7 @@ export LD_LIBRARY_PATH=`find sideplugin -name lib_shared`
 动态创建 ColumnFamily | ROCKSDB_DYNAMIC_CREATE_CF
 用户层 timestamp | TOPLINGDB_WITH_TIMESTAMP
 宽列 | TOPLINGDB_WITH_WIDE_COLUMNS
+华而不实的功能 | TOPLINGDB_WITH_FABRICATED_COMPLEXITY
 
 **注意**: SidePlugin 暂不支持动态创建 ColumnFamily，混用 SidePlugin 和动态创建 ColumnFamily时，动态创建的 ColumnFamily 不能在 Web 中展示
 
