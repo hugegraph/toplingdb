@@ -14,6 +14,10 @@
 #include "monitoring/perf_context_imp.h"
 #include "util/cast_util.h"
 
+#if !defined(TOPLINGDB_WITH_TIMESTAMP)
+  #pragma GCC diagnostic ignored "-Wnonnull" // timestamp && timestamp->size()
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 
@@ -51,11 +55,13 @@ Status DBImplReadOnly::GetImpl(const ReadOptions& read_options,
     }
   }
 
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   // Clear the timestamps for returning results so that we can distinguish
   // between tombstone or key that has never been written
   if (get_impl_options.timestamp) {
     get_impl_options.timestamp->clear();
   }
+ #endif
 
   PERF_CPU_TIMER_GUARD(get_cpu_nanos, immutable_db_options_.clock);
   StopWatch sw(immutable_db_options_.clock, stats_, DB_GET);
@@ -80,6 +86,7 @@ Status DBImplReadOnly::GetImpl(const ReadOptions& read_options,
   // In read-only mode Get(), no super version operation is needed (i.e.
   // GetAndRefSuperVersion and ReturnAndCleanupSuperVersion)
   SuperVersion* super_version = cfd->GetSuperVersion();
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   if (read_options.timestamp && read_options.timestamp->size() > 0) {
     s = FailIfReadCollapsedHistory(cfd, super_version,
                                    *(read_options.timestamp));
@@ -87,6 +94,7 @@ Status DBImplReadOnly::GetImpl(const ReadOptions& read_options,
       return s;
     }
   }
+ #endif
   MergeContext merge_context;
   SequenceNumber max_covering_tombstone_seq = 0;
   LookupKey lkey(key, snapshot, read_options.timestamp);
@@ -163,6 +171,7 @@ Iterator* DBImplReadOnly::NewIterator(const ReadOptions& _read_options,
   auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(column_family);
   auto cfd = cfh->cfd();
   SuperVersion* super_version = cfd->GetSuperVersion()->Ref();
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   if (read_options.timestamp && read_options.timestamp->size() > 0) {
     const Status s = FailIfReadCollapsedHistory(cfd, super_version,
                                                 *(read_options.timestamp));
@@ -171,6 +180,7 @@ Iterator* DBImplReadOnly::NewIterator(const ReadOptions& _read_options,
       return NewErrorIterator(s);
     }
   }
+ #endif
   SequenceNumber latest_snapshot = versions_->LastSequence();
   SequenceNumber read_seq =
       read_options.snapshot != nullptr

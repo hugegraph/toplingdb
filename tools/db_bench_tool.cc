@@ -5909,6 +5909,7 @@ class Benchmark {
 
   void ReadSequential(ThreadState* thread, DB* db) {
     ReadOptions options = read_options_;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     std::unique_ptr<char[]> ts_guard;
     Slice ts;
     if (user_timestamp_size_ > 0) {
@@ -5916,6 +5917,7 @@ class Benchmark {
       ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
       options.timestamp = &ts;
     }
+   #endif
 
     options.adaptive_readahead = FLAGS_adaptive_readahead;
     options.async_io = FLAGS_async_io;
@@ -6063,12 +6065,14 @@ class Benchmark {
         ++read;
         std::string ts_ret;
         std::string* ts_ptr = nullptr;
+       #if defined(TOPLINGDB_WITH_TIMESTAMP)
         if (user_timestamp_size_ > 0) {
           ts = mock_app_clock_->GetTimestampForRead(thread->rand,
                                                     ts_guard.get());
           options.timestamp = &ts;
           ts_ptr = &ts_ret;
         }
+       #endif
         auto status = db->Get(options, key, &value, ts_ptr);
         if (status.ok()) {
           ++found;
@@ -6169,11 +6173,13 @@ class Benchmark {
       GenerateKeyFromInt(key_rand, FLAGS_num, &key);
       read++;
       std::string* ts_ptr = nullptr;
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
         options.timestamp = &ts;
         ts_ptr = &ts_ret;
       }
+     #endif
       Status s;
       pinnable_val.Reset();
       ColumnFamilyHandle* cfh;
@@ -6281,11 +6287,13 @@ class Benchmark {
           GenerateKeyFromInt(GetRandomKey(&thread->rand), FLAGS_num, &keys[i]);
         }
       }
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       Slice ts;
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
         options.timestamp = &ts;
       }
+     #endif
       if (!FLAGS_multiread_batched) {
         std::vector<Status> statuses = db->MultiGet(options, keys, &values);
         assert(static_cast<int64_t>(statuses.size()) == entries_per_batch_);
@@ -6831,11 +6839,13 @@ class Benchmark {
     }
     while (!duration.Done(1)) {
       DB* db = SelectDB(thread);
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       Slice ts;
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
         options.timestamp = &ts;
       }
+     #endif
       Iterator* iter = db->NewIterator(options);
       delete iter;
       thread->stats.FinishedOps(nullptr, db, 1, kOthers);
@@ -6855,6 +6865,7 @@ class Benchmark {
     int64_t found = 0;
     int64_t bytes = 0;
     ReadOptions options = read_options_;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     std::unique_ptr<char[]> ts_guard;
     Slice ts;
     if (user_timestamp_size_ > 0) {
@@ -6862,6 +6873,7 @@ class Benchmark {
       ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
       options.timestamp = &ts;
     }
+   #endif
 
     std::vector<Iterator*> tailing_iters;
     if (FLAGS_use_tailing_iterator) {
@@ -7207,6 +7219,7 @@ class Benchmark {
     }
     assert(db_.db != nullptr);
     ReadOptions read_options = read_options_;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     std::unique_ptr<char[]> ts_guard;
     Slice ts;
     if (user_timestamp_size_ > 0) {
@@ -7214,6 +7227,7 @@ class Benchmark {
       ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
       read_options.timestamp = &ts;
     }
+   #endif
     Iterator* iter = db_.db->NewIterator(read_options);
 
     fprintf(stderr, "num reads to do %" PRIu64 "\n", reads_);
@@ -7315,6 +7329,7 @@ class Benchmark {
     std::string values[3];
     ReadOptions readoptionscopy = read_options_;
 
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     std::unique_ptr<char[]> ts_guard;
     Slice ts;
     if (user_timestamp_size_ > 0) {
@@ -7322,6 +7337,7 @@ class Benchmark {
       ts = mock_app_clock_->Allocate(ts_guard.get());
       readoptionscopy.timestamp = &ts;
     }
+   #endif
 
     readoptionscopy.snapshot = db->GetSnapshot();
     Status s;
@@ -7460,12 +7476,14 @@ class Benchmark {
       }
       if (get_weight > 0) {
         // do all the gets first
+       #if defined(TOPLINGDB_WITH_TIMESTAMP)
         Slice ts;
         if (user_timestamp_size_ > 0) {
           ts = mock_app_clock_->GetTimestampForRead(thread->rand,
                                                     ts_guard.get());
           options.timestamp = &ts;
         }
+       #endif
         Status s = db->Get(options, key, &value);
         if (!s.ok() && !s.IsNotFound()) {
           fprintf(stderr, "get error: %s\n", s.ToString().c_str());
@@ -7482,7 +7500,11 @@ class Benchmark {
         // for all the gets we have done earlier
         Status s;
         if (user_timestamp_size_ > 0) {
+         #if defined(TOPLINGDB_WITH_TIMESTAMP)
           Slice ts = mock_app_clock_->Allocate(ts_guard.get());
+         #else
+          Slice ts;
+         #endif
           s = db->Put(write_options_, key, ts, gen.Generate());
         } else {
           s = db->Put(write_options_, key, gen.Generate());
@@ -7525,11 +7547,13 @@ class Benchmark {
       DB* db = SelectDB(thread);
       GenerateKeyFromInt(thread->rand.Next() % FLAGS_num, FLAGS_num, &key);
       Slice ts;
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       if (user_timestamp_size_ > 0) {
         // Read with newest timestamp because we are doing rmw.
         ts = mock_app_clock_->Allocate(ts_guard.get());
         options.timestamp = &ts;
       }
+     #endif
 
       auto status = db->Get(options, key, &value);
       if (status.ok()) {
@@ -7593,10 +7617,12 @@ class Benchmark {
       DB* db = SelectDB(thread);
       GenerateKeyFromInt(thread->rand.Next() % FLAGS_num, FLAGS_num, &key);
       Slice ts;
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->Allocate(ts_guard.get());
         options.timestamp = &ts;
       }
+     #endif
 
       auto status = db->Get(options, key, &existing_value);
       if (status.ok()) {
@@ -7659,10 +7685,12 @@ class Benchmark {
       DB* db = SelectDB(thread);
       GenerateKeyFromInt(thread->rand.Next() % FLAGS_num, FLAGS_num, &key);
       Slice ts;
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       if (user_timestamp_size_ > 0) {
         ts = mock_app_clock_->Allocate(ts_guard.get());
         options.timestamp = &ts;
       }
+     #endif
 
       auto status = db->Get(options, key, &value);
       if (status.ok()) {
@@ -7824,11 +7852,13 @@ class Benchmark {
     ReadOptions read_opts = read_options_;
     std::unique_ptr<char[]> ts_guard;
     Slice ts;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     if (user_timestamp_size_ > 0) {
       ts_guard.reset(new char[user_timestamp_size_]);
       ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
       read_opts.timestamp = &ts;
     }
+   #endif
     std::unique_ptr<Iterator> iter(db->NewIterator(read_opts));
 
     std::unique_ptr<const char[]> key_guard;

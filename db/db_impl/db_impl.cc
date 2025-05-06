@@ -108,6 +108,10 @@
 #include "util/udt_util.h"
 #include "utilities/trace/replayer_impl.h"
 
+#if !defined(TOPLINGDB_WITH_TIMESTAMP)
+  #pragma GCC diagnostic ignored "-Wnonnull" // timestamp && timestamp->size()
+#endif
+
 #if defined(__clang__)
   #pragma clang diagnostic ignored "-Wshorten-64-to-32"
   #pragma clang diagnostic ignored "-Wunused-but-set-variable"
@@ -2139,7 +2143,9 @@ Status DBImpl::GetImpl(const ReadOptions& read_options,
   GetImplOptions get_impl_options;
   get_impl_options.column_family = column_family;
   get_impl_options.value = value;
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   get_impl_options.timestamp = timestamp;
+ #endif
 
   Status s = GetImpl(read_options, key, get_impl_options);
   return s;
@@ -4220,7 +4226,9 @@ bool DBImpl::KeyMayExist(const ReadOptions& read_options,
   get_impl_options.column_family = column_family;
   get_impl_options.value = &pinnable_val;
   get_impl_options.value_found = value_found;
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   get_impl_options.timestamp = timestamp;
+ #endif
   auto s = GetImpl(roptions, key, get_impl_options);
   pinnable_val.SyncToString(value);
 

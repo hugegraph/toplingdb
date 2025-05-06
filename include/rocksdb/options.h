@@ -1543,6 +1543,7 @@ struct ReadOptions {
   // snapshot of the state at the beginning of this read operation.
   const Snapshot* snapshot = nullptr;
 
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   // Timestamp of operation. Read should return the latest data visible to the
   // specified timestamp. All timestamps of the same database must be of the
   // same length and format. The user is responsible for providing a customized
@@ -1555,6 +1556,10 @@ struct ReadOptions {
   // and the API is subject to change.
   const Slice* timestamp = nullptr;
   const Slice* iter_start_ts = nullptr;
+ #else
+  static constexpr Slice const* timestamp = nullptr;
+  static constexpr Slice const* iter_start_ts = nullptr;
+ #endif
 
   // Deadline for completing an API call (Get/MultiGet/Seek/Next for now)
   // in microseconds.

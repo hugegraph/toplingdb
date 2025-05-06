@@ -64,6 +64,7 @@ Status CompactedDBImpl::Get(const ReadOptions& _read_options,
 
   assert(user_comparator_);
   if (read_options.timestamp) {
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     Status s =
         FailIfTsMismatchCf(DefaultColumnFamily(), *(read_options.timestamp));
     if (!s.ok()) {
@@ -76,6 +77,7 @@ Status CompactedDBImpl::Get(const ReadOptions& _read_options,
         return s;
       }
     }
+   #endif
   } else {
     const Status s = FailIfCfHasTs(DefaultColumnFamily());
     if (!s.ok()) {
@@ -149,6 +151,7 @@ std::vector<Status> CompactedDBImpl::MultiGet(
 #endif
 
   if (read_options.timestamp) {
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     Status s =
         FailIfTsMismatchCf(DefaultColumnFamily(), *(read_options.timestamp));
     if (!s.ok()) {
@@ -161,6 +164,7 @@ std::vector<Status> CompactedDBImpl::MultiGet(
         return std::vector<Status>(num_keys, s);
       }
     }
+   #endif
   } else {
     Status s = FailIfCfHasTs(DefaultColumnFamily());
     if (!s.ok()) {

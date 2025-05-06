@@ -623,7 +623,11 @@ class DBImpl : public DB {
     ColumnFamilyHandle* column_family = nullptr;
     PinnableSlice* value = nullptr;
     PinnableWideColumns* columns = nullptr;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     std::string* timestamp = nullptr;
+   #else
+    static constexpr std::string* const timestamp = nullptr;
+   #endif
     bool* value_found = nullptr;
     ReadCallback* callback = nullptr;
     bool* is_blob_index = nullptr;

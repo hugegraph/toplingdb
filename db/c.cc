@@ -4658,6 +4658,7 @@ unsigned char rocksdb_readoptions_get_async_io(rocksdb_readoptions_t* opt) {
 
 void rocksdb_readoptions_set_timestamp(rocksdb_readoptions_t* opt,
                                        const char* ts, size_t tslen) {
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   if (ts == nullptr) {
     opt->timestamp = Slice();
     opt->rep.timestamp = nullptr;
@@ -4665,10 +4666,12 @@ void rocksdb_readoptions_set_timestamp(rocksdb_readoptions_t* opt,
     opt->timestamp = Slice(ts, tslen);
     opt->rep.timestamp = &opt->timestamp;
   }
+ #endif
 }
 
 void rocksdb_readoptions_set_iter_start_ts(rocksdb_readoptions_t* opt,
                                            const char* ts, size_t tslen) {
+ #if defined(TOPLINGDB_WITH_TIMESTAMP)
   if (ts == nullptr) {
     opt->iter_start_ts = Slice();
     opt->rep.iter_start_ts = nullptr;
@@ -4676,6 +4679,7 @@ void rocksdb_readoptions_set_iter_start_ts(rocksdb_readoptions_t* opt,
     opt->iter_start_ts = Slice(ts, tslen);
     opt->rep.iter_start_ts = &opt->iter_start_ts;
   }
+ #endif
 }
 
 void rocksdb_readoptions_set_auto_readahead_size(rocksdb_readoptions_t* opt,
