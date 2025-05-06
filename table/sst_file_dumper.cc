@@ -60,7 +60,9 @@ SstFileDumper::SstFileDumper(const Options& options,
       moptions_(ColumnFamilyOptions(options_)),
       read_options_(verify_checksum, false),
       internal_comparator_(BytewiseComparator()) {
+ #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   read_options_.readahead_size = readahead_size;
+ #endif
   if (!silent_) {
     fprintf(stdout, "Process %s\n", file_path.c_str());
   }

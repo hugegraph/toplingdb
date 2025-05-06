@@ -1561,6 +1561,7 @@ struct ReadOptions {
   static constexpr Slice const* iter_start_ts = nullptr;
  #endif
 
+ #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   // Deadline for completing an API call (Get/MultiGet/Seek/Next for now)
   // in microseconds.
   // It should be set to microseconds since epoch, i.e, gettimeofday or
@@ -1588,6 +1589,12 @@ struct ReadOptions {
   // Status with subcode kMergeOperandThresholdExceeded. Currently only applies
   // to point lookups and is disabled by default.
   size_t merge_operand_count_threshold = std::numeric_limits<size_t>::max();
+ #else
+  static constexpr std::chrono::microseconds deadline = std::chrono::microseconds::zero();
+  static constexpr std::chrono::microseconds io_timeout = std::chrono::microseconds::zero();
+  static constexpr uint64_t value_size_soft_limit = std::numeric_limits<uint64_t>::max();
+  static constexpr size_t merge_operand_count_threshold = std::numeric_limits<size_t>::max();
+ #endif
 
   // Specify if this read request should process data that ALREADY
   // resides on a particular cache. If the required data is not
@@ -1643,6 +1650,7 @@ struct ReadOptions {
   // *** END options relevant to point lookups (as well as scans) ***
   // *** BEGIN options only relevant to iterators or scans ***
 
+ #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   // RocksDB does auto-readahead for iterators on noticing more than two reads
   // for a table file. The readahead starts at 8KB and doubles on every
   // additional read up to 256KB.
@@ -1657,6 +1665,10 @@ struct ReadOptions {
   // iterator seek as incomplete. The default value of 0 should be used to
   // never fail a request as incomplete, even on skipping too many keys.
   uint64_t max_skippable_internal_keys = UINT64_MAX;
+ #else
+  static constexpr size_t readahead_size = 0;
+  static constexpr uint64_t max_skippable_internal_keys = UINT64_MAX;
+ #endif
 
   // `iterate_lower_bound` defines the smallest key at which the backward
   // iterator can return an entry. Once the bound is passed, Valid() will be
@@ -1760,6 +1772,9 @@ struct ReadOptions {
 
   uint32_t min_prefault_pages = UINT32_MAX; // mainly for zero copy
 
+ #if !defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
+  static const
+ #endif
   // A callback to determine whether relevant keys for this scan exist in a
   // given table based on the table's properties. The callback is passed the
   // properties of each table during iteration. If the callback returns false,

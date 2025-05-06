@@ -726,7 +726,9 @@ Status ExternalSstFileIngestionJob::GetIngestedFileInfo(
     // to keep things simple.
     // TODO: plumb Env::IOActivity
     ReadOptions ro;
+   #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
     ro.readahead_size = ingestion_options_.verify_checksums_readahead_size;
+   #endif
     status = table_reader->VerifyChecksum(
         ro, TableReaderCaller::kExternalSSTIngestion);
     if (!status.ok()) {

@@ -726,4 +726,9 @@ ReadOptions::ReadOptions(Env::IOActivity _io_activity)
   cache_sst_file_iter = g_cache_sst_file_iter;
 }
 
+#if !defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
+const std::function<bool(const TableProperties&, const FileMetaData&)>
+ReadOptions::table_filter;
+#endif
+
 }  // namespace ROCKSDB_NAMESPACE

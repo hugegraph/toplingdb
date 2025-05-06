@@ -594,8 +594,10 @@ Status BlockBasedTable::Open(
   // From read_options, retain deadline, io_timeout, rate_limiter_priority, and
   // verify_checksums. In future, we may retain more options.
   ReadOptions ro;
+ #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   ro.deadline = read_options.deadline;
   ro.io_timeout = read_options.io_timeout;
+ #endif
   ro.rate_limiter_priority = read_options.rate_limiter_priority;
   ro.verify_checksums = read_options.verify_checksums;
   ro.io_activity = read_options.io_activity;

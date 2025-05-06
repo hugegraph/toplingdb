@@ -3485,7 +3485,9 @@ class Benchmark {
       read_options_.rate_limiter_priority =
           FLAGS_rate_limit_user_ops ? Env::IO_USER : Env::IO_TOTAL;
       read_options_.tailing = FLAGS_use_tailing_iterator;
+     #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
       read_options_.readahead_size = FLAGS_readahead_size;
+     #endif
       read_options_.adaptive_readahead = FLAGS_adaptive_readahead;
       read_options_.async_io = FLAGS_async_io;
       read_options_.optimize_multiget_for_io = FLAGS_optimize_multiget_for_io;
@@ -7994,7 +7996,9 @@ class Benchmark {
     ro.async_io = FLAGS_async_io;
     ro.rate_limiter_priority =
         FLAGS_rate_limit_user_ops ? Env::IO_USER : Env::IO_TOTAL;
+   #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
     ro.readahead_size = FLAGS_readahead_size;
+   #endif
     ro.auto_readahead_size = FLAGS_auto_readahead_size;
     Status s = db->VerifyChecksum(ro);
     if (!s.ok()) {
@@ -8010,7 +8014,9 @@ class Benchmark {
     ro.async_io = FLAGS_async_io;
     ro.rate_limiter_priority =
         FLAGS_rate_limit_user_ops ? Env::IO_USER : Env::IO_TOTAL;
+   #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
     ro.readahead_size = FLAGS_readahead_size;
+   #endif
     ro.auto_readahead_size = FLAGS_auto_readahead_size;
     Status s = db->VerifyFileChecksums(ro);
     if (!s.ok()) {
