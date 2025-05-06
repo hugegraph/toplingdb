@@ -2521,8 +2521,7 @@ Status DBImpl::GetInst(const ReadOptions& read_options, const Slice& key,
     size_t size = 0;
     if (s.ok()) {
       const auto& merge_threshold = read_options.merge_operand_count_threshold;
-      if (merge_threshold.has_value() &&
-          merge_context.GetNumOperands() > merge_threshold.value()) {
+      if (merge_context.GetNumOperands() > merge_threshold) {
         s = Status::OkMergeOperandThresholdExceeded();
       }
 
@@ -2808,8 +2807,7 @@ std::vector<Status> DBImpl::MultiGet(
 
     if (s.ok()) {
       const auto& merge_threshold = read_options.merge_operand_count_threshold;
-      if (merge_threshold.has_value() &&
-          merge_context.GetNumOperands() > merge_threshold.value()) {
+      if (merge_context.GetNumOperands() > merge_threshold) {
         s = Status::OkMergeOperandThresholdExceeded();
       }
 
@@ -3757,8 +3755,7 @@ Status DBImpl::MultiGetImpl(
 
     if (key->s->ok()) {
       const auto& merge_threshold = read_options.merge_operand_count_threshold;
-      if (merge_threshold.has_value() &&
-          key->merge_context.GetNumOperands() > merge_threshold) {
+      if (key->merge_context.GetNumOperands() > merge_threshold) {
         *(key->s) = Status::OkMergeOperandThresholdExceeded();
       }
 

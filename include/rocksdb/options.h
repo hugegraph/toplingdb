@@ -13,7 +13,6 @@
 
 #include <limits>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -1583,7 +1582,7 @@ struct ReadOptions {
   // during a successful query, the operation will return a special OK
   // Status with subcode kMergeOperandThresholdExceeded. Currently only applies
   // to point lookups and is disabled by default.
-  std::optional<size_t> merge_operand_count_threshold;
+  size_t merge_operand_count_threshold = std::numeric_limits<size_t>::max();
 
   // Specify if this read request should process data that ALREADY
   // resides on a particular cache. If the required data is not

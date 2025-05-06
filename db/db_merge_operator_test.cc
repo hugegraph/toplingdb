@@ -394,7 +394,9 @@ TEST_F(DBMergeOperatorTest, MergeOperandThresholdExceeded) {
   // Verify the results and status codes of various types of point lookups.
   auto verify = [&](const std::optional<size_t>& threshold) {
     ReadOptions read_options;
-    read_options.merge_operand_count_threshold = threshold;
+    if (threshold.has_value()) {
+      read_options.merge_operand_count_threshold = threshold.value();
+    }
 
     // Check Get()
     {
