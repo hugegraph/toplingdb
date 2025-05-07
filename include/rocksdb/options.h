@@ -1650,6 +1650,8 @@ struct ReadOptions {
   // comes at the expense of slightly higher CPU overhead.
   bool optimize_multiget_for_io = true;
 
+  uint8_t fixed_user_key_len = 0; // 0 indicate var len
+
   // *** END options relevant to point lookups (as well as scans) ***
   // *** BEGIN options only relevant to iterators or scans ***
 
@@ -1773,7 +1775,7 @@ struct ReadOptions {
   // in background.
   bool background_purge_on_iterator_cleanup = false;
 
-  uint32_t min_prefault_pages = UINT32_MAX; // mainly for zero copy
+  uint16_t min_prefault_pages = UINT16_MAX; // mainly for zero copy
 
  #if !defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   static const
@@ -1808,9 +1810,7 @@ struct ReadOptions {
 #endif
   Env::IOActivity io_activity = Env::IOActivity::kUnknown;
 
-  uint8_t fixed_user_key_len = 0; // 0 indicate var len
-
-  int async_queue_depth = 16;
+  uint16_t async_queue_depth = 16;
 
   // used for ToplingDB fiber MultiGet
   mutable class ReadCallback* read_callback = nullptr;
