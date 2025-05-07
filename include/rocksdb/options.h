@@ -1777,17 +1777,6 @@ struct ReadOptions {
 
   uint16_t min_prefault_pages = UINT16_MAX; // mainly for zero copy
 
- #if !defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
-  static const
- #endif
-  // A callback to determine whether relevant keys for this scan exist in a
-  // given table based on the table's properties. The callback is passed the
-  // properties of each table during iteration. If the callback returns false,
-  // the table will not be scanned. This option only affects Iterators and has
-  // no impact on point lookups.
-  // Default: empty (every table will be scanned)
-  std::function<bool(const TableProperties&, const FileMetaData&)> table_filter;
-
   // If auto_readahead_size is set to true, it will auto tune the readahead_size
   // during scans internally.
   // For this feature to enabled, iterate_upper_bound must also be specified.
@@ -1811,6 +1800,17 @@ struct ReadOptions {
   Env::IOActivity io_activity = Env::IOActivity::kUnknown;
 
   uint16_t async_queue_depth = 16;
+
+ #if !defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
+  static const
+ #endif
+  // A callback to determine whether relevant keys for this scan exist in a
+  // given table based on the table's properties. The callback is passed the
+  // properties of each table during iteration. If the callback returns false,
+  // the table will not be scanned. This option only affects Iterators and has
+  // no impact on point lookups.
+  // Default: empty (every table will be scanned)
+  std::function<bool(const TableProperties&, const FileMetaData&)> table_filter;
 
   // used for ToplingDB fiber MultiGet
   mutable class ReadCallback* read_callback = nullptr;
