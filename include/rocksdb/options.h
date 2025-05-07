@@ -1801,16 +1801,13 @@ struct ReadOptions {
 
   uint16_t async_queue_depth = 16;
 
- #if !defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
-  static const
- #endif
   // A callback to determine whether relevant keys for this scan exist in a
   // given table based on the table's properties. The callback is passed the
   // properties of each table during iteration. If the callback returns false,
   // the table will not be scanned. This option only affects Iterators and has
   // no impact on point lookups.
   // Default: empty (every table will be scanned)
-  std::function<bool(const TableProperties&, const FileMetaData&)> table_filter;
+  terark::shared_function<bool(const TableProperties&, const FileMetaData&)> table_filter;
 
   // used for ToplingDB fiber MultiGet
   mutable class ReadCallback* read_callback = nullptr;
