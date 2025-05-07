@@ -721,9 +721,9 @@ void WriteBatchWithIndex::MultiGetFromBatchAndDB(
     DB* db, const ReadOptions& read_options, ColumnFamilyHandle* column_family,
     const size_t num_keys, const Slice* keys, PinnableSlice* values,
     Status* statuses, bool sorted_input) {
+  ReadCallback* callback = nullptr;
   MultiGetFromBatchAndDB(db, read_options, column_family, num_keys, keys,
-                         values, statuses, sorted_input,
-                         read_options.read_callback);
+                         values, statuses, sorted_input, callback);
 }
 
 void WriteBatchWithIndex::MultiGetFromBatchAndDB(
@@ -787,12 +787,11 @@ if (num_get_db) {
   // Did not find key in batch OR could not resolve Merges.  Try DB.
   DBImpl* rdb = static_cast_with_check<DBImpl>(db->GetRootDB());
 
-  // patch: read_options.read_callback is not thread-safe
-  ReadCallback* old_callback = read_options.read_callback;
-  read_options.read_callback = callback;
-  rdb->MultiGet(read_options, column_family,
-                num_get_db, db_keys, db_values, db_statuses);
-  read_options.read_callback = old_callback;
+  bool sorted_input = false;
+  PinnableWideColumns* columns = nullptr;
+  std::string* timestamps = nullptr;
+  rdb->MultiGetOneCFH(read_options, callback, column_family, num_get_db,
+        db_keys, db_values, columns, timestamps, db_statuses, sorted_input);
 
   for (size_t index = 0; index < num_get_db; index++) {
     size_t full_index = merges[index].full_index();

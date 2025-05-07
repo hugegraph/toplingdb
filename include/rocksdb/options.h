@@ -1809,9 +1809,6 @@ struct ReadOptions {
   // Default: empty (every table will be scanned)
   terark::shared_function<bool(const TableProperties&, const FileMetaData&)> table_filter;
 
-  // used for ToplingDB fiber MultiGet
-  mutable class ReadCallback* read_callback = nullptr;
-
   terark::narrow_shared_ptr<struct ReadOptionsTLS> pinning_tls = nullptr;
 
   // *** END options for RocksDB internal use only ***

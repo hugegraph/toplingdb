@@ -2320,7 +2320,7 @@ protected:
       const size_t num_keys, bool sorted, bool same_cf,
       autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE>* key_ptrs);
 
-  void MultiGetCommon(const ReadOptions& options,
+  void MultiGetOneCFH(const ReadOptions& options, ReadCallback*,
                       ColumnFamilyHandle* column_family, const size_t num_keys,
                       const Slice* keys, PinnableSlice* values,
                       PinnableWideColumns* columns, std::string* timestamps,

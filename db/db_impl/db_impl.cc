@@ -3324,11 +3324,13 @@ void DBImpl::MultiGet(const ReadOptions& _read_options,
   _read_options.io_activity = Env::IOActivity::kMultiGet;
   const ReadOptions& read_options(_read_options);
 #endif
-  MultiGetCommon(read_options, column_family, num_keys, keys, values,
+  ReadCallback* callback = nullptr;
+  MultiGetOneCFH(read_options, callback, column_family, num_keys, keys, values,
                  /* columns */ nullptr, timestamps, statuses, sorted_input);
 }
 
-void DBImpl::MultiGetCommon(const ReadOptions& read_options,
+void DBImpl::MultiGetOneCFH(const ReadOptions& read_options,
+                            ReadCallback* callback,
                             ColumnFamilyHandle* column_family,
                             const size_t num_keys, const Slice* keys,
                             PinnableSlice* values, PinnableWideColumns* columns,
@@ -3370,7 +3372,6 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
     sorted_keys[i] = &key_context[i];
   }
   bool same_cf = true;
-  auto callback = read_options.read_callback;
   PrepareMultiGetKeys(num_keys, sorted_input, same_cf, &sorted_keys);
   MultiGetWithCallbackImpl(read_options, column_family, callback, &sorted_keys);
 } else { // topling MultiGet with fiber
@@ -3418,7 +3419,6 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
 //  TEST_SYNC_POINT("DBImpl::MultiGet:2");
 
   SequenceNumber snapshot;
-  ReadCallback* callback = read_options.read_callback;
 // begin copied from GetImpl
   if (read_options.snapshot != nullptr) {
     if (callback) {
@@ -3851,7 +3851,8 @@ void DBImpl::MultiGetEntity(const ReadOptions& _read_options,
   _read_options.io_activity = Env::IOActivity::kMultiGetEntity;
   const ReadOptions& read_options(_read_options);
 #endif
-  MultiGetCommon(read_options, column_family, num_keys, keys,
+  ReadCallback* callback = nullptr;
+  MultiGetOneCFH(read_options, callback, column_family, num_keys, keys,
                  /* values */ nullptr, results, /* timestamps */ nullptr,
                  statuses, sorted_input);
 }
