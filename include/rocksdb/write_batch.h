@@ -44,6 +44,8 @@ class ColumnFamilyHandle;
 struct SavePoints;
 struct SliceParts;
 class ReadonlyFileMmap;
+// We know ReadonlyFileMmap is single derived enable_shared_from_this
+inline auto base_enable_shared_from_this(ReadonlyFileMmap* p) { return p; }
 
 struct KeyValuePassMemTable {
   Slice    value;

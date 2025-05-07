@@ -1533,6 +1533,9 @@ enum ReadTier : unsigned char {
   kMemtableTier = 0x3     // data in memtable. used for memtable-only iterators.
 };
 
+// We know ReadOptionsTLS is single dereived enable_shared_from_this
+inline auto base_enable_shared_from_this(struct ReadOptionsTLS* p) { return p; }
+
 // Options that control read operations
 struct ReadOptions {
   // *** BEGIN options relevant to point lookups as well as scans ***
