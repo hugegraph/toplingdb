@@ -758,7 +758,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
     }
   }
 
-  size_t encoded_len = MemTableRep::EncodeKeyValueSize(key, value);
+  size_t encoded_len = MemTableRep::EncodeKeyValueSize(key, real_value);
   if (!allow_concurrent) {
     // Extract prefix for insert with hint.
     if (insert_with_hint_prefix_extractor_ != nullptr &&
