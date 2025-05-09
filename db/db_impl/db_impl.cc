@@ -155,7 +155,13 @@ struct ToplingMGetCtx : protected MergeContext {
   };
   void InitLookupKey(const Slice& user_key, SequenceNumber seq,
                      const Slice* ts) {
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     new(&lkey)LookupKey(user_key, seq, ts);
+   #else
+    new(&lkey)LookupKey(user_key, seq);
+    (void)ts;
+    assert(ts == nullptr);
+   #endif
     this->ext_flags_ |= FLAG_lkey_initialized;
   }
   ToplingMGetCtx() {}
@@ -2440,7 +2446,11 @@ Status DBImpl::GetInst(const ReadOptions& read_options, const Slice& key,
   // First look in the memtable, then in the immutable memtable (if any).
   // s is both in/out. When in, s could either be OK or MergeInProgress.
   // merge_operands will contain the sequence of merges in the latter case.
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   LookupKey lkey(key, snapshot, read_options.timestamp);
+#else
+  LookupKey lkey(key, snapshot);
+#endif
   PERF_TIMER_STOP(get_snapshot_time);
 
   bool skip_memtable = (read_options.read_tier == kPersistedTier &&
@@ -2763,11 +2773,12 @@ std::vector<Status> DBImpl::MultiGet(
     value->clear();
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
     std::string* timestamp = timestamps ? &(*timestamps)[keys_read] : nullptr;
+    LookupKey lkey(keys[keys_read], consistent_seqnum, read_options.timestamp);
 #else
     std::string* timestamp = nullptr;
+    LookupKey lkey(keys[keys_read], consistent_seqnum);
 #endif
 
-    LookupKey lkey(keys[keys_read], consistent_seqnum, read_options.timestamp);
     auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(
         column_family[keys_read]);
     SequenceNumber max_covering_tombstone_seq = 0;
@@ -6216,7 +6227,7 @@ Status DBImpl::GetLatestSequenceForKey(
  #if !defined(NDEBUG)
   constexpr size_t ts_sz = 0;
  #endif
-  LookupKey lkey(key, current_seq, nullptr);
+  LookupKey lkey(key, current_seq);
 #endif
 
   *seq = kMaxSequenceNumber;

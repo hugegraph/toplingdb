@@ -213,7 +213,7 @@ int InternalKeyComparator::Compare(const ParsedInternalKey& a,
   return -Compare(b, a);
 }
 
-LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s,
+LookupKey::LookupKey(const Slice _user_key, SequenceNumber s,
                      const Slice* ts) {
   static_assert(offsetof(LookupKey, longstart_) == 8);
   size_t usize = _user_key.size();
@@ -238,6 +238,10 @@ LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s,
   }
   EncodeFixed64(dst, PackSequenceAndType(s, kValueTypeForSeek));
 }
+
+ROCKSDB_FLATTEN
+LookupKey::LookupKey(const Slice uk, SequenceNumber s)
+  : LookupKey(uk, s, nullptr) {}
 
 void IterKey::EnlargeBuffer(size_t key_size) {
   // If size is smaller than buffer size, continue using current buffer,
