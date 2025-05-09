@@ -65,14 +65,14 @@ class LookupKey {
  private:
   // We construct a char array of the form:
   // short keys: klength_ <= sizeof(space_)
-  //     klen_len               <-- space_[0], klen_offset = 4 - klen_len
-  //     unused                 <-- space_[1 ~ klen_offset),
-  //     klength  varint32      <-- space_[klen_offset ~ 4)
-  //     userkey  char          <-- space_[4 ~ 4 + ukey_len), aligned to 8
+  //     klen_len               <-- short VarUint length, always is 1
+  //     unused                 <-- klen_data_[0 ~ 2),
+  //     klength  varint32      <-- klen_data_[2]
+  //     userkey  char          <-- space_[0 ~ ukey_len), aligned to 8
   //     tag      uint64
   // long keys: klength_ > sizeof(space_)
-  //     klen_len_              <-- space_[0]
-  //     unused                 <-- space_[1~4)
+  //     klen_len_
+  //     unused
   //     longstart_             <-- ptr to key data, klen_offset = 8 - klen_len
   //        unused              <-- longstart_[-8 ~ -8 + klen_offset)
   //        klength  varint32   <-- longstart_[-klen_len, 0)
