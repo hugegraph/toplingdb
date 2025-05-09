@@ -222,8 +222,8 @@ LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s,
   auto klen_len = VarUint32Length(klength_);
   klen_len_ = char(klen_len);
   char* dst;
-  if (LIKELY(klength_ <= sizeof(space_) - 4)) {
-    dst = space_ + 4 - klen_len;
+  if (LIKELY(klength_ <= sizeof(space_))) {
+    dst = space_ - klen_len;
   } else {
     char* ptr = new char[usize + ts_sz + 16]; // precise space
     dst = ptr + 8 - klen_len;
