@@ -29,7 +29,7 @@ class LookupKey {
 
   const char* memtable_key_data() const {
     if (LIKELY(klength_ <= sizeof(space_)))
-      return space_ - klen_len_;
+      return space_ - short_klen_len;
     else
       return longstart_ - klen_len_;
   }
@@ -38,7 +38,7 @@ class LookupKey {
   // Return a key suitable for lookup in a MemTable.
   Slice memtable_key() const {
     if (LIKELY(klength_ <= sizeof(space_)))
-      return Slice(space_ - klen_len_, klen_len_ + klength_);
+      return Slice(space_ - short_klen_len, short_klen_len + klength_);
     else
       return Slice(longstart_ - klen_len_, klen_len_ + klength_);
   }
@@ -81,6 +81,7 @@ class LookupKey {
   //
   // The array is a suitable MemTable key.
   // The suffix starting with "userkey" can be used as an InternalKey.
+  static constexpr int short_klen_len = 1; // short VarUint length is 1 byte
   uint32_t  klength_; // internal key len
   char klen_len_;
   char klen_data_[3]; // Just for short keys, meaningless for long keys

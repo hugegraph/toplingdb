@@ -219,17 +219,21 @@ LookupKey::LookupKey(const Slice _user_key, SequenceNumber s,
   size_t usize = _user_key.size();
   size_t ts_sz = (nullptr == ts) ? 0 : ts->size();
   klength_ = uint32_t(usize + ts_sz + 8);
-  auto klen_len = VarUint32Length(klength_);
-  klen_len_ = char(klen_len);
   char* dst;
   if (LIKELY(klength_ <= sizeof(space_))) {
-    dst = space_ - klen_len;
+    static_assert(sizeof(space_) < 128);
+    klen_len_ = short_klen_len; // here VarUint length is 1 byte
+    klen_data_[2] = uint8_t(klength_);
+    static_assert(offsetof(LookupKey, klen_data_[3]) ==
+                  offsetof(LookupKey, space_));
+    dst = space_;
   } else {
+    auto klen_len = VarUint32Length(klength_);
+    klen_len_ = char(klen_len);
     char* ptr = new char[usize + ts_sz + 16]; // precise space
-    dst = ptr + 8 - klen_len;
     longstart_ = ptr + 8;
+    dst = EncodeVarint32(ptr + 8 - klen_len, klength_);
   }
-  dst = EncodeVarint32(dst, klength_);
   memcpy(dst, _user_key.data(), usize);
   dst += usize;
   if (UNLIKELY(nullptr != ts)) {
