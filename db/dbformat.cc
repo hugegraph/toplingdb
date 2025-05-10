@@ -234,13 +234,13 @@ LookupKey::LookupKey(const Slice _user_key, SequenceNumber s,
     longstart_ = ptr + 8;
     dst = EncodeVarint32(ptr + 8 - klen_len, klength_);
   }
+  // set tag first, memcpy will be optimized to tail call(jmp),
+  // gcc-15 aggressively optimized fast path(short key) gracefully
+  EncodeFixed64(dst + usize + ts_sz, PackSequenceAndType(s, kValueTypeForSeek));
   memcpy(dst, _user_key.data(), usize);
-  dst += usize;
   if (UNLIKELY(nullptr != ts)) {
-    memcpy(dst, ts->data(), ts_sz);
-    dst += ts_sz;
+    memcpy(dst + usize, ts->data(), ts_sz);
   }
-  EncodeFixed64(dst, PackSequenceAndType(s, kValueTypeForSeek));
 }
 
 ROCKSDB_FLATTEN
