@@ -129,9 +129,6 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
   support_convert_to_sst_ = table_->SupportConvertToSST();
   reject_memtable_as_log_index_ = moptions_.memtable_as_log_index
                                && !table_->SupportMemTableAsLogIndex();
-  if (table_->SupportMemTableAsLogIndex()) {
-    ROCKSDB_VERIFY(table_->SupportConvertToSST());
-  }
   UpdateFlushState();
   // something went wrong if we need to flush before inserting anything
   assert(!ShouldScheduleFlush());
