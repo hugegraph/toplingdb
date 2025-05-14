@@ -743,6 +743,9 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
   }
   std::unique_ptr<MemTableRep>& table =
       type == kTypeRangeDeletion ? range_del_table_ : table_;
+  if (type == kTypeRangeDeletion) {
+    value = real_value; // range_del_table_ not support memtable_as_log_index
+  }
   const uint64_t tag = PackSequenceAndType(s, type);
   if (kv_prot_info != nullptr) {
     Slice key_slice((char*)memcpy(alloca(key.size_ + 8), key.data_, key.size_),
