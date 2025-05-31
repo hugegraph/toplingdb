@@ -228,7 +228,7 @@ class PessimisticTransactionDB : public TransactionDB {
 
   // map from name to two phase transaction instance
   std::mutex name_map_mutex_;
-  std::unordered_map<TransactionName, Transaction*> transactions_;
+  terark::hash_strmap<Transaction*> transactions_;
 
   // Signal that we are testing a crash scenario. Some asserts could be relaxed
   // in such cases.
