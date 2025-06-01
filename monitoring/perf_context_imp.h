@@ -19,11 +19,13 @@ extern thread_local PerfContext perf_context_;
 #else
   extern PerfContext* init_perf_context() noexcept;
   extern ROCKSDB_STATIC_TLS ROCKSDB_RAW_TLS PerfContext* p_perf_context;
-  #if defined(_MSC_VER)
-  #define perf_context (*(p_perf_context?p_perf_context:init_perf_context()))
-  #else
-  #define perf_context (*(p_perf_context?:init_perf_context()))
-  #endif
+  inline PerfContext& inline_get_perf_context() {
+    if (auto tls = p_perf_context)
+      return *tls;
+    else
+      return *init_perf_context(); // will set p_perf_context
+  }
+  #define perf_context inline_get_perf_context()
 #endif
 #endif
 
