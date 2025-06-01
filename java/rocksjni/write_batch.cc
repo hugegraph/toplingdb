@@ -630,10 +630,14 @@ JNIEXPORT jboolean JNICALL Java_org_rocksdb_WriteBatch_hasRollback(
 void Java_org_rocksdb_WriteBatch_markWalTerminationPoint(JNIEnv* /*env*/,
                                                          jobject /*jobj*/,
                                                          jlong jwb_handle) {
+#if 0
   auto* wb = reinterpret_cast<ROCKSDB_NAMESPACE::WriteBatch*>(jwb_handle);
   assert(wb != nullptr);
 
   wb->MarkWalTerminationPoint();
+#else
+  ROCKSDB_DIE("This function should not be called");
+#endif
 }
 
 /*
@@ -644,11 +648,15 @@ void Java_org_rocksdb_WriteBatch_markWalTerminationPoint(JNIEnv* /*env*/,
 jobject Java_org_rocksdb_WriteBatch_getWalTerminationPoint(JNIEnv* env,
                                                            jobject /*jobj*/,
                                                            jlong jwb_handle) {
+#if 0
   auto* wb = reinterpret_cast<ROCKSDB_NAMESPACE::WriteBatch*>(jwb_handle);
   assert(wb != nullptr);
 
   auto save_point = wb->GetWalTerminationPoint();
   return ROCKSDB_NAMESPACE::WriteBatchSavePointJni::construct(env, save_point);
+#else
+  ROCKSDB_DIE("This function should not be called");
+#endif
 }
 
 /*

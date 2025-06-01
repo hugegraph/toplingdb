@@ -3289,6 +3289,7 @@ jbyte Java_org_rocksdb_RocksDB_getPerfLevelNative(JNIEnv*, jobject) {
  * Signature: ()J
  */
 jlong Java_org_rocksdb_RocksDB_getPerfContextNative(JNIEnv*, jobject) {
+  #undef perf_context
   ROCKSDB_NAMESPACE::PerfContext* perf_context = rocksdb::get_perf_context();
   return reinterpret_cast<jlong>(perf_context);
 }
@@ -3847,15 +3848,7 @@ jobject Java_org_rocksdb_RocksDB_getPropertiesOfAllTables(JNIEnv* env, jobject,
     return nullptr;
   }
 
-  const ROCKSDB_NAMESPACE::HashMapJni::FnMapKV<
-      const std::string,
-      const std::shared_ptr<const ROCKSDB_NAMESPACE::TableProperties>, jobject,
-      jobject>
-      fn_map_kv =
-          [env](const std::pair<const std::string,
-                                const std::shared_ptr<
-                                    const ROCKSDB_NAMESPACE::TableProperties>>&
-                    kv) {
+  auto fn_map_kv = [env](const auto& kv) {
             jstring jkey = ROCKSDB_NAMESPACE::JniUtil::toJavaString(
                 env, &(kv.first), false);
             if (env->ExceptionCheck()) {

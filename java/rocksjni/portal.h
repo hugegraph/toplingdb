@@ -2053,7 +2053,8 @@ class JniUtil {
    *     is null (or empty and treat_empty_as_null is set), or if an
    *     exception occurs allocating the Java String.
    */
-  static jstring toJavaString(JNIEnv* env, const std::string* string,
+  template<class StringType>
+  static jstring toJavaString(JNIEnv* env, const StringType* string,
                               const bool treat_empty_as_null = false) {
     if (string == nullptr) {
       return nullptr;
@@ -2543,10 +2544,10 @@ class HashMapJni : public JavaClass {
   /**
    * Returns true if it succeeds, false if an error occurs
    */
-  template <class iterator_type, typename K, typename V>
+  template <class iterator_type, typename TplFnMapKV>
   static bool putAll(JNIEnv* env, const jobject jhash_map,
                      iterator_type iterator, iterator_type end,
-                     const FnMapKV<K, V, jobject, jobject>& fn_map_kv) {
+                     const TplFnMapKV& fn_map_kv) {
     const jmethodID jmid_put =
         ROCKSDB_NAMESPACE::MapJni::getMapPutMethodId(env);
     if (jmid_put == nullptr) {
@@ -2598,10 +2599,7 @@ class HashMapJni : public JavaClass {
       return nullptr;
     }
 
-    const ROCKSDB_NAMESPACE::HashMapJni::FnMapKV<
-        const std::string, const std::string, jobject, jobject>
-        fn_map_kv =
-            [env](const std::pair<const std::string, const std::string>& kv) {
+    auto fn_map_kv = [env](const auto& kv) {
               jstring jkey = ROCKSDB_NAMESPACE::JniUtil::toJavaString(
                   env, &(kv.first), false);
               if (env->ExceptionCheck()) {
@@ -2657,10 +2655,7 @@ class HashMapJni : public JavaClass {
       return nullptr;
     }
 
-    const ROCKSDB_NAMESPACE::HashMapJni::FnMapKV<
-        const std::string, const uint32_t, jobject, jobject>
-        fn_map_kv =
-            [env](const std::pair<const std::string, const uint32_t>& kv) {
+    auto fn_map_kv = [env](const auto& kv) {
               jstring jkey = ROCKSDB_NAMESPACE::JniUtil::toJavaString(
                   env, &(kv.first), false);
               if (env->ExceptionCheck()) {
@@ -2711,10 +2706,7 @@ class HashMapJni : public JavaClass {
       return nullptr;
     }
 
-    const ROCKSDB_NAMESPACE::HashMapJni::FnMapKV<
-        const std::string, const uint64_t, jobject, jobject>
-        fn_map_kv =
-            [env](const std::pair<const std::string, const uint64_t>& kv) {
+    auto fn_map_kv = [env](const auto& kv) {
               jstring jkey = ROCKSDB_NAMESPACE::JniUtil::toJavaString(
                   env, &(kv.first), false);
               if (env->ExceptionCheck()) {
