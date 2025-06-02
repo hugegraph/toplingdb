@@ -262,6 +262,10 @@ public class RocksDB extends RocksObject {
     return db;
   }
 
+  void syncSetDefaultColumnFamilyHandle() {
+    storeDefaultColumnFamilyHandle(makeDefaultColumnFamilyHandle());
+  }
+
   /**
    * The factory constructor of RocksDB that opens a RocksDB instance given
    * the path to the database using the specified options and db path and a list

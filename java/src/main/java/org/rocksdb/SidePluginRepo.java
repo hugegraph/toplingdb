@@ -15,12 +15,14 @@ public class SidePluginRepo extends RocksObject {
     public RocksDB openDB(String js) throws RocksDBException {
         RocksDB db = nativeOpenDB(nativeHandle_, js);
         dblist_.add(db);
+        db.syncSetDefaultColumnFamilyHandle();
         return db;
     }
     public RocksDB openDB(String js, List<ColumnFamilyHandle> out_cfhs) throws RocksDBException {
         RocksDB db = nativeOpenDBMultiCF(nativeHandle_, js);
         dblist_.add(db);
         out_cfhs.addAll(db.getOwnedColumnFamilyHandles());
+        db.syncSetDefaultColumnFamilyHandle();
         return db;
     }
 
@@ -28,12 +30,14 @@ public class SidePluginRepo extends RocksObject {
     public RocksDB openDB() throws RocksDBException {
         RocksDB db = nativeOpenDB(nativeHandle_, null);
         dblist_.add(db);
+        db.syncSetDefaultColumnFamilyHandle();
         return db;
     }
     public RocksDB openDB(List<ColumnFamilyHandle> out_cfhs) throws RocksDBException {
         RocksDB db = nativeOpenDBMultiCF(nativeHandle_, null);
         dblist_.add(db);
         out_cfhs.addAll(db.getOwnedColumnFamilyHandles());
+        db.syncSetDefaultColumnFamilyHandle();
         return db;
     }
     //@}
