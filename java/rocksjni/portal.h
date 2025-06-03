@@ -2756,9 +2756,7 @@ class HashMapJni : public JavaClass {
       return nullptr;
     }
 
-    const ROCKSDB_NAMESPACE::HashMapJni::FnMapKV<const uint32_t, const uint64_t,
-                                                 jobject, jobject>
-        fn_map_kv = [env](const std::pair<const uint32_t, const uint64_t>& kv) {
+    auto fn_map_kv = [env](const auto& kv) {
           jobject jkey = ROCKSDB_NAMESPACE::IntegerJni::valueOf(
               env, static_cast<jint>(kv.first));
           if (env->ExceptionCheck()) {
