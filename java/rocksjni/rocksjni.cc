@@ -2265,7 +2265,7 @@ bool key_may_exist_helper(JNIEnv* env, jlong jdb_handle, jlong jcf_handle,
     cf_handle =
         reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
   }
-  ROCKSDB_NAMESPACE::ReadOptions read_opts =
+  ROCKSDB_NAMESPACE::ReadOptions& read_opts =
       jread_opts_handle == 0
           ? g_tls_rdopt
           : *(reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(
@@ -2303,7 +2303,7 @@ bool key_may_exist_direct_helper(JNIEnv* env, jlong jdb_handle,
     cf_handle =
         reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
   }
-  ROCKSDB_NAMESPACE::ReadOptions read_opts =
+  ROCKSDB_NAMESPACE::ReadOptions& read_opts =
       jread_opts_handle == 0
           ? g_tls_rdopt
           : *(reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(
@@ -2349,9 +2349,9 @@ jboolean key_exists_helper(JNIEnv* env, jlong jdb_handle, jlong jcf_handle,
         reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
   }
 
-  ROCKSDB_NAMESPACE::ReadOptions read_opts =
+  ROCKSDB_NAMESPACE::ReadOptions& read_opts =
       jread_opts_handle == 0
-          ? ROCKSDB_NAMESPACE::ReadOptions()
+          ? g_tls_rdopt
           : *(reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(
                 jread_opts_handle));
 
