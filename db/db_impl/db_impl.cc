@@ -2392,8 +2392,7 @@ Status DBImpl::GetInst(const ReadOptions& read_options, const Slice& key,
       // Already calculated based on read_options.snapshot
       snapshot = get_impl_options.callback->max_visible_seq();
     } else {
-      snapshot =
-          reinterpret_cast<const SnapshotImpl*>(read_options.snapshot)->number_;
+      snapshot = static_cast<const SnapshotImpl*>(read_options.snapshot)->number_;
     }
   } else {
     // Note that the snapshot is assigned AFTER referencing the super
@@ -3436,8 +3435,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
       // Already calculated based on read_options.snapshot
       snapshot = callback->max_visible_seq();
     } else {
-      snapshot =
-          reinterpret_cast<const SnapshotImpl*>(read_options.snapshot)->number_;
+      snapshot = static_cast<const SnapshotImpl*>(read_options.snapshot)->number_;
     }
   } else {
     // Note that the snapshot is assigned AFTER referencing the super
@@ -4708,7 +4706,7 @@ void DBImpl::ReleaseSnapshot(const Snapshot* s) {
     // inplace_update_support enabled.
     return;
   }
-  const SnapshotImpl* casted_s = reinterpret_cast<const SnapshotImpl*>(s);
+  const SnapshotImpl* casted_s = static_cast<const SnapshotImpl*>(s);
   {
     InstrumentedMutexLock l(&mutex_);
     snapshots_.Delete(casted_s);
