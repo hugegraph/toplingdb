@@ -4495,6 +4495,14 @@ rocksdb_readoptions_t* rocksdb_readoptions_create() {
 
 void rocksdb_readoptions_destroy(rocksdb_readoptions_t* opt) { delete opt; }
 
+void rocksdb_readoptions_start_pin(rocksdb_readoptions_t* opt) {
+  return opt->rep.StartPin();
+}
+
+void rocksdb_readoptions_finish_pin(rocksdb_readoptions_t* opt) {
+  return opt->rep.FinishPin();
+}
+
 void rocksdb_readoptions_set_verify_checksums(rocksdb_readoptions_t* opt,
                                               unsigned char v) {
   opt->rep.verify_checksums = v;
