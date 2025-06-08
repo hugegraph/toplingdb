@@ -1816,6 +1816,13 @@ struct ReadOptions {
   // pin SuperVersion to enable zero copy on mmap SST
   void StartPin();
   void FinishPin();
+  class ScopePin {
+    ReadOptions* ro_;
+   public:
+    explicit ScopePin(ReadOptions* ro) : ro_(ro) { ro->StartPin(); }
+    explicit ScopePin(const ReadOptions* ro) : ScopePin((ReadOptions*)ro) {}
+    ~ScopePin() { ro_->FinishPin(); }
+  };
 
   ReadOptions() {}
   ReadOptions(bool _verify_checksums, bool _fill_cache);
