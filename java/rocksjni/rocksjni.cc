@@ -1102,8 +1102,7 @@ jint rocksdb_get_helper_direct(
   key += jkey_off;
   value += jval_off;
 
-  auto& mut_ro = const_cast<ROCKSDB_NAMESPACE::ReadOptions&>(read_options);
-  mut_ro.StartPin(); ROCKSDB_SCOPE_EXIT(mut_ro.FinishPin());
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&read_options);
 
   ROCKSDB_NAMESPACE::Slice key_slice(key, jkey_len);
 
@@ -1525,8 +1524,7 @@ jbyteArray rocksdb_get_helper(
     return nullptr;
   }
 
-  auto& mut_ro = const_cast<ROCKSDB_NAMESPACE::ReadOptions&>(read_opt);
-  mut_ro.StartPin(); ROCKSDB_SCOPE_EXIT(mut_ro.FinishPin());
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&read_opt);
 
   ROCKSDB_NAMESPACE::Slice key_slice(reinterpret_cast<char*>(key), jkey_len);
 
@@ -1657,8 +1655,7 @@ jint rocksdb_get_helper(
     return kStatusError;
   }
 
-  auto& mut_ro = const_cast<ROCKSDB_NAMESPACE::ReadOptions&>(read_options);
-  mut_ro.StartPin(); ROCKSDB_SCOPE_EXIT(mut_ro.FinishPin());
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&read_options);
 
   ROCKSDB_NAMESPACE::Slice key_slice(reinterpret_cast<char*>(key), jkey_len);
 
@@ -2005,8 +2002,7 @@ jobjectArray multi_get_helper(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
   size_t num = keys.size();
   std::vector<ROCKSDB_NAMESPACE::PinnableSlice> values(num);
   std::vector<ROCKSDB_NAMESPACE::Status> s(num);
-  auto& mut_ro = const_cast<ROCKSDB_NAMESPACE::ReadOptions&>(rOpt);
-  mut_ro.StartPin(); ROCKSDB_SCOPE_EXIT(mut_ro.FinishPin());
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&rOpt);
   if (auto uniq_cf = get_uniq_cf(db, cf_handles)) {
     db->MultiGet(rOpt, uniq_cf, num, keys.data(), values.data(), nullptr, s.data());
   } else {
@@ -2105,8 +2101,7 @@ void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
   }
 
   std::vector<ROCKSDB_NAMESPACE::Status> s(num_keys);
-  auto& mut_ro = const_cast<ROCKSDB_NAMESPACE::ReadOptions&>(rOpt);
-  mut_ro.StartPin(); ROCKSDB_SCOPE_EXIT(mut_ro.FinishPin());
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&rOpt);
   if (auto uniq_cf = get_uniq_cf(db, cf_handles)) {
     db->MultiGet(rOpt, uniq_cf, num_keys, keys.data(), values.data(), nullptr, s.data());
   } else {
