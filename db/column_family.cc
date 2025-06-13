@@ -114,8 +114,7 @@ void GetIntTblPropCollectorFactory(
   assert(int_tbl_prop_collector_factories);
 
   auto& collector_factories = ioptions.table_properties_collector_factories;
-  for (size_t i = 0; i < ioptions.table_properties_collector_factories.size();
-       ++i) {
+  for (size_t i = 0; i < collector_factories.size(); ++i) {
     assert(collector_factories[i]);
     int_tbl_prop_collector_factories->emplace_back(
         new UserKeyTablePropertiesCollectorFactory(collector_factories[i]));
