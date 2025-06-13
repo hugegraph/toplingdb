@@ -99,18 +99,12 @@ ColumnFamilyHandle* ColumnFamilyHandleImpl::CloneHandle() const {
   return new ColumnFamilyHandleImpl(cfd_, db_, mutex_);
 }
 
-uint32_t ColumnFamilyHandleInternal::GetID() const {
-  return internal_cfd_->GetID();
-}
-const std::string& ColumnFamilyHandleInternal::GetName() const {
-  return internal_cfd_->GetName();
-}
-const Comparator* ColumnFamilyHandleInternal::GetComparator() const {
-  return internal_cfd_->user_comparator();
+ColumnFamilyHandleInternal::~ColumnFamilyHandleInternal() {
+  cfd_ = nullptr; // skip cleaning up in ~ColumnFamilyHandleImpl()
 }
 ColumnFamilyHandle* ColumnFamilyHandleInternal::CloneHandle() const {
   auto p = new ColumnFamilyHandleInternal();
-  p->SetCFD(internal_cfd_);
+  p->SetCFD(cfd_);
   return p;
 }
 

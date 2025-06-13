@@ -169,7 +169,7 @@ class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
                          InstrumentedMutex* mutex);
   // destroy without mutex
   virtual ~ColumnFamilyHandleImpl();
-  virtual ColumnFamilyData* cfd() const override { return cfd_; }
+  virtual ColumnFamilyData* cfd() const final { return cfd_; }
 
   virtual uint32_t GetID() const override;
   virtual const std::string& GetName() const override;
@@ -177,7 +177,7 @@ class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
   virtual const Comparator* GetComparator() const override;
   virtual ColumnFamilyHandle* CloneHandle() const override;
 
- private:
+ protected:
   ColumnFamilyData* cfd_;
   DBImpl* db_;
   InstrumentedMutex* mutex_;
@@ -189,21 +189,13 @@ class ColumnFamilyHandleImpl : public ColumnFamilyHandle {
 // ColumnFamilyHandle (same as the client would need). In that case, we feed
 // MemTableInserter dummy ColumnFamilyHandle and enable it to call DBImpl
 // methods
-class ColumnFamilyHandleInternal : public ColumnFamilyHandleImpl {
+class ColumnFamilyHandleInternal final : public ColumnFamilyHandleImpl {
  public:
   ColumnFamilyHandleInternal()
-      : ColumnFamilyHandleImpl(nullptr, nullptr, nullptr),
-        internal_cfd_(nullptr) {}
-
-  void SetCFD(ColumnFamilyData* _cfd) { internal_cfd_ = _cfd; }
-  virtual ColumnFamilyData* cfd() const override { return internal_cfd_; }
-  uint32_t GetID() const final;
-  const std::string& GetName() const final;
-  const Comparator* GetComparator() const override;
+      : ColumnFamilyHandleImpl(nullptr, nullptr, nullptr) {}
+  ~ColumnFamilyHandleInternal();
+  void SetCFD(ColumnFamilyData* _cfd) { cfd_ = _cfd; }
   ColumnFamilyHandle* CloneHandle() const override;
-
- private:
-  ColumnFamilyData* internal_cfd_;
 };
 
 // holds references to memtable, all immutable memtables and version
