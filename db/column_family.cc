@@ -43,6 +43,11 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+ColumnFamilyData* ColumnFamilyHandle::cfd() const {
+    ROCKSDB_DIE("Unexpected");
+    return nullptr;
+}
+
 ColumnFamilyHandleImpl::ColumnFamilyHandleImpl(
     ColumnFamilyData* column_family_data, DBImpl* db, InstrumentedMutex* mutex)
     : cfd_(column_family_data), db_(db), mutex_(mutex) {

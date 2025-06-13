@@ -97,10 +97,7 @@ class ColumnFamilyHandle {
   // current handle.
   virtual const Comparator* GetComparator() const = 0;
 
-  virtual class ColumnFamilyData* cfd() const {
-    ROCKSDB_DIE("Unexpected");
-    return nullptr;
-  }
+  virtual class ColumnFamilyData* cfd() const;
   virtual ColumnFamilyHandle* CloneHandle() const = 0;
 };
 
