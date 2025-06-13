@@ -30,6 +30,8 @@
 #include "util/thread_local.h"
 
 #include <terark/fixed_circular_queue.hpp>
+#include <terark/util/vec_idx_map.hpp>
+
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -763,7 +765,7 @@ class ColumnFamilySet {
   // 1. DB mutex locked
   // 2. accessed from a single-threaded write thread
   UnorderedMap<std::string, uint32_t> column_families_;
-  UnorderedMap<uint32_t, ColumnFamilyData*> column_family_data_;
+  terark::VectorIndexMap<uint32_t, ColumnFamilyData*> column_family_data_;
 
   // Mutating / reading `running_ts_sz_` and `ts_sz_for_record_` follow
   // the same requirements as `column_families_` and `column_family_data_`.
