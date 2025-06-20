@@ -2966,7 +2966,7 @@ ifeq ($(STRIP_DEBUG_INFO),1)
 	$(AM_V_at)strip java/target/*.so
 endif
 	$(AM_V_at)cd java; $(JAR_CMD) -cf target/$(ROCKSDB_JAR) HISTORY*.md
-ifeq (0,1) # skip
+ifeq (${ROCKSDB_JAR_WITH_DYNAMIC_LIBS},1)
 	$(AM_V_at)cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR) *.so
 endif
 	$(AM_V_at)cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR) style.css index.html
