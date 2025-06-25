@@ -1262,6 +1262,12 @@ util/build_version.cc: $(filter-out $(OBJ_DIR)/util/build_version.o, $(LIB_OBJEC
 endif
 CLEAN_FILES += util/build_version.cc
 
+$(OBJ_DIR)/util/build_version_rough_build_time.cc: \
+		   util/build_version.cc.in $(filter-out util/build_version.cc, $(LIB_SOURCES))
+	$(AM_V_GEN)mkdir -p $(dir $@)
+	$(AM_V_GEN)rm -f $@-t
+	$(AM_V_at)$(gen_build_version) > $@
+
 default: all
 
 #-----------------------------------------------
@@ -3240,7 +3246,7 @@ endif
 
 ${OBJ_DIR}/sideplugin/rockside/src/topling/web/civetweb.o: CFLAGS += -DUSE_ZLIB
 
-rust-support: $(filter-out util/build_version.cc, ${LIB_SOURCES})
+rust-support: $(filter-out util/build_version.cc, ${LIB_SOURCES}) $(OBJ_DIR)/util/build_version_rough_build_time.cc
 	rm -f rust-rocksdb-src.txt
 	rm -f rust-rocksdb-cxxflags.txt
 	echo sideplugin/rockside/src/topling/web/civetweb.c >> rust-rocksdb-src.txt
