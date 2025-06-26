@@ -1907,6 +1907,10 @@ extern ROCKSDB_LIBRARY_API void rocksdb_readoptions_start_pin(
     rocksdb_readoptions_t*);
 extern ROCKSDB_LIBRARY_API void rocksdb_readoptions_finish_pin(
     rocksdb_readoptions_t*);
+extern ROCKSDB_LIBRARY_API void rocksdb_readoptions_set_async_queue_depth(
+    rocksdb_readoptions_t*, size_t);
+extern ROCKSDB_LIBRARY_API size_t rocksdb_readoptions_get_async_queue_depth(
+    rocksdb_readoptions_t*);
 extern ROCKSDB_LIBRARY_API void rocksdb_readoptions_set_verify_checksums(
     rocksdb_readoptions_t*, unsigned char);
 extern ROCKSDB_LIBRARY_API unsigned char

@@ -4503,6 +4503,14 @@ void rocksdb_readoptions_finish_pin(rocksdb_readoptions_t* opt) {
   return opt->rep.FinishPin();
 }
 
+void rocksdb_readoptions_set_async_queue_depth(rocksdb_readoptions_t* opt, size_t v) {
+  v = std::min(v, (size_t)1024);
+  opt->rep.async_queue_depth = v;
+}
+size_t rocksdb_readoptions_get_async_queue_depth(rocksdb_readoptions_t* opt) {
+  return opt->rep.async_queue_depth;
+}
+
 void rocksdb_readoptions_set_verify_checksums(rocksdb_readoptions_t* opt,
                                               unsigned char v) {
   opt->rep.verify_checksums = v;
