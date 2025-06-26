@@ -7,6 +7,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
+#define ROCKSDB_C_API_IMPLEMENTATION
+
 #include "rocksdb/c.h"
 
 #include <cstdlib>
@@ -136,6 +138,7 @@ using std::unordered_set;
 using std::vector;
 
 extern "C" {
+using rocksdb_slice_t = Slice;
 
 struct rocksdb_t {
   DB* rep;
@@ -1952,6 +1955,19 @@ const char* rocksdb_iter_timestamp(const rocksdb_iterator_t* iter,
 
 void rocksdb_iter_get_error(const rocksdb_iterator_t* iter, char** errptr) {
   SaveError(errptr, iter->rep->status());
+}
+
+ROCKSDB_LIBRARY_API
+rocksdb_slice_t rocksdb_iter_key_fast(const rocksdb_iterator_t* iter) {
+  return iter->rep->key();
+}
+ROCKSDB_LIBRARY_API
+rocksdb_slice_t rocksdb_iter_value_fast(const rocksdb_iterator_t* iter) {
+  return iter->rep->value();
+}
+ROCKSDB_LIBRARY_API
+rocksdb_slice_t rocksdb_iter_timestamp_fast(const rocksdb_iterator_t* iter) {
+  return iter->rep->timestamp();
 }
 
 rocksdb_writebatch_t* rocksdb_writebatch_create() {

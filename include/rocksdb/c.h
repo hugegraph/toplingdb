@@ -142,6 +142,14 @@ typedef struct rocksdb_statistics_histogram_data_t
 typedef struct rocksdb_wait_for_compact_options_t
     rocksdb_wait_for_compact_options_t;
 
+#if !defined(ROCKSDB_C_API_IMPLEMENTATION)
+struct rocksdb_slice_t {
+  const char* data;
+  size_t size;
+};
+typedef struct rocksdb_slice_t rocksdb_slice_t;
+#endif
+
 /* DB operations */
 
 extern ROCKSDB_LIBRARY_API rocksdb_t* rocksdb_open(
@@ -727,6 +735,15 @@ extern ROCKSDB_LIBRARY_API const char* rocksdb_iter_timestamp(
     const rocksdb_iterator_t*, size_t* tslen);
 extern ROCKSDB_LIBRARY_API void rocksdb_iter_get_error(
     const rocksdb_iterator_t*, char** errptr);
+
+#if !defined(ROCKSDB_C_API_IMPLEMENTATION)
+extern ROCKSDB_LIBRARY_API rocksdb_slice_t rocksdb_iter_key_fast(
+    const rocksdb_iterator_t*);
+extern ROCKSDB_LIBRARY_API rocksdb_slice_t rocksdb_iter_value_fast(
+    const rocksdb_iterator_t*);
+extern ROCKSDB_LIBRARY_API rocksdb_slice_t rocksdb_iter_timestamp_fast(
+    const rocksdb_iterator_t*);
+#endif
 
 extern ROCKSDB_LIBRARY_API void rocksdb_wal_iter_next(
     rocksdb_wal_iterator_t* iter);
