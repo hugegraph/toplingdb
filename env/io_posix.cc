@@ -1357,6 +1357,7 @@ IOStatus PosixWritableFile::Appendv(const Slice* parts, size_t num,
     // not written all data, for simple, write remaining parts one by one
     ssize_t sum = 0;
     for (size_t i = 0; i < num; i++) {
+      TOPLING_GCC_NOLINT(-Wignored-qualifiers);
       auto cur_len = (const ssize_t)pvec[i].iov_len;
       auto cur_ptr = (const char * )pvec[i].iov_base;
       if (sum + cur_len > done) {
