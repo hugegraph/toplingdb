@@ -71,6 +71,9 @@ class ArenaWrappedDBIter final : public Iterator {
   }
   void Next() override { db_iter_->Next(); }
   void Prev() override { db_iter_->Prev(); }
+  Slice NextWithKey() override { return db_iter_->NextWithKey(); }
+  Slice PrevWithKey() override { return db_iter_->PrevWithKey(); }
+
   ROCKSDB_FLATTEN
   Slice key() const override { return db_iter_->key(); }
   ROCKSDB_FLATTEN

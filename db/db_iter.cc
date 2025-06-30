@@ -221,6 +221,11 @@ void DBIter::Next() {
   }
 }
 
+ROCKSDB_FLATTEN
+Slice DBIter::NextWithKey() { return IterNextWithKeyImpl(this); }
+ROCKSDB_FLATTEN
+Slice DBIter::PrevWithKey() { return IterPrevWithKeyImpl(this); }
+
 bool DBIter::SetBlobValueIfNeeded(const Slice& user_key,
                                   const Slice& blob_index) {
   assert(!is_blob_);

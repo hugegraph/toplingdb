@@ -33,6 +33,9 @@ Status Iterator::RefreshKeepSnapshot(bool keep_iter_pos) {
   return Refresh(reinterpret_cast<Snapshot*>(KEEP_SNAPSHOT), keep_iter_pos);
 }
 
+Slice Iterator::NextWithKey() { return IterNextWithKeyImpl(this); }
+Slice Iterator::PrevWithKey() { return IterPrevWithKeyImpl(this); }
+
 ArenaWrappedDBIter::ArenaWrappedDBIter() {
   // do nothing
 }

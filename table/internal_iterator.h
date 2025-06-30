@@ -19,6 +19,29 @@ namespace ROCKSDB_NAMESPACE {
 
 class PinnedIteratorsManager;
 
+// Helper functions to implement Iterator::NextWithKey/PrevWithKey,
+// calling these two functions in ConcreteIterator need not virtual
+// call to Next()/Prev() and Valid(), key() because they are `final`
+// in ConcreteIterator.
+template<class ConcreteIterator>
+__always_inline Slice IterNextWithKeyImpl(ConcreteIterator* iter) {
+  assert(iter->Valid());
+  iter->Next();
+  if (LIKELY(iter->Valid()))
+    return iter->key();
+  else
+    return Slice(nullptr, 0);
+}
+template<class ConcreteIterator>
+__always_inline Slice IterPrevWithKeyImpl(ConcreteIterator* iter) {
+  assert(iter->Valid());
+  iter->Prev();
+  if (LIKELY(iter->Valid()))
+    return iter->key();
+  else
+    return Slice(nullptr, 0);
+}
+
 enum class IterBoundCheck : unsigned char {
   kUnknown = 0,
   kOutOfBound,
