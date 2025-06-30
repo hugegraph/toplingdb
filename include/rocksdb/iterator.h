@@ -154,6 +154,10 @@ class Iterator : public Cleanable {
 
   virtual Slice NextWithKey();
   virtual Slice PrevWithKey();
+  Slice SeekToFirstWithKey();
+  Slice SeekToLastWithKey();
+  Slice SeekWithKey(const Slice& target);
+  Slice SeekForPrevWithKey(const Slice& target);
 };
 
 // Return an empty iterator (yields nothing).
