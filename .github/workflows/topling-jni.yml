@@ -24,7 +24,7 @@ on:
 jobs:
   build:
     # refer https://github.com/actions/runner-images to get the details
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
       GCC_VER: "11.3" # TODO: better get from the 'gcc --version'
       GITHUB_TOKEN: ${{ github.token }}
