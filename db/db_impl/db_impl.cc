@@ -639,23 +639,6 @@ Status DBImpl::MaybeReleaseTimestampedSnapshotsAndCheck() {
 }
 
 Status DBImpl::CloseHelper() {
- #if defined(ROCKSDB_UNIT_TEST)
-  bool DefaultFlushOnClose = false; // to not break unit tests
- #else
-  bool DefaultFlushOnClose = true;
- #endif
-  if (terark::getEnvBool("TOPLINGDB_FLUSH_ON_CLOSE", DefaultFlushOnClose)) {
-    ROCKS_LOG_INFO(immutable_db_options_.info_log,
-        "TOPLINGDB_FLUSH_ON_CLOSE is true, memtable_as_log_index is %s",
-        immutable_db_options_.memtable_as_log_index ? "true" : "false");
-    if (immutable_db_options_.memtable_as_log_index) {
-      // If memtable_as_log_index is true, flush is very fast, typically
-      // in several milliseconds, so we do flush on close by default.
-      FlushAllColumnFamilies(FlushOptions(), FlushReason::kFlushOnCloseDB);
-    }
-    return Status::OK();
-  }
-
   // Guarantee that there is no background error recovery in progress before
   // continuing with the shutdown
   mutex_.Lock();

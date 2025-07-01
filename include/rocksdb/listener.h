@@ -180,8 +180,7 @@ ROCKSDB_ENUM_CLASS(FlushReason, int,
   kErrorRecoveryRetryFlush = 0xc,
   kWalFull = 0xd,
   // SwitchMemtable will not be called for this flush reason.
-  kCatchUpAfterErrorRecovery = 0xe,
-  kFlushOnCloseDB = 0xf
+  kCatchUpAfterErrorRecovery = 0xe
 );
 
 const char* GetFlushReasonString(FlushReason flush_reason);
