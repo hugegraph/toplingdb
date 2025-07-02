@@ -2,6 +2,23 @@
 ## ToplingDB: A Persistent Key-Value Store for External Storage
 ToplingDB is developed and maintained by [Topling Inc](https://topling.cn). It is built with [RocksDB](https://github.com/facebook/rocksdb). See [ToplingDB Branch Name Convention](https://github.com/topling/toplingdb/wiki/ToplingDB-Branch-Name-Convention).
 
+## Quick Start
+ToplingDB requires C++17, gcc 8.3 or newer is recommended, clang also works.
+
+ToplingDB is much faster than RocksDB, you can try it by yourself:
+### Compile & run db_bench
+```bash
+sudo yum -y install git libaio-devel gcc-c++ gflags-devel zlib-devel bzip2-devel libcurl-devel liburing-devel snappy-devel jemalloc-devel
+#sudo apt-get update -y && sudo apt-get install -y libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev libbz2-dev libcurl4-gnutls-dev liburing-dev libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
+git clone https://github.com/topling/toplingdb
+cd toplingdb
+make -j`nproc` db_bench DEBUG_LEVEL=0
+sudo make install PREFIX=/some/path # default is /usr/local
+```
+
+After compile, you can run bundled [db_bench.sh](db_bench.sh)(use port 2011 for [embeded http server](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4)).
+
+## Introduction
 ToplingDB's submodule **[rockside](https://github.com/topling/rockside)** is the entry point of ToplingDB, see **[SidePlugin wiki](https://github.com/topling/rockside/wiki)**.
 
 ToplingDB has much more key features than RocksDB:
@@ -9,6 +26,7 @@ ToplingDB has much more key features than RocksDB:
 1. [Embedded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to view almost all DB info on web, this is a component of [SidePlugin](https://github.com/topling/rockside/wiki)
 1. [Embedded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to [online change](https://github.com/topling/rockside/wiki/Online-Change-Options) db/cf options and all db meta objects(such as MemTabFactory, TableFactory, WriteBufferManager ...) without restart the running process
 1. Many improvements and refactories on RocksDB, aimed for performance and extendibility
+1. memtable as wal log index, omit Flush MemTable to L0, reduce write amp, further improves for large MemTable
 1. Topling transaction lock management, 5x faster than rocksdb
 1. MultiGet with concurrent IO by fiber/coroutine + io_uring, much faster than RocksDB's async MultiGet
 1. Topling [de-virtualization](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Principle), de-virtualize hotspot (virtual) functions, and key prefix caches, [bechmarks](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Benchmark)
@@ -56,30 +74,6 @@ toplingdb
 
 To simplify the compiling, repo**s** are auto cloned in ToplingDB's Makefile, community users will auto clone public repo successfully but fail to auto clone **private** repo, thus ToplingDB is built without **private** components, this is so called **community** version.
 
-## Run db_bench
-ToplingDB requires C++17, gcc 8.3 or newer is recommended, clang also works.
-
-Even without ToplingZipTable, ToplingDB is much faster than upstream RocksDB:
-```bash
-sudo yum -y install git libaio-devel gcc-c++ gflags-devel zlib-devel bzip2-devel libcurl-devel liburing-devel snappy-devel jemalloc-devel
-#sudo apt-get update -y && sudo apt-get install -y libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev libbz2-dev libcurl4-gnutls-dev liburing-dev libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
-git clone https://github.com/topling/toplingdb
-cd toplingdb
-make -j`nproc` db_bench DEBUG_LEVEL=0
-cp sideplugin/rockside/src/topling/web/{style.css,index.html} ${/path/to/dbdir}
-cp sideplugin/rockside/sample-conf/db_bench_*.yaml .
-export LD_LIBRARY_PATH=`find sideplugin -name lib_shared`
-# change db_bench_community.yaml as your needs
-# 1. use default path(/dev/shm) if you have no fast disk(such as a cloud server)
-# 2. change max_background_compactions to your cpu core num
-# 3. if you have github repo topling-rocks permissions, you can use db_bench_enterprise.yaml
-# 4. use db_bench_community.yaml is faster than upstream RocksDB
-# 5. use db_bench_enterprise.yaml is much faster than db_bench_community.yaml
-# command option -json can accept json and yaml files, here use yaml file for more human readable
-./db_bench -json=db_bench_community.yaml -num=10000000 -disable_wal=true -value_size=20 -benchmarks=fillrandom,readrandom -batch_size=10
-# you can access http://127.0.0.1:2011 to see webview
-# you can see this db_bench is much faster than RocksDB
-```
 ## Configurable features
 For performance and simplicity, ToplingDB disabled some RocksDB features by default:
 
@@ -89,8 +83,6 @@ Dynamic creation of ColumnFamily | ROCKSDB_DYNAMIC_CREATE_CF
 User level timestamp on key | TOPLINGDB_WITH_TIMESTAMP
 Wide Columns | TOPLINGDB_WITH_WIDE_COLUMNS
 fabricated features for read | TOPLINGDB_WITH_FABRICATED_COMPLEXITY
-
-**Note**: Dynamic creation of ColumnFamily is not supported by SidePlugin
 
 To enable these features, add `-D${MACRO_NAME}` to var `EXTRA_CXXFLAGS`, such as build ToplingDB for java with dynamic ColumnFamily:
 ```

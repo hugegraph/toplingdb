@@ -1,6 +1,23 @@
 ## ToplingDB: 一个外存上的持久化 Key-Value 存储引擎
 ToplingDB 由[北京拓扑岭科技有限公司](https://topling.cn)开发与维护，从 [RocksDB](https://github.com/facebook/rocksdb) 分叉而来，详情参考 [ToplingDB 分支名称约定](https://github.com/topling/toplingdb/wiki/ToplingDB-Branch-Name-Convention)。
 
+## 快速开始
+ToplingDB 需要 C++17，推荐 gcc 8.3 以上，或者 clang 也行。
+
+ToplingDB 比 RocksDB 快得多，您可以自己快速验证：
+### Compile & run db_bench
+```bash
+sudo yum -y install git libaio-devel gcc-c++ gflags-devel zlib-devel bzip2-devel libcurl-devel liburing-devel snappy-devel jemalloc-devel
+#sudo apt-get update -y && sudo apt-get install -y libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev libbz2-dev libcurl4-gnutls-dev liburing-dev libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
+git clone https://github.com/topling/toplingdb
+cd toplingdb
+make -j`nproc` db_bench DEBUG_LEVEL=0
+sudo make install PREFIX=/some/path # default is /usr/local
+```
+
+以上编译命令执行后，运行 [db_bench.sh](db_bench.sh)(确保端口 2011 可用，[内嵌的 http 服务](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4)需要)。
+
+## 简单介绍
 ToplingDB 的子模块 **[rockside](https://github.com/topling/rockside)** 是 ToplingDB 的入口，详情参考 **[SidePlugin wiki](https://github.com/topling/rockside/wiki)**。
 
 ToplingDB 兼容 RocksDB API 的同时，增加了很多非常重要的功能与改进：
@@ -8,6 +25,7 @@ ToplingDB 兼容 RocksDB API 的同时，增加了很多非常重要的功能与
 1. [内嵌 Http](https://github.com/topling/rockside/wiki/WebView) 让用户可以通过 Web 查看几乎所有 DB 信息，这是 [SidePlugin](https://github.com/topling/rockside/wiki) 的一个子功能
 1. [内嵌 Http](https://github.com/topling/rockside/wiki/WebView) 让用户可以无需重启进程，[在线修改](https://github.com/topling/rockside/wiki/Online-Change-Options) 各种 db/cf 配置，包括修改 DB 元对象（例如 MemTabFactory, TableFactory, WriteBufferManager ...）
 1. 为提升性能和可扩展性而实施的很多重构与改进，例如 MemTable 的重构
+1. MemTable 可作为 WAL 的索引，消除 MemTable 到 L0 SST 的 Flush，减小写放大，对大尺寸 MemTable 很友好
 1. 对事务处理的改进，特别是 TransactionDB 中 Lock 的管理，热点代码有 5x 以上的性能提升
 1. MultiGet 中使用 fiber/coroutine + io_uring 实现了并发 IO，比 RocksDB 自身的异步 MultiGet 又快又简洁，相应的代码量要少 100 倍不止
 1. [去虚拟化](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Principle)，消除热点代码中的虚函数调用（主要是 Comparator），并且增加了 Key 前缀缓存，参考相应 [bechmarks](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Benchmark)
@@ -52,30 +70,6 @@ toplingdb
 
 为了简化编译流程，ToplingDB 在 Makefile 中会自动 clone 各个组件的 github 仓库，社区版用户可以成功 clone 公开的仓库，但克隆私有仓库（例如 topling-rocks）会失败，所以社区版用户编译出来的 ToplingDB 无法创建 Topling**Zip**Table，但可以读取 Topling**Zip**Table。
 
-## 运行 db_bench
-ToplingDB 需要 C++17，推荐 gcc 8.3 以上，或者 clang 也行。
-
-即便没有 Topling**Zip**Table，ToplingDB 也比 RocksDB 要快得多，您可以通过运行 db_bench 来验证性能：
-```bash
-sudo yum -y install git libaio-devel gcc-c++ gflags-devel zlib-devel bzip2-devel libcurl-devel liburing-devel
-#sudo apt-get update -y && sudo apt-get install -y libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev libbz2-dev libcurl4-gnutls-dev liburing-dev libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
-git clone https://github.com/topling/toplingdb
-cd toplingdb
-make -j`nproc` db_bench DEBUG_LEVEL=0
-cp sideplugin/rockside/src/topling/web/{style.css,index.html} ${/path/to/dbdir}
-cp sideplugin/rockside/sample-conf/db_bench_*.yaml .
-export LD_LIBRARY_PATH=`find sideplugin -name lib_shared`
-# change db_bench_community.yaml as your needs
-# 1. use default path(/dev/shm) if you have no fast disk(such as a cloud server)
-# 2. change max_background_compactions to your cpu core num
-# 3. if you have github repo topling-rocks permissions, you can use db_bench_enterprise.yaml
-# 4. use db_bench_community.yaml is faster than upstream RocksDB
-# 5. use db_bench_enterprise.yaml is much faster than db_bench_community.yaml
-# command option -json can accept json and yaml files, here use yaml file for more human readable
-./db_bench -json=db_bench_community.yaml -num=10000000 -disable_wal=true -value_size=20 -benchmarks=fillrandom,readrandom -batch_size=10
-# you can access http://127.0.0.1:2011 to see webview
-# you can see this db_bench is much faster than RocksDB
-```
 ## 可配置的功能
 为了性能和简化，ToplingDB 默认禁用了一些 RocksDB 的功能：
 
@@ -85,8 +79,6 @@ export LD_LIBRARY_PATH=`find sideplugin -name lib_shared`
 用户层 timestamp | TOPLINGDB_WITH_TIMESTAMP
 宽列 | TOPLINGDB_WITH_WIDE_COLUMNS
 华而不实的功能 | TOPLINGDB_WITH_FABRICATED_COMPLEXITY
-
-**注意**: SidePlugin 暂不支持动态创建 ColumnFamily，混用 SidePlugin 和动态创建 ColumnFamily时，动态创建的 ColumnFamily 不能在 Web 中展示
 
 为了启用这些功能，需要为 make 命令显式添加 `EXTRA_CXXFLAGS="-D${MACRO_1} -D${MACRO_2} ..."`，例如编译带动态创建 ColumnFamily 的 rocksdbjava:
 ```
