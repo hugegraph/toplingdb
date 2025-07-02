@@ -23,17 +23,17 @@ ToplingDB's submodule **[rockside](https://github.com/topling/rockside)** is the
 
 ToplingDB has much more key features than RocksDB:
 1. [SidePlugin](https://github.com/topling/rockside/wiki) enables users to write a json(or yaml) to define DB configs
-1. [Embedded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to view almost all DB info on web, this is a component of [SidePlugin](https://github.com/topling/rockside/wiki)
-1. [Embedded Http Server](https://github.com/topling/rockside/wiki/WebView) enables users to [online change](https://github.com/topling/rockside/wiki/Online-Change-Options) db/cf options and all db meta objects(such as MemTabFactory, TableFactory, WriteBufferManager ...) without restart the running process
+1. [Embedded Http Server](https://github.com/topling/sideplugin-wiki-en/wiki/WebView) enables users to view almost all DB info on web, this is a component of [SidePlugin](https://github.com/topling/rockside/wiki)
+1. [Embedded Http Server](https://github.com/topling/sideplugin-wiki-en/wiki/WebView) enables users to [online change](https://github.com/topling/sideplugin-wiki-en/wiki/Online-Change-Options) db/cf options and all db meta objects(such as MemTabFactory, TableFactory, WriteBufferManager ...) without restart the running process
 1. Many improvements and refactories on RocksDB, aimed for performance and extendibility
 1. memtable as wal log index, omit Flush MemTable to L0, reduce write amp, further improves for large MemTable
 1. Topling transaction lock management, 5x faster than rocksdb
 1. MultiGet with concurrent IO by fiber/coroutine + io_uring, much faster than RocksDB's async MultiGet
-1. Topling [de-virtualization](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Principle), de-virtualize hotspot (virtual) functions, and key prefix caches, [bechmarks](https://github.com/topling/rockside/wiki/Devirtualization-And-Key-Prefix-Cache-Benchmark)
+1. Topling [de-virtualization](https://github.com/topling/sideplugin-wiki-en/wiki/Devirtualization-And-Key-Prefix-Cache-Principle), de-virtualize hotspot (virtual) functions, and key prefix caches, [bechmarks](https://github.com/topling/sideplugin-wiki-en/wiki/Devirtualization-And-Key-Prefix-Cache-Benchmark)
 1. Topling zero copy for point search(Get/MultiGet) and Iterator
 1. Topling memtable as log index, omit memtable flush to L0
 1. Builtin SidePlugin**s** for existing RocksDB components(Cache, Comparator, TableFactory, MemTableFactory...)
-1. Builtin Prometheus metrics support, this is based on [Embedded Http Server](https://github.com/topling/rockside/wiki/WebView)
+1. Builtin Prometheus metrics support, this is based on [Embedded Http Server](https://github.com/topling/sideplugin-wiki-en/wiki/WebView)
 1. Many bugfixes for RocksDB, a small part of such fixes was [Pull Requested](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet) to [upstream RocksDB](https://github.com/facebook/rocksdb)
 
 ## ToplingDB cloud native DB services
@@ -67,9 +67,9 @@ toplingdb
 [rockside](https://github.com/topling/rockside) | public | This is a submodule, contains:<ul><li>SidePlugin framework and Builtin SidePlugin**s**</li><li>Embedded Http Server and Prometheus metrics</li></ul>
 [cspp-wbwi<br>(**W**rite**B**atch**W**ith**I**ndex)](https://github.com/topling/cspp-wbwi) | public | With CSPP and carefully coding, **CSPP_WBWI** is 20x faster than rocksdb SkipList based WBWI
 [cspp-memtable](https://github.com/topling/cspp-memtable) | public | (**CSPP** is **C**rash **S**afe **P**arallel **P**atricia trie) MemTab, which outperforms SkipList on all aspects: 3x lower memory usage, 7x single thread performance, perfect multi-thread scaling)
-[topling-sst](https://github.com/topling/topling-sst) | public | 1. [SingleFastTable](https://github.com/topling/rockside/wiki/SingleFastTable)(designed for L0 and L1)<br/> 2. VecAutoSortTable(designed for MyTopling bulk_load).<br/> 3. Deprecated [ToplingFastTable](https://github.com/topling/rockside/wiki/ToplingFastTable), CSPPAutoSortTable
+[topling-sst](https://github.com/topling/topling-sst) | public | 1. [SingleFastTable](https://github.com/topling/sideplugin-wiki-en/wiki/SingleFastTable)(designed for L0 and L1)<br/> 2. VecAutoSortTable(designed for MyTopling bulk_load).<br/> 3. Deprecated [ToplingFastTable](https://github.com/topling/sideplugin-wiki-en/wiki/ToplingFastTable), CSPPAutoSortTable
 [topling-dcompact](https://github.com/topling/topling-dcompact) | public | Distributed Compaction with general dcompact_worker application, offload compactions to elastic computing clusters, much more powerful than RocksDB's Remote Compaction
-[topling-rocks](https://github.com/topling/topling-rocks) | **private** | For build [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable), an SST implementation optimized for RAM and SSD space, aimed for L2+ level compaction, which uses topling dedicated searchable in-memory data compression algorithms
+[topling-rocks](https://github.com/topling/topling-rocks) | **private** | For build [Topling**Zip**Table](https://github.com/topling/sideplugin-wiki-en/wiki/ToplingZipTable), an SST implementation optimized for RAM and SSD space, aimed for L2+ level compaction, which uses topling dedicated searchable in-memory data compression algorithms
 [topling-zip_table_reader](https://github.com/topling/topling-zip_table_reader) | public | For read Topling**Zip**Table by community users, builder of Topling**Zip**Table is in [topling-rocks](https://github.com/topling/topling-rocks)
 
 To simplify the compiling, repo**s** are auto cloned in ToplingDB's Makefile, community users will auto clone public repo successfully but fail to auto clone **private** repo, thus ToplingDB is built without **private** components, this is so called **community** version.
