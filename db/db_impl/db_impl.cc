@@ -2047,7 +2047,6 @@ InternalIterator* DBImpl::NewInternalIterator(
           super_version->mutable_cf_options.prefix_extractor != nullptr,
       read_options.iterate_upper_bound);
   // Collect iterator for mutable memtable
-  auto mem_iter = super_version->mem->NewIterator(read_options, arena);
   Status s;
   if (!read_options.ignore_range_deletions) {
     TruncatedRangeDelIterator* mem_tombstone_iter = nullptr;
@@ -2061,9 +2060,13 @@ InternalIterator* DBImpl::NewInternalIterator(
           &cfd->ioptions()->internal_comparator, nullptr /* smallest */,
           nullptr /* largest */);
     }
+    auto mem_iter = super_version->mem->NewIterator(read_options, arena);
     merge_iter_builder.AddPointAndTombstoneIterator(mem_iter,
                                                     mem_tombstone_iter);
+  } else if (super_version->mem->IsEmpty()) {
+    // do nothing
   } else {
+    auto mem_iter = super_version->mem->NewIterator(read_options, arena);
     merge_iter_builder.AddIterator(mem_iter);
   }
 
@@ -2086,6 +2089,10 @@ InternalIterator* DBImpl::NewInternalIterator(
         this, &mutex_, super_version,
         read_options.background_purge_on_iterator_cleanup ||
             immutable_db_options_.avoid_unnecessary_blocking_io);
+    if (internal_iter == nullptr) {
+      //internal_iter = NewEmptyInternalIterator(); // can not use arena
+      internal_iter = super_version->mem->NewIterator(read_options, arena);
+    }
     internal_iter->RegisterCleanup(CleanupSuperVersionHandle, cleanup, nullptr);
 
     return internal_iter;
