@@ -306,14 +306,7 @@ class DBIter final : public Iterator {
     }
   }
 
-  inline void ClearSavedValue() {
-    if (saved_value_.capacity() > 1048576) {
-      std::string empty;
-      swap(empty, saved_value_);
-    } else {
-      saved_value_.clear();
-    }
-  }
+  inline void ClearSavedValue();
 
   inline void ResetInternalKeysSkippedCounter() {
     local_stats_.skip_count_ += num_internal_keys_skipped_;

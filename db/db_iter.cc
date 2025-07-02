@@ -161,6 +161,38 @@ bool DBIter::ParseKey(ParsedInternalKey* ikey) {
 #endif
 }
 
+#if defined(__GLIBCXX__)
+void string_clear_no_touch_memory(std::string*);
+template <typename Money_t, Money_t std::string::* p>
+struct string_clear_thief {
+  __always_inline friend void string_clear_no_touch_memory(std::string* s) {
+    (s->*p)(0); // do not set string trailing zero
+  }
+};
+template struct string_clear_thief<void(std::string::size_type),
+               &std::string::_M_length>;
+#else
+__always_inline void string_clear_no_touch_memory(std::string* s) {
+  s->clear();
+}
+#endif
+
+__always_inline void DBIter::ClearSavedValue() {
+#if 1
+  string_clear_no_touch_memory(&saved_value_);
+  if (UNLIKELY(saved_value_.capacity() > 1048576)) {
+    saved_value_.shrink_to_fit();
+  }
+#else
+  if (UNLIKELY(saved_value_.capacity() > 1048576)) {
+    saved_value_.clear();
+    saved_value_.shrink_to_fit();
+  } else {
+    string_clear_no_touch_memory(&saved_value_);
+  }
+#endif
+}
+
 ROCKSDB_FLATTEN
 void DBIter::Next() {
   assert(valid_);
