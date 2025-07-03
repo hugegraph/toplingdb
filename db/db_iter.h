@@ -349,6 +349,9 @@ class DBIter final : public Iterator {
   bool SetBlobValueIfNeeded(const Slice& user_key, const Slice& blob_index);
 
   void ResetBlobValue() {
+    if (!is_blob_) {
+      return;
+    }
     is_blob_ = false;
     blob_value_.Reset();
   }
