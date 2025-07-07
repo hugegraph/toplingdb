@@ -1641,6 +1641,24 @@ int main(int argc, char** argv) {
     }
 
     {
+      const rocksdb_slice_t batched_keys[4] = {{"box", 3}, {"buff", 4}, {"barfooxx", 8}, {"box", 3}};
+      const char* expected_value[4] = {"c", "rocksdb", NULL, "c"};
+      char* batched_errs[4];
+
+      rocksdb_pinnableslice_t* pvals[4];
+      rocksdb_batched_multi_get_cf_fast(db, roptions, handles[1], 4, batched_keys,
+                                        pvals, batched_errs, false);
+      const char* val;
+      size_t val_len;
+      for (i = 0; i < 4; ++i) {
+        val = rocksdb_pinnableslice_value(pvals[i], &val_len);
+        CheckNoError(batched_errs[i]);
+        CheckEqual(expected_value[i], val, val_len);
+        rocksdb_pinnableslice_destroy(pvals[i]);
+      }
+    }
+
+    {
       unsigned char value_found = 0;
 
       CheckCondition(!rocksdb_key_may_exist(db, roptions, "invalid_key", 11,

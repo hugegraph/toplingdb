@@ -579,6 +579,14 @@ extern ROCKSDB_LIBRARY_API void rocksdb_batched_multi_get_cf(
     const char* const* keys_list, const size_t* keys_list_sizes,
     rocksdb_pinnableslice_t** values, char** errs, const bool sorted_input);
 
+#if !defined(ROCKSDB_C_API_IMPLEMENTATION)
+extern ROCKSDB_LIBRARY_API void rocksdb_batched_multi_get_cf_fast(
+    rocksdb_t* db, const rocksdb_readoptions_t* options,
+    rocksdb_column_family_handle_t* column_family, size_t num_keys,
+    const rocksdb_slice_t* keys_list,
+    rocksdb_pinnableslice_t** values, char** errs, const bool sorted_input);
+#endif
+
 // The value is only allocated (using malloc) and returned if it is found and
 // value_found isn't NULL. In that case the user is responsible for freeing it.
 extern ROCKSDB_LIBRARY_API unsigned char rocksdb_key_may_exist(

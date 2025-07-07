@@ -1556,6 +1556,37 @@ void rocksdb_batched_multi_get_cf(rocksdb_t* db,
   delete[] statuses;
 }
 
+ROCKSDB_LIBRARY_API
+void rocksdb_batched_multi_get_cf_fast(rocksdb_t* db,
+                                  const rocksdb_readoptions_t* options,
+                                  rocksdb_column_family_handle_t* column_family,
+                                  size_t num_keys, const rocksdb_slice_t* keys_list,
+                                  rocksdb_pinnableslice_t** values, char** errs,
+                                  const bool sorted_input) {
+  PinnableSlice* value_slices = new PinnableSlice[num_keys];
+  Status* statuses = new Status[num_keys];
+
+  db->rep->MultiGet(options->rep, column_family->rep, num_keys, keys_list,
+                    value_slices, statuses, sorted_input);
+
+  for (size_t i = 0; i < num_keys; ++i) {
+    if (statuses[i].ok()) {
+      values[i] = new (rocksdb_pinnableslice_t);
+      values[i]->rep = std::move(value_slices[i]);
+      errs[i] = nullptr;
+    } else {
+      values[i] = nullptr;
+      if (!statuses[i].IsNotFound()) {
+        errs[i] = strdup(statuses[i].ToString().c_str());
+      } else {
+        errs[i] = nullptr;
+      }
+    }
+  }
+  delete[] value_slices;
+  delete[] statuses;
+}
+
 unsigned char rocksdb_key_may_exist(rocksdb_t* db,
                                     const rocksdb_readoptions_t* options,
                                     const char* key, size_t key_len,
