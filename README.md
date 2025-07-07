@@ -19,11 +19,11 @@ sudo make install PREFIX=/some/path # default is /usr/local
 After compile, you can run bundled [db_bench.sh](db_bench.sh)(use port 2011 for [embeded http server](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4)), then [use ToplingDB(maybe migrate from rocksdb)](https://github.com/topling/sideplugin-wiki-en/wiki/101).
 
 ## Introduction
-ToplingDB's submodule **[rockside](https://github.com/topling/rockside)** is the entry point of ToplingDB, see **[SidePlugin wiki](https://github.com/topling/rockside/wiki)**.
+ToplingDB's submodule **[rockside](https://github.com/topling/rockside)** is the entry point of ToplingDB, see **[SidePlugin wiki](https://github.com/topling/sideplugin-wiki-en/wiki)**.
 
 ToplingDB has much more key features than RocksDB:
-1. [SidePlugin](https://github.com/topling/rockside/wiki) enables users to write a json(or yaml) to define DB configs
-1. [Embedded Http Server](https://github.com/topling/sideplugin-wiki-en/wiki/WebView) enables users to view almost all DB info on web, this is a component of [SidePlugin](https://github.com/topling/rockside/wiki)
+1. [SidePlugin](https://github.com/topling/sideplugin-wiki-en/wiki) enables users to write a json(or yaml) to define DB configs
+1. [Embedded Http Server](https://github.com/topling/sideplugin-wiki-en/wiki/WebView) enables users to view almost all DB info on web, this is a component of [SidePlugin](https://github.com/topling/sideplugin-wiki-en/wiki)
 1. [Embedded Http Server](https://github.com/topling/sideplugin-wiki-en/wiki/WebView) enables users to [online change](https://github.com/topling/sideplugin-wiki-en/wiki/Online-Change-Options) db/cf options and all db meta objects(such as MemTabFactory, TableFactory, WriteBufferManager ...) without restart the running process
 1. Many improvements and refactories on RocksDB, aimed for performance and extendibility
 1. memtable as wal log index, omit Flush MemTable to L0, reduce write amp, further improves for large MemTable
