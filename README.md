@@ -18,6 +18,8 @@ sudo make install PREFIX=/some/path # default is /usr/local
 
 After compile, you can run bundled [db_bench.sh](db_bench.sh)(use port 2011 for [embeded http server](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4)), then [use ToplingDB(maybe migrate from rocksdb)](https://github.com/topling/sideplugin-wiki-en/wiki/101).
 
+Use ToplingDB in [Java](https://github.com/topling/sideplugin-wiki-en/wiki/SidePlugin-Java-Binding) & [Rust](https://github.com/topling/rust-toplingdb).
+
 ## Introduction
 ToplingDB's submodule **[rockside](https://github.com/topling/rockside)** is the entry point of ToplingDB, see **[SidePlugin wiki](https://github.com/topling/sideplugin-wiki-en/wiki)**.
 
