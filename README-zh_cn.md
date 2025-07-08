@@ -15,7 +15,7 @@ make -j`nproc` db_bench DEBUG_LEVEL=0
 sudo make install PREFIX=/some/path # default is /usr/local
 ```
 
-以上编译命令执行后，运行 [db_bench.sh](db_bench.sh)(确保端口 2011 可用，[内嵌的 http 服务](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4)需要)，然后[使用 ToplingDB(典型场景是从 rocksdb 迁移过来)](https://github.com/topling/rockside/wiki/101)。
+以上编译命令执行后，运行 [db_bench.sh](db_bench.sh)(确保端口 2011 可用，[内嵌的 http 服务](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4)需要)，然后[使用 ToplingDB(典型场景是从 rocksdb 迁移过来)](https://github.com/topling/rockside/wiki/101)。ToplingDB 支持 [Java](https://github.com/topling/rockside/wiki/SidePlugin-Java-Binding) 和 [rust](https://github.com/topling/rust-toplingdb)。
 
 ## 简单介绍
 ToplingDB 的子模块 **[rockside](https://github.com/topling/rockside)** 是 ToplingDB 的入口，详情参考 **[SidePlugin wiki](https://github.com/topling/rockside/wiki)**。
