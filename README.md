@@ -1,11 +1,11 @@
 ## [中文版](README-zh_cn.md)
 ## ToplingDB: A Persistent Key-Value Store for External Storage
-ToplingDB is developed and maintained by [Topling Inc](https://topling.cn). It is built with [RocksDB](https://github.com/facebook/rocksdb). See [ToplingDB Branch Name Convention](https://github.com/topling/toplingdb/wiki/ToplingDB-Branch-Name-Convention).
+ToplingDB is developed and maintained by [Topling Inc](https://topling.cn). See [ToplingDB Branch Name Convention](https://github.com/topling/toplingdb/wiki/ToplingDB-Branch-Name-Convention).
 
 ## Quick Start
 ToplingDB requires C++17, gcc 8.3 or newer is recommended, clang also works.
 
-ToplingDB is much faster than RocksDB, you can try it by yourself:
+ToplingDB is forked form [RocksDB](https://github.com/facebook/rocksdb), much faster than RocksDB, try it by yourself:
 ### Compile & run db_bench
 ```bash
 sudo yum -y install git libaio-devel gcc-c++ gflags-devel zlib-devel bzip2-devel libcurl-devel liburing-devel snappy-devel jemalloc-devel
