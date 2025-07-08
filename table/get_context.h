@@ -156,6 +156,7 @@ class GetContext {
 
   // Simplified version of the previous function. Should only be used when we
   // know that the operation is a Put.
+  // NOTE: Now just used by CuckooTableReader::Get
   void SaveValue(const Slice& value, SequenceNumber seq);
 
   GetState State() const { return state_; }
