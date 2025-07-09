@@ -258,7 +258,7 @@ struct HeapItemAndPrefix {
   FORCE_INLINE HeapItemAndPrefix() = default;
   FORCE_INLINE HeapItemAndPrefix(HeapItem* item) : item_ptr(item) {
     iter_type = item->type;
-    UpdatePrefixCache(*this);
+    UpdatePrefixCache(*this, &item->iter);
   }
   UintPrefix key_prefix = 0;
   HeapItem* item_ptr;
@@ -266,23 +266,24 @@ struct HeapItemAndPrefix {
 
   HeapItem* operator->() const noexcept { return item_ptr; }
 
-  FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefix& x) {
-    auto p = x.item_ptr;
+  FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefix& x, IteratorWrapper* iter) {
+    ROCKSDB_ASSERT_EQ(&x.item_ptr->iter, iter);
     if (LIKELY(HeapItem::ITERATOR == x.iter_type))
-      x.key_prefix = HostPrefixCacheIK(p->iter.key());
+      x.key_prefix = HostPrefixCacheIK(iter->key());
     else
-      x.key_prefix = HostPrefixCacheUK(p->tombstone_pik.user_key);
+      x.key_prefix = HostPrefixCacheUK(x.item_ptr->tombstone_pik.user_key);
   }
 };
 struct HeapItemAndPrefixFast : HeapItemAndPrefix {
   using HeapItemAndPrefix::HeapItemAndPrefix;
-  FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefixFast& x) {
+  FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefixFast& x, IteratorWrapper* iter) {
     ROCKSDB_ASSERT_EQ(HeapItem::ITERATOR, x.iter_type);
-    x.key_prefix = HostPrefixCacheIK(x.item_ptr->iter.key());
+    ROCKSDB_ASSERT_EQ(&x.item_ptr->iter, iter);
+    x.key_prefix = HostPrefixCacheIK(iter->key());
   }
 };
 static_assert(sizeof(HeapItemAndPrefixFast) == sizeof(HeapItemAndPrefix));
-inline static void UpdatePrefixCache(HeapItem*) {} // do nothing
+inline static void UpdatePrefixCache(HeapItem*, IteratorWrapper*) {}
 
 static FORCE_INLINE bool BytewiseCompareInternalKey(Slice x, Slice y) noexcept {
   size_t n = std::min(x.size_, y.size_) - 8;
@@ -870,7 +871,7 @@ public:
       // replace_top() to restore the heap property.  When the same child
       // iterator yields a sequence of keys, this is cheap.
       assert(current_->status().ok());
-      UpdatePrefixCache(minHeap_.top());
+      UpdatePrefixCache(minHeap_.top(), current_);
       minHeap_.update_top();
       if (LIKELY(RangeTombstoneStaticEmpty || range_tombstone_iters_.empty())) {
         current_ = &minHeap_.top()->iter; // current_ = CurrentForward();
@@ -929,7 +930,7 @@ public:
       // replace_top() to restore the heap property.  When the same child
       // iterator yields a sequence of keys, this is cheap.
       assert(current_->status().ok());
-      UpdatePrefixCache(maxHeap_->top());
+      UpdatePrefixCache(maxHeap_->top(), current_);
       maxHeap_->replace_top(maxHeap_->top());
       if (LIKELY(range_tombstone_iters_.empty())) {
         current_ = &maxHeap_->top()->iter; // current_ = CurrentReverse();
@@ -1427,7 +1428,7 @@ MergingIterMethod(bool)SkipNextDeleted() {
     // it is valid
     if (current->iter.Next()) {
       assert(current->iter.status().ok());
-      UpdatePrefixCache(current);
+      UpdatePrefixCache(current, &current->iter);
       minHeap_.push(current);
     } else {
       // TODO(cbi): check status and early return if non-ok.
@@ -1467,7 +1468,7 @@ MergingIterMethod(bool)SkipNextDeleted() {
         // covered by range tombstone
         // Invariant (children_)
         if (current->iter.Next()) {
-          UpdatePrefixCache(current);
+          UpdatePrefixCache(current, &current->iter);
           minHeap_.replace_top(current);
         } else {
           considerStatus(current->iter.status());
@@ -1641,7 +1642,7 @@ MergingIterMethod(bool)SkipPrevDeleted() {
     current->iter.Prev();
     if (current->iter.Valid()) {
       assert(current->iter.status().ok());
-      UpdatePrefixCache(current);
+      UpdatePrefixCache(current, &current->iter);
       maxHeap_->push(current);
     } else {
       considerStatus(current->iter.status());
@@ -1684,7 +1685,7 @@ MergingIterMethod(bool)SkipPrevDeleted() {
       if (pik.sequence < range_tombstone_iters_[current->level]->seq()) {
         current->iter.Prev();
         if (current->iter.Valid()) {
-          UpdatePrefixCache(current);
+          UpdatePrefixCache(current, &current->iter);
           maxHeap_->replace_top(current);
         } else {
           considerStatus(current->iter.status());
