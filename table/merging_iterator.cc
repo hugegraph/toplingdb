@@ -522,6 +522,7 @@ class MergingIterTmpl final : public MergingIterator {
     inline const MergerMaxIterHeap* operator->() const { return this; }
   };
   static_assert(sizeof(MergerMinIterHeap) == sizeof(MergerMaxIterHeap));
+  static constexpr bool RangeTombstoneStaticEmpty = std::is_same_v<Item, HeapItemAndPrefixFast>;
 
 public:
   MergingIterTmpl() {}
@@ -871,7 +872,7 @@ public:
       assert(current_->status().ok());
       UpdatePrefixCache(minHeap_.top());
       minHeap_.update_top();
-      if (LIKELY((std::is_same_v<Item, HeapItemAndPrefixFast>) || range_tombstone_iters_.empty())) {
+      if (LIKELY(RangeTombstoneStaticEmpty || range_tombstone_iters_.empty())) {
         current_ = &minHeap_.top()->iter; // current_ = CurrentForward();
         return true;
       }
@@ -2031,6 +2032,9 @@ MergingIterMethod(inline void)InitMaxHeap() {
 // key's level, then the current child iterator is simply advanced to its next
 // key without reseeking.
 MergingIterMethod(inline void)FindNextVisibleKey() {
+  if constexpr (RangeTombstoneStaticEmpty) {
+    return;
+  }
   if (LIKELY(range_tombstone_iters_.empty())) {
     return;
   }
@@ -2054,6 +2058,9 @@ MergingIterMethod(void)FindNextVisibleKeySlowPath() {
 }
 
 MergingIterMethod(inline void)FindPrevVisibleKey() {
+  if constexpr (RangeTombstoneStaticEmpty) {
+    return;
+  }
   if (LIKELY(range_tombstone_iters_.empty())) {
     return;
   }
