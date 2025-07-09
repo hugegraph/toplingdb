@@ -931,8 +931,8 @@ public:
       // iterator yields a sequence of keys, this is cheap.
       assert(current_->status().ok());
       UpdatePrefixCache(maxHeap_->top(), current_);
-      maxHeap_->replace_top(maxHeap_->top());
-      if (LIKELY(range_tombstone_iters_.empty())) {
+      maxHeap_->update_top();
+      if (LIKELY(RangeTombstoneStaticEmpty || range_tombstone_iters_.empty())) {
         current_ = &maxHeap_->top()->iter; // current_ = CurrentReverse();
         return;
       }
