@@ -761,16 +761,18 @@ public:
       AddToMinHeapOrCheckStatus(&child);
     }
 
-    for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
-      if (range_tombstone_iters_[i]) {
-        range_tombstone_iters_[i]->SeekToFirst();
-        if (range_tombstone_iters_[i]->Valid()) {
-          // It is possible to be invalid due to snapshots.
-          InsertRangeTombstoneToMinHeap(i);
+    if (!RangeTombstoneStaticEmpty) {
+      for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
+        if (range_tombstone_iters_[i]) {
+          range_tombstone_iters_[i]->SeekToFirst();
+          if (range_tombstone_iters_[i]->Valid()) {
+            // It is possible to be invalid due to snapshots.
+            InsertRangeTombstoneToMinHeap(i);
+          }
         }
       }
+      FindNextVisibleKey();
     }
-    FindNextVisibleKey();
     direction_ = kForward;
     current_ = CurrentForward();
   }
@@ -784,16 +786,18 @@ public:
       AddToMaxHeapOrCheckStatus(&child);
     }
 
-    for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
-      if (range_tombstone_iters_[i]) {
-        range_tombstone_iters_[i]->SeekToLast();
-        if (range_tombstone_iters_[i]->Valid()) {
-          // It is possible to be invalid due to snapshots.
-          InsertRangeTombstoneToMaxHeap(i);
+    if (!RangeTombstoneStaticEmpty) {
+      for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
+        if (range_tombstone_iters_[i]) {
+          range_tombstone_iters_[i]->SeekToLast();
+          if (range_tombstone_iters_[i]->Valid()) {
+            // It is possible to be invalid due to snapshots.
+            InsertRangeTombstoneToMaxHeap(i);
+          }
         }
       }
+      FindPrevVisibleKey();
     }
-    FindPrevVisibleKey();
     direction_ = kReverse;
     current_ = CurrentReverse();
   }
@@ -1191,7 +1195,7 @@ MergingIterMethod(void)SeekImpl(const Slice& target, size_t starting_level,
   // active range tombstones before `starting_level` remain active
   ClearHeaps(false /* clear_active */);
   ParsedInternalKey pik;
-  if (!range_tombstone_iters_.empty()) {
+  if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
     // pik is only used in InsertRangeTombstoneToMinHeap().
     ParseInternalKey(target, &pik, false).PermitUncheckedError();
   }
@@ -1203,7 +1207,7 @@ MergingIterMethod(void)SeekImpl(const Slice& target, size_t starting_level,
     PERF_TIMER_GUARD(seek_min_heap_time);
     AddToMinHeapOrCheckStatus(&children_[level]);
   }
-  if (!range_tombstone_iters_.empty()) {
+  if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
     // Add range tombstones from levels < starting_level. We can insert from
     // pinned_heap_item_ for the following reasons:
     // - pinned_heap_item_[level] is in minHeap_ iff
@@ -1254,7 +1258,7 @@ MergingIterMethod(void)SeekImpl(const Slice& target, size_t starting_level,
 
     PERF_COUNTER_ADD(seek_child_seek_count, 1);
 
-    if (!range_tombstone_iters_.empty()) {
+    if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
       if (range_tombstone_reseek) {
         // This seek is to some range tombstone end key.
         // Should only happen when there are range tombstones.
@@ -1316,7 +1320,7 @@ MergingIterMethod(void)SeekImpl(const Slice& target, size_t starting_level,
     }
   }
 
-  if (range_tombstone_iters_.empty()) {
+  if (RangeTombstoneStaticEmpty || range_tombstone_iters_.empty()) {
     for (auto& child : children_) {
       if (child.iter.status().IsTryAgain()) {
         child.iter.Seek(target);
@@ -1499,7 +1503,7 @@ MergingIterMethod(void)SeekForPrevImpl(const Slice& target,
   ClearHeaps(false /* clear_active */);
   InitMaxHeap();
   ParsedInternalKey pik;
-  if (!range_tombstone_iters_.empty()) {
+  if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
     ParseInternalKey(target, &pik, false).PermitUncheckedError();
   }
   for (size_t level = 0; level < starting_level; ++level) {
@@ -1537,7 +1541,7 @@ MergingIterMethod(void)SeekForPrevImpl(const Slice& target,
 
     PERF_COUNTER_ADD(seek_child_seek_count, 1);
 
-    if (!range_tombstone_iters_.empty()) {
+    if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
       if (range_tombstone_reseek) {
         // This seek is to some range tombstone end key.
         // Should only happen when there are range tombstones.
@@ -1583,7 +1587,7 @@ MergingIterMethod(void)SeekForPrevImpl(const Slice& target,
     }
   }
 
-  if (range_tombstone_iters_.empty()) {
+  if (RangeTombstoneStaticEmpty || range_tombstone_iters_.empty()) {
     for (auto& child : children_) {
       if (child.iter.status().IsTryAgain()) {
         child.iter.SeekForPrev(target);
