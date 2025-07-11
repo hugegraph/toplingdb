@@ -2651,7 +2651,8 @@ jlong Java_org_rocksdb_RocksDB_iterator(JNIEnv*, jobject, jlong db_handle,
       reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
   auto& read_options =
       *reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jread_options_handle);
-  return GET_CPLUSPLUS_POINTER(db->NewIterator(read_options, cf_handle));
+  auto iter = db->NewIterator(read_options, cf_handle);
+  return GET_CPLUSPLUS_POINTER(ROCKSDB_NAMESPACE::JZeroCopyIter::Make(iter));
 }
 
 /*
@@ -2698,9 +2699,10 @@ jlongArray Java_org_rocksdb_RocksDB_iterators(JNIEnv* env, jobject,
 
     for (std::vector<ROCKSDB_NAMESPACE::Iterator*>::size_type i = 0;
          i < iterators.size(); i++) {
+      auto zc_iter = ROCKSDB_NAMESPACE::JZeroCopyIter::Make(iterators[i]);
       env->SetLongArrayRegion(
           jLongArray, static_cast<jsize>(i), 1,
-          const_cast<jlong*>(reinterpret_cast<const jlong*>(&iterators[i])));
+          const_cast<jlong*>(reinterpret_cast<const jlong*>(&zc_iter)));
       if (env->ExceptionCheck()) {
         // exception thrown: ArrayIndexOutOfBoundsException
         env->DeleteLocalRef(jLongArray);

@@ -14,6 +14,9 @@
 #include "rocksdb/comparator.h"
 #include "rocksjni/cplusplus_to_java_convert.h"
 #include "rocksjni/portal.h"
+#include "kv_helper.h"
+
+using ROCKSDB_NAMESPACE::JZeroCopyIter;
 
 /*
  * Class:     org_rocksdb_WriteBatchWithIndex
@@ -554,7 +557,7 @@ jlong Java_org_rocksdb_WriteBatchWithIndex_iteratorWithBase(
                 jread_opts_handle);
   auto* iterator =
       wbwi->NewIteratorWithBase(cf_handle, base_iterator, read_opts);
-  return GET_CPLUSPLUS_POINTER(iterator);
+  return GET_CPLUSPLUS_POINTER(JZeroCopyIter::Make(iterator));
 }
 
 /*

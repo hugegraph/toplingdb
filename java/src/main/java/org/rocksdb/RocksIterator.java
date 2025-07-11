@@ -8,6 +8,7 @@ package org.rocksdb;
 import static org.rocksdb.util.BufferUtil.CheckBounds;
 
 import java.nio.ByteBuffer;
+import sun.misc.Unsafe;
 
 /**
  * <p>An iterator that yields a sequence of key/value pairs from a source.
@@ -41,6 +42,112 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
     return key0(nativeHandle_);
   }
 
+  private static final Unsafe myUnsafe;
+  static {
+    try {
+      java.lang.reflect.Field field = Unsafe.class.getDeclaredField("theUnsafe");
+      field.setAccessible(true);
+      myUnsafe = (Unsafe)field.get(null);
+    } catch (Exception e) {
+        throw new RuntimeException("Failed to get Unsafe instance", e);
+    }
+  }
+  public final Unsafe getUnsafe() {
+    return myUnsafe;
+  }
+  public final long getZeroCopyKeyPtr() {
+    assert(isOwningHandle());
+    // static_assert(offsetof(JZeroCopyIter, key.data_) == 8); // in C++
+    return myUnsafe.getLong(nativeHandle_ + 8);
+  }
+  public final long getZeroCopyKeyLen() {
+    assert(isOwningHandle());
+    // static_assert(offsetof(JZeroCopyIter, key.size_) == 16); // in C++
+    return myUnsafe.getLong(nativeHandle_ + 16);
+  }
+  public final long getZeroCopyValuePtr() {
+    assert(isOwningHandle());
+    // static_assert(offsetof(JZeroCopyIter, value.data_) == 24); // in C++
+    return myUnsafe.getLong(nativeHandle_ + 24);
+  }
+  public final long getZeroCopyValueLen() {
+    assert(isOwningHandle());
+    // static_assert(offsetof(JZeroCopyIter, value.size_) == 32); // in C++
+    return myUnsafe.getLong(nativeHandle_ + 32);
+  }
+  public final boolean isValueFetched() {
+    assert(isOwningHandle());
+    // if not fetched, call this.value() will fetch the value
+    return getZeroCopyValuePtr() != 0;
+  }
+  public final void fetchValue() {
+    assert(isOwningHandle());
+    if (getZeroCopyValuePtr() == 0) {
+      byte[] val = value0(nativeHandle_ | 1); // or 1 indicate just do fetch
+      assert(val == null); // just fetch the value, not copy it, must be null
+      // this will not copy the value, just set the zero-copy pointer
+      assert(getZeroCopyValuePtr() != 0);
+    }
+  }
+  public final void nextWithValue() {
+    assert(isOwningHandle());
+    assert((nativeHandle_ & 7L) == 0L);
+    next0(nativeHandle_ | 1); // or 1 indicate that we are fetching the value
+  }
+  public final void prevWithValue() {
+    assert(isOwningHandle());
+    assert((nativeHandle_ & 7L) == 0L);
+    prev0(nativeHandle_ | 1); // or 1 indicate that we are fetching the value
+  }
+  public final void seekToFirstWithValue() {
+    assert (isOwningHandle());
+    assert((nativeHandle_ & 7L) == 0L);
+    seekToFirst0(nativeHandle_ | 1);
+  }
+  public final void seekToLastWithValue() {
+    assert (isOwningHandle());
+    assert((nativeHandle_ & 7L) == 0L);
+    seekToLast0(nativeHandle_ | 1);
+  }
+  public final void seekWithValue(final byte[] target) {
+    assert (isOwningHandle());
+    assert((nativeHandle_ & 7L) == 0L);
+    seek0(nativeHandle_ | 1, target, target.length);
+  }
+  public final void seekForPrevWithValue(final byte[] target) {
+    assert (isOwningHandle());
+    assert((nativeHandle_ & 7L) == 0L);
+    seekForPrev0(nativeHandle_ | 1, target, target.length);
+  }
+  public final void seekWithValue(final ByteBuffer target) {
+    assert (isOwningHandle());
+    assert((nativeHandle_ & 7L) == 0L);
+    if (target.isDirect()) {
+      seekDirect0(nativeHandle_ | 1, target, target.position(), target.remaining());
+    } else {
+      seekByteArray0(nativeHandle_ | 1, target.array(), target.arrayOffset() + target.position(),
+          target.remaining());
+    }
+    target.position(target.limit());
+  }
+  public final void seekForPrevWithValue(final ByteBuffer target) {
+    assert (isOwningHandle());
+    assert((nativeHandle_ & 7L) == 0L);
+    if (target.isDirect()) {
+      seekForPrevDirect0(nativeHandle_ | 1, target, target.position(), target.remaining());
+    } else {
+      seekForPrevByteArray0(nativeHandle_ | 1, target.array(), target.arrayOffset() + target.position(),
+          target.remaining());
+    }
+    target.position(target.limit());
+  }
+
+  @Override
+  public final boolean isValid() {
+    assert(isOwningHandle());
+    return getZeroCopyKeyPtr() != 0;
+  }
+
   /**
    * <p>Return the key for the current entry.  The underlying storage for
    * the returned slice is valid only until the next modification of
@@ -56,6 +163,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
    */
   public int key(final byte[] key) {
     assert isOwningHandle();
+    // TODO: copy from zero-copy pointer without jni call
     return keyByteArray0(nativeHandle_, key, 0, key.length);
   }
 
@@ -77,6 +185,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
   public int key(final byte[] key, final int offset, final int len) {
     assert isOwningHandle();
     CheckBounds(offset, len, key.length);
+    // TODO: copy from zero-copy pointer without jni call
     return keyByteArray0(nativeHandle_, key, offset, len);
   }
 
@@ -96,6 +205,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
    */
   public int key(final ByteBuffer key) {
     assert isOwningHandle();
+    // TODO: copy from zero-copy pointer without jni call
     final int result;
     if (key.isDirect()) {
       result = keyDirect0(nativeHandle_, key, key.position(), key.remaining());
