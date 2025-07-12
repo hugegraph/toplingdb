@@ -47,16 +47,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
     return key;
   }
 
-  private static final Unsafe myUnsafe;
-  static {
-    try {
-      java.lang.reflect.Field field = Unsafe.class.getDeclaredField("theUnsafe");
-      field.setAccessible(true);
-      myUnsafe = (Unsafe)field.get(null);
-    } catch (Exception e) {
-        throw new RuntimeException("Failed to get Unsafe instance", e);
-    }
-  }
+  private static final Unsafe myUnsafe = DirectSlice.getUnsafe();
   public static Unsafe getUnsafe() {
     return myUnsafe;
   }

@@ -5,7 +5,9 @@
 
 package org.rocksdb;
 
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
+import sun.misc.Unsafe;
 
 /**
  * Base class for slices which will receive direct
@@ -24,6 +26,18 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
   private final boolean internalBuffer;
   private volatile boolean cleared = false;
   private volatile long internalBufferOffset = 0;
+
+  private static final Unsafe myUnsafe;
+  static {
+    try {
+      Field field = Unsafe.class.getDeclaredField("theUnsafe");
+      field.setAccessible(true);
+      myUnsafe = (Unsafe)field.get(null);
+    } catch (Exception e) {
+        throw new RuntimeException("Failed to get Unsafe instance", e);
+    }
+  }
+  public static Unsafe getUnsafe() { return myUnsafe; }
 
   /**
    * Called from JNI to construct a new Java DirectSlice
