@@ -37,12 +37,18 @@ public class RocksIteratorTest {
 
   private void validateKey(
       final RocksIterator iterator, final ByteBuffer byteBuffer, final String key) {
-    validateByteBufferResult(iterator.key(byteBuffer), byteBuffer, key);
+    int oldlimit = byteBuffer.limit();
+    int keylen = iterator.key(byteBuffer);
+    byteBuffer.limit(Math.min(oldlimit, byteBuffer.limit()));
+    validateByteBufferResult(keylen, byteBuffer, key);
   }
 
   private void validateValue(
       final RocksIterator iterator, final ByteBuffer byteBuffer, final String value) {
-    validateByteBufferResult(iterator.value(byteBuffer), byteBuffer, value);
+    int oldlimit = byteBuffer.limit();
+    int valuelen = iterator.value(byteBuffer);
+    byteBuffer.limit(Math.min(oldlimit, byteBuffer.limit()));
+    validateByteBufferResult(valuelen, byteBuffer, value);
   }
 
   @Test
