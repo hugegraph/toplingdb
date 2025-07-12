@@ -39,6 +39,96 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
   }
   public static Unsafe getUnsafe() { return myUnsafe; }
 
+  static int getFieldOffset(Class<?> clazz, String fieldName) throws Exception {
+    Class<?> currentClass = clazz;
+    while (currentClass != null) {
+      try {
+        Field field = currentClass.getDeclaredField(fieldName);
+        // java --add-opens java.base/java.nio=ALL-UNNAMED is required
+        // for this line, but we set fields by Unsafe, so we can ignore
+        // the access check, and Unsafe can access private fields
+        //field.setAccessible(true); // not needed for Unsafe
+        return (int) myUnsafe.objectFieldOffset(field);
+      } catch (NoSuchFieldException e) {
+        currentClass = currentClass.getSuperclass();
+      }
+    }
+    throw new NoSuchFieldException("Field '" + fieldName + "' not found in " + clazz);
+  }
+
+  private static final int cleanerOffset;
+  private static final int addressOffset;
+  private static final int capacityOffset;
+  static {
+    int cleanerOffset0 = -1; // -1 for field is not found or not accessible
+    int addressOffset0 = -1;
+    int capacityOffset0 = -1;
+    try {
+      Class<?> clazz = newZeroCopyDirectBuffer0().getClass();
+      cleanerOffset0 = getFieldOffset(clazz, "cleaner");
+      addressOffset0 = getFieldOffset(clazz, "address");
+      capacityOffset0 = getFieldOffset(clazz, "capacity");
+    } catch (Exception e) {
+      cleanerOffset0 = -1;
+      addressOffset0 = -1;
+      capacityOffset0 = -1;
+      System.err.println(
+        "ERROR: Failed to find fields: cleaner,address,capacity in DirectByteBuffer,\n" +
+        "   zero copy with old API is disabled, try add java startup option\n" +
+        "        --add-opens java.base/java.nio=ALL-UNNAMED,\n" +
+        "   detailed err:\n" + e.getMessage());
+    }
+    cleanerOffset = cleanerOffset0;
+    addressOffset = addressOffset0;
+    capacityOffset = capacityOffset0;
+  }
+
+  private static native ByteBuffer newZeroCopyDirectBuffer0();
+  public static ByteBuffer newZeroCopyDirectBuffer() {
+    if (!supportZeroCopy()) {
+      throw new UnsupportedOperationException(
+        "Zero-copy is not supported, try add java startup option " +
+        "--add-opens java.base/java.nio=ALL-UNNAMED");
+    }
+    return newZeroCopyDirectBuffer0();
+  }
+  public static void directBorrowMemory(ByteBuffer buf, long ptr, long cap) {
+    if (!buf.isDirect()) {
+      throw new IllegalArgumentException("The ByteBuffer must be direct");
+    }
+    if (!supportZeroCopy()) {
+      throw new UnsupportedOperationException(
+        "Zero-copy is not supported, try add java startup option " +
+        "--add-opens java.base/java.nio=ALL-UNNAMED");
+    }
+    if (!supportDirectBorrowMemory(buf)) {
+      throw new UnsupportedOperationException(
+        "The ByteBuffer has a cleaner, can not reset address and capacity");
+    }
+    directBorrowMemoryUnchecked(buf, ptr, cap);
+  }
+  public static void directBorrowMemoryUnchecked(ByteBuffer buf, long ptr, long cap) {
+    // java makes simple things complicated,
+    // to implement zero-copy, we have to do such dirty work
+    //System.out.println("Reset DirectByteBuffer: " + buf + ", new ptr: " + ptr + ", cap: " + cap);
+    myUnsafe.putLong(buf, addressOffset, ptr);
+    myUnsafe.putInt(buf, capacityOffset, (int)cap);
+    buf.clear(); // reset position, limit, mark
+  }
+  public static boolean supportZeroCopy() {
+    return cleanerOffset != -1;
+  }
+  public static boolean supportDirectBorrowMemory(ByteBuffer buffer) {
+    // to help zero-copy, we need to check if the buffer has a cleaner,
+    // if it has, its address and capacity can not be reset, thus can not
+    // use zero-copy.
+    assert buffer.isDirect() : "The ByteBuffer must be direct";
+    if (cleanerOffset == -1) {
+      return false; // can not be reset
+    }
+    return myUnsafe.getObject(buffer, cleanerOffset) == null;
+  }
+
   /**
    * Called from JNI to construct a new Java DirectSlice
    * without an underlying C++ object set

@@ -212,8 +212,14 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
     long zcKeyLen = getZeroCopyKeyLen();
     final int result;
     if (key.isDirect()) {
-      result = keyDirect0(nativeHandle_, key, key.position(), key.remaining());
-      assert result == zcKeyLen;
+      if (DirectSlice.supportDirectBorrowMemory(key)) { // do zero copy:
+        DirectSlice.directBorrowMemoryUnchecked(key, zcKeyPtr, zcKeyLen);
+        result = (int)zcKeyLen; // just reset the buffer, no copy
+        return result;
+      } else {
+        result = keyDirect0(nativeHandle_, key, key.position(), key.remaining());
+        assert result == zcKeyLen;
+      }
     } else {
       assert key.hasArray();
       long keyOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + key.arrayOffset() + key.position();
@@ -261,7 +267,16 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
     assert isOwningHandle();
     final int result;
     if (value.isDirect()) {
-      result = valueDirect0(nativeHandle_, value, value.position(), value.remaining());
+      if (DirectSlice.supportDirectBorrowMemory(value)) { // do zero copy:
+        fetchValue();
+        long valuePtr = getZeroCopyValuePtr();
+        long valueLen = getZeroCopyValueLen();
+        DirectSlice.directBorrowMemoryUnchecked(value, valuePtr, valueLen);
+        result = (int)valueLen; // just reset the buffer, no copy
+        return result;
+      } else {
+        result = valueDirect0(nativeHandle_, value, value.position(), value.remaining());
+      }
     } else if (isValueFetched()) {
       assert value.hasArray();
       long valuePtr = getZeroCopyValuePtr();
