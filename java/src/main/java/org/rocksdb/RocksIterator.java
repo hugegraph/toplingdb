@@ -52,7 +52,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
         throw new RuntimeException("Failed to get Unsafe instance", e);
     }
   }
-  public final Unsafe getUnsafe() {
+  public static Unsafe getUnsafe() {
     return myUnsafe;
   }
   public final long getZeroCopyKeyPtr() {
