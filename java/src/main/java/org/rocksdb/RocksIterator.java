@@ -39,7 +39,12 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
    */
   public byte[] key() {
     assert(isOwningHandle());
-    return key0(nativeHandle_);
+    assert(isValid());
+    long keyPtr = getZeroCopyKeyPtr();
+    long keyLen = getZeroCopyKeyLen();
+    byte[] key = new byte[(int)keyLen];
+    myUnsafe.copyMemory(null, keyPtr, key, Unsafe.ARRAY_BYTE_BASE_OFFSET, keyLen);
+    return key;
   }
 
   private static final Unsafe myUnsafe;
@@ -163,8 +168,11 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
    */
   public int key(final byte[] key) {
     assert isOwningHandle();
-    // TODO: copy from zero-copy pointer without jni call
-    return keyByteArray0(nativeHandle_, key, 0, key.length);
+    long keyLen = getZeroCopyKeyLen();
+    long len = Math.min((long)key.length, keyLen);
+    long ptr = getZeroCopyKeyPtr();
+    myUnsafe.copyMemory(null, ptr, key, Unsafe.ARRAY_BYTE_BASE_OFFSET, len);
+    return (int)keyLen;
   }
 
   /**
@@ -185,8 +193,12 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
   public int key(final byte[] key, final int offset, final int len) {
     assert isOwningHandle();
     CheckBounds(offset, len, key.length);
-    // TODO: copy from zero-copy pointer without jni call
-    return keyByteArray0(nativeHandle_, key, offset, len);
+    long keyLen = getZeroCopyKeyLen();
+    long cplen = Math.min((long)len, keyLen);
+    long ptr = getZeroCopyKeyPtr();
+    long keyOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + offset;
+    myUnsafe.copyMemory(null, ptr, key, keyOffset, cplen);
+    return (int)keyLen;
   }
 
   /**
@@ -205,14 +217,18 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
    */
   public int key(final ByteBuffer key) {
     assert isOwningHandle();
-    // TODO: copy from zero-copy pointer without jni call
+    long zcKeyPtr = getZeroCopyKeyPtr();
+    long zcKeyLen = getZeroCopyKeyLen();
     final int result;
     if (key.isDirect()) {
       result = keyDirect0(nativeHandle_, key, key.position(), key.remaining());
+      assert result == zcKeyLen;
     } else {
       assert key.hasArray();
-      result = keyByteArray0(
-          nativeHandle_, key.array(), key.arrayOffset() + key.position(), key.remaining());
+      long keyOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + key.arrayOffset() + key.position();
+      long cplen = Math.min((long)key.remaining(), zcKeyLen);
+      myUnsafe.copyMemory(null, zcKeyPtr, key.array(), keyOffset, cplen);
+      result = (int)zcKeyLen;
     }
     key.limit(Math.min(key.position() + result, key.limit()));
     return result;
@@ -228,7 +244,12 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
    */
   public byte[] value() {
     assert(isOwningHandle());
-    return value0(nativeHandle_);
+    fetchValue();
+    long valueLen = getZeroCopyValueLen();
+    long valuePtr = getZeroCopyValuePtr();
+    byte[] value = new byte[(int)valueLen];
+    myUnsafe.copyMemory(null, valuePtr, value, Unsafe.ARRAY_BYTE_BASE_OFFSET, valueLen);
+    return value;
   }
 
   /**
@@ -250,6 +271,14 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
     final int result;
     if (value.isDirect()) {
       result = valueDirect0(nativeHandle_, value, value.position(), value.remaining());
+    } else if (isValueFetched()) {
+      assert value.hasArray();
+      long valuePtr = getZeroCopyValuePtr();
+      long valueLen = getZeroCopyValueLen();
+      long cplen = Math.min((long)value.remaining(), valueLen);
+      long valueOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + value.arrayOffset() + value.position();
+      myUnsafe.copyMemory(null, valuePtr, value.array(), valueOffset, cplen);
+      result = (int)valueLen;
     } else {
       assert value.hasArray();
       result = valueByteArray0(
@@ -274,7 +303,12 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
    */
   public int value(final byte[] value) {
     assert isOwningHandle();
-    return valueByteArray0(nativeHandle_, value, 0, value.length);
+    fetchValue();
+    long valueLen = getZeroCopyValueLen();
+    long valuePtr = getZeroCopyValuePtr();
+    long cplen = Math.min((long)value.length, valueLen);
+    myUnsafe.copyMemory(null, valuePtr, value, Unsafe.ARRAY_BYTE_BASE_OFFSET, cplen);
+    return (int)valueLen;
   }
 
   /**
@@ -295,7 +329,82 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
   public int value(final byte[] value, final int offset, final int len) {
     assert isOwningHandle();
     CheckBounds(offset, len, value.length);
-    return valueByteArray0(nativeHandle_, value, offset, len);
+    fetchValue();
+    long valueLen = getZeroCopyValueLen();
+    long valuePtr = getZeroCopyValuePtr();
+    long cplen = Math.min((long)len, valueLen);
+    long valueOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + offset;
+    myUnsafe.copyMemory(null, valuePtr, value, valueOffset, cplen);
+    return (int)valueLen;
+  }
+
+  static final boolean DEFAULT_EAGER_FETCH_VALUE;
+  static {
+    String eagerFetchValue = System.getenv("TOPLINGDB_EAGER_FETCH_VALUE");
+    if (eagerFetchValue == null) {
+      DEFAULT_EAGER_FETCH_VALUE = false; // default to false
+    } else {
+      DEFAULT_EAGER_FETCH_VALUE = Boolean.parseBoolean(eagerFetchValue);
+    }
+  }
+  private int eagerFetchValue_ = DEFAULT_EAGER_FETCH_VALUE ? 1 : 0;
+  public final void enableEagerFetchValue(boolean eager) {
+    eagerFetchValue_ = eager ? 1 : 0;
+  }
+  public final boolean isDefaultEagerFetchValue() {
+    return eagerFetchValue_ != 0;
+  }
+  @Override public final void seekToFirst() {
+    assert(isOwningHandle());
+    seekToFirst0(nativeHandle_ | eagerFetchValue_);
+  }
+  @Override public final void seekToLast() {
+    assert(isOwningHandle());
+    seekToLast0(nativeHandle_ | eagerFetchValue_);
+  }
+
+  @Override public final void seek(final byte[] target) {
+    assert (isOwningHandle());
+    seek0(nativeHandle_ | eagerFetchValue_, target, target.length);
+  }
+
+  @Override public final void seekForPrev(final byte[] target) {
+    assert (isOwningHandle());
+    seekForPrev0(nativeHandle_ | eagerFetchValue_, target, target.length);
+  }
+
+  @Override public final void seek(final ByteBuffer target) {
+    assert (isOwningHandle());
+    long handle = nativeHandle_ | eagerFetchValue_;
+    if (target.isDirect()) {
+      seekDirect0(handle, target, target.position(), target.remaining());
+    } else {
+      int offset = target.arrayOffset() + target.position();
+      seekByteArray0(handle, target.array(), offset, target.remaining());
+    }
+    target.position(target.limit());
+  }
+
+  @Override public final void seekForPrev(final ByteBuffer target) {
+    assert (isOwningHandle());
+    long handle = nativeHandle_ | eagerFetchValue_;
+    if (target.isDirect()) {
+      seekForPrevDirect0(handle, target, target.position(), target.remaining());
+    } else {
+      int offset = target.arrayOffset() + target.position();
+      seekForPrevByteArray0(handle, target.array(), offset, target.remaining());
+    }
+    target.position(target.limit());
+  }
+
+  @Override public final void next() {
+    assert (isOwningHandle());
+    next0(nativeHandle_ | eagerFetchValue_);
+  }
+
+  @Override public final void prev() {
+    assert (isOwningHandle());
+    prev0(nativeHandle_ | eagerFetchValue_);
   }
 
   @Override protected final native void disposeInternal(final long handle);
