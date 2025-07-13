@@ -548,8 +548,10 @@ jlong Java_org_rocksdb_WriteBatchWithIndex_iteratorWithBase(
       reinterpret_cast<ROCKSDB_NAMESPACE::WriteBatchWithIndex*>(jwbwi_handle);
   auto* cf_handle =
       reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
-  auto* base_iterator =
-      reinterpret_cast<ROCKSDB_NAMESPACE::Iterator*>(jbase_iterator_handle);
+  auto* zc_iter =
+      reinterpret_cast<ROCKSDB_NAMESPACE::JZeroCopyIter*>(jbase_iterator_handle);
+  auto* base_iterator = zc_iter->iter;
+  zc_iter->iter = nullptr; // ownership has been moved, reset to nullptr
   ROCKSDB_NAMESPACE::ReadOptions* read_opts =
       jread_opts_handle == 0
           ? nullptr
