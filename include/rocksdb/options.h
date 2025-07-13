@@ -1801,6 +1801,24 @@ struct ReadOptions {
 
   uint16_t async_queue_depth = 16;
 
+  struct BooleanDontCopyTrue {
+    explicit BooleanDontCopyTrue(bool x = false) : value(x) {}
+    BooleanDontCopyTrue(const BooleanDontCopyTrue& y) {
+      assert(y.value == false); // relax just for debug
+      this->value = false;
+    }
+    BooleanDontCopyTrue& operator=(const BooleanDontCopyTrue& y) {
+      assert(y.value == false); // relax just for debug
+      ROCKSDB_VERIFY(this->value == false); // strict for release
+      this->value = false;
+      return *this;
+    }
+    BooleanDontCopyTrue& operator=(const bool) = delete;
+    operator bool() const { return value; }
+    bool value;
+  };
+  BooleanDontCopyTrue internal_is_in_pinning_section{false};
+
   // A callback to determine whether relevant keys for this scan exist in a
   // given table based on the table's properties. The callback is passed the
   // properties of each table during iteration. If the callback returns false,
@@ -1827,6 +1845,7 @@ struct ReadOptions {
   ReadOptions() {}
   ReadOptions(bool _verify_checksums, bool _fill_cache);
   explicit ReadOptions(Env::IOActivity _io_activity);
+  ReadOptions(const ReadOptions&, BooleanDontCopyTrue/*dispatch_tag*/);
   ReadOptions(const ReadOptions&);
   ReadOptions(ReadOptions&&);
   ReadOptions& operator=(const ReadOptions&);

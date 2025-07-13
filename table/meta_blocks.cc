@@ -259,7 +259,9 @@ Status ReadTablePropertiesHelper(
   // verification so that if it fails, we can copy to a temporary buffer with
   // global seqno set to its original value, i.e. 0, and attempt checksum
   // verification again.
-  ReadOptions modified_ro = ro;
+  ReadOptions& modified_ro = const_cast<ReadOptions&>(ro);
+  auto old_verify_checksums = ro.verify_checksums;
+  ROCKSDB_SCOPE_EXIT(modified_ro.verify_checksums = old_verify_checksums);
   modified_ro.verify_checksums = false;
   BlockContents block_contents;
   BlockFetcher block_fetcher(file, prefetch_buffer, footer, modified_ro, handle,

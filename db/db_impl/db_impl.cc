@@ -2383,7 +2383,7 @@ Status DBImpl::GetInst(const ReadOptions& read_options, const Slice& key,
     const Status s =
         FailIfReadCollapsedHistory(cfd, sv, *(read_options.timestamp));
     if (!s.ok()) {
-      if (!read_options.pinning_tls)
+      if (!read_options.internal_is_in_pinning_section)
         ReturnAndCleanupSuperVersion(cfd, sv);
       return s;
     }
@@ -2514,7 +2514,7 @@ Status DBImpl::GetInst(const ReadOptions& read_options, const Slice& key,
       }
     }
     if (!done && !s.ok() && !s.IsMergeInProgress()) {
-      if (!read_options.pinning_tls)
+      if (!read_options.internal_is_in_pinning_section)
         ReturnAndCleanupSuperVersion(cfd, sv);
       return s;
     }
@@ -2622,7 +2622,7 @@ Status DBImpl::GetInst(const ReadOptions& read_options, const Slice& key,
       PERF_COUNTER_ADD(get_read_bytes, size);
     }
 
-    if (!read_options.pinning_tls)
+    if (!read_options.internal_is_in_pinning_section)
       ReturnAndCleanupSuperVersion(cfd, sv);
 
     RecordInHistogram(stats_, BYTES_PER_READ, size);
@@ -3588,7 +3588,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
   PERF_COUNTER_ADD(multiget_read_bytes, bytes_read);
   PERF_TIMER_STOP(get_post_process_time);
 
-  if (!read_options.pinning_tls)
+  if (!read_options.internal_is_in_pinning_section)
     ReturnAndCleanupSuperVersion(cfd, sv);
 
 #endif // TOPLINGDB_WITH_FIBER_AIO
@@ -4235,8 +4235,10 @@ bool DBImpl::KeyMayExist(const ReadOptions& read_options,
     *value_found = true;
   }
   // TODO: plumb Env::IOActivity
-  ReadOptions roptions = read_options;
+  ReadOptions& roptions = const_cast<ReadOptions&>(read_options);
+  auto old_read_tier = read_options.read_tier;
   roptions.read_tier = kBlockCacheTier;  // read from block cache only
+  ROCKSDB_SCOPE_EXIT(roptions.read_tier = old_read_tier);
   value->clear();
   PinnableSlice pinnable_val(value);
   GetImplOptions get_impl_options;
@@ -5099,6 +5101,21 @@ ReadOptions::ReadOptions(ReadOptions&&) = default;
 ReadOptions& ReadOptions::operator=(const ReadOptions&) = default;
 ReadOptions& ReadOptions::operator=(ReadOptions&&) = default;
 
+static const ReadOptions&
+ReadOptionsCopyHelper(const ReadOptions& ro, bool* backup) {
+  *backup = ro.internal_is_in_pinning_section.value;
+  const_cast<ReadOptions&>(ro).internal_is_in_pinning_section.value = false;
+  return ro;
+}
+// use param tag as backup storage for internal_is_in_pinning_section, because
+// copy ReadOptions requires y.internal_is_in_pinning_section must be false
+ReadOptions::ReadOptions(const ReadOptions& y, BooleanDontCopyTrue tag)
+ : ReadOptions(ReadOptionsCopyHelper(y, &tag.value)) {
+  // restore
+  const_cast<ReadOptions&>(y).internal_is_in_pinning_section.value = tag.value;
+  pinning_tls.reset(nullptr); // must reset pinning_tls
+}
+
 void ReadOptions::StartPin() {
   if (!pinning_tls) {
     pinning_tls = std::make_shared<ReadOptionsTLS>();
@@ -5107,27 +5124,33 @@ void ReadOptions::StartPin() {
     ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->sv);
     ROCKSDB_VERIFY_EQ(pinning_tls->cfsv.size(), 0);
   }
+  ROCKSDB_VERIFY(!internal_is_in_pinning_section);
+  internal_is_in_pinning_section.value = true;
   pinning_tls->thread_id = ThisThreadID();
 }
 void ReadOptions::FinishPin() {
-  // some applications(such as myrocks/mytopling) clean the working area which
-  // needs to call FinishPin before StartPin, so we need to allow such usage
-  if (pinning_tls) {
-    ROCKSDB_VERIFY_EQ(pinning_tls->thread_id, ThisThreadID());
-    pinning_tls->FinishPin();
-  }
+  ROCKSDB_VERIFY(internal_is_in_pinning_section);
+  ROCKSDB_VERIFY(pinning_tls.get() != nullptr);
+  ROCKSDB_VERIFY_EQ(pinning_tls->thread_id, ThisThreadID());
+  internal_is_in_pinning_section.value = false;
+  pinning_tls->FinishPin();
 }
 ReadOptions::~ReadOptions() {
-  if (pinning_tls)
-    this->FinishPin();
+  ROCKSDB_VERIFY(!internal_is_in_pinning_section);
+  if (pinning_tls) {
+    ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->db_impl);
+    ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->sv);
+    ROCKSDB_VERIFY_EQ(pinning_tls->cfsv.size(), 0);
+  }
 }
 
 SuperVersion*
 DBImpl::GetAndRefSuperVersion(ColumnFamilyData* cfd, const ReadOptions* ro) {
-  auto tls = ro->pinning_tls.get();
-  if (!tls) { // do not use zero copy, same as old behavior
+  if (!ro->internal_is_in_pinning_section) {
+    // do not use zero copy, same as old behavior
     return GetAndRefSuperVersion(cfd);
   }
+  auto tls = ro->pinning_tls.get();
   ROCKSDB_ASSERT_EQ(tls->thread_id, ThisThreadID());
   size_t cfid = cfd->GetID();
   SuperVersion*& sv = tls->GetSuperVersionRef(cfid);
@@ -5283,7 +5306,7 @@ Status DBImpl::GetApproximateSizes(const SizeApproximationOptions& options,
   Version* v;
   auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(column_family);
   auto cfd = cfh->cfd();
-  bool zero_copy = options.read_options && options.read_options->pinning_tls;
+  bool zero_copy = options.read_options && options.read_options->internal_is_in_pinning_section;
   SuperVersion* sv = zero_copy ? GetAndRefSuperVersion(cfd, options.read_options)
                                : GetAndRefSuperVersion(cfd);
   v = sv->current;

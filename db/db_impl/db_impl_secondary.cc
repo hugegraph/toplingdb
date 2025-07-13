@@ -414,7 +414,7 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
     s = FailIfReadCollapsedHistory(cfd, super_version,
                                    *(read_options.timestamp));
     if (!s.ok()) {
-      if (!read_options.pinning_tls)
+      if (!read_options.internal_is_in_pinning_section)
         ReturnAndCleanupSuperVersion(cfd, super_version);
       return s;
     }
@@ -448,7 +448,7 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
     RecordTick(stats_, MEMTABLE_HIT);
   }
   if (!done && !s.ok() && !s.IsMergeInProgress()) {
-    if (!read_options.pinning_tls)
+    if (!read_options.internal_is_in_pinning_section)
       ReturnAndCleanupSuperVersion(cfd, super_version);
     return s;
   }
@@ -465,7 +465,7 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
   }
   {
     PERF_TIMER_GUARD(get_post_process_time);
-    if (!read_options.pinning_tls)
+    if (!read_options.internal_is_in_pinning_section)
       ReturnAndCleanupSuperVersion(cfd, super_version);
     RecordTick(stats_, NUMBER_KEYS_READ);
     size_t size = 0;
