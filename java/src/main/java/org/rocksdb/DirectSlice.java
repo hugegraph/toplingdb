@@ -6,6 +6,7 @@
 package org.rocksdb;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import sun.misc.Unsafe;
 
@@ -56,6 +57,8 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
     throw new NoSuchFieldException("Field '" + fieldName + "' not found in " + clazz);
   }
 
+  private static final Method cleanMethod;
+  private static final boolean destroyDirectBufferCleaner;
   private static final int cleanerOffset;
   private static final int addressOffset;
   private static final int capacityOffset;
@@ -81,6 +84,33 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
     cleanerOffset = cleanerOffset0;
     addressOffset = addressOffset0;
     capacityOffset = capacityOffset0;
+
+    // default to false for safety and backward compatibility
+    boolean destroyDirectBufferCleaner0 = false;
+    Method cleanMethod0 = null;
+    String env = System.getenv("ROCKSDB_FORCE_DIRECT_BUFFER_ZERO_COPY");
+    if (env != null) {
+      destroyDirectBufferCleaner0 = Boolean.parseBoolean(env);
+    }
+    if (cleanerOffset > 0 && destroyDirectBufferCleaner0) {
+      try {
+        ByteBuffer bufferWithCleaner = ByteBuffer.allocateDirect(64);
+        Object cleaner = myUnsafe.getObject(bufferWithCleaner, cleanerOffset);
+        Class<?> clazz = cleaner.getClass();
+        cleanMethod0 = clazz.getDeclaredMethod("clean");
+        //cleanMethod0.setAccessible(true); // it is public, not needed
+      }
+      catch (Exception e) {
+        System.err.println(
+          "WARN: Failed to access cleaner.clean() method, " +
+          "zero copy on ByteBuffer.allocateDirect(cap) is not supported.\n" +
+          "    detailed err:\n" + e.getMessage());
+        cleanMethod0 = null;
+        destroyDirectBufferCleaner0 = false;
+      }
+    }
+    cleanMethod = cleanMethod0;
+    destroyDirectBufferCleaner = destroyDirectBufferCleaner0;
   }
 
   private static native ByteBuffer newZeroCopyDirectBuffer0();
@@ -111,6 +141,22 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
     // java makes simple things complicated,
     // to implement zero-copy, we have to do such dirty work
     //System.out.println("Reset DirectByteBuffer: " + buf + ", new ptr: " + ptr + ", cap: " + cap);
+    if (destroyDirectBufferCleaner) {
+      Object cleaner = myUnsafe.getObject(buf, cleanerOffset);
+      if (cleaner != null) {
+        // call cleaner.clean(), then destroy the cleaner, so that the buffer
+        // can be reset and reused, otherwise, it will may cause memory leaks
+        //System.out.println("Clean DirectByteBuffer: " + buf + ", new ptr: " + ptr + ", cap: " + cap);
+        try {
+          cleanMethod.invoke(cleaner);
+          myUnsafe.putObject(buf, cleanerOffset, null);
+        } catch (Exception e) {
+          System.err.println(
+            "ERROR: Failed to invoke DirectByteBuffer.cleaner.clean(), " +
+            "detailed err:\n" + e.getMessage());
+        }
+      }
+    }
     myUnsafe.putLong(buf, addressOffset, ptr);
     myUnsafe.putInt(buf, capacityOffset, (int)cap);
     buf.clear(); // reset position, limit, mark
@@ -125,6 +171,9 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
     assert buffer.isDirect() : "The ByteBuffer must be direct";
     if (cleanerOffset == -1) {
       return false; // can not be reset
+    }
+    if (destroyDirectBufferCleaner) {
+      return true; // can be reset
     }
     return myUnsafe.getObject(buffer, cleanerOffset) == null;
   }
