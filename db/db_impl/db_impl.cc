@@ -5116,9 +5116,16 @@ ReadOptions::ReadOptions(const ReadOptions& y, BooleanDontCopyTrue tag)
   pinning_tls.reset(nullptr); // must reset pinning_tls
 }
 
+void ReadOptions::SkipCopyPtrReadOptionsTLS::reset(ReadOptionsTLS* p) {
+  if (ptr) {
+    delete ptr;
+  }
+  ptr = p;
+}
+
 void ReadOptions::StartPin() {
   if (!pinning_tls) {
-    pinning_tls = std::make_shared<ReadOptionsTLS>();
+    pinning_tls = new ReadOptionsTLS();
   } else {
     ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->db_impl);
     ROCKSDB_VERIFY_EQ(nullptr, pinning_tls->sv);

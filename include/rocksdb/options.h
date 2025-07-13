@@ -1533,9 +1533,6 @@ enum ReadTier : unsigned char {
   kMemtableTier = 0x3     // data in memtable. used for memtable-only iterators.
 };
 
-// We know ReadOptionsTLS is single dereived enable_shared_from_this
-inline auto base_enable_shared_from_this(struct ReadOptionsTLS* p) { return p; }
-
 // Options that control read operations
 struct ReadOptions {
   // *** BEGIN options relevant to point lookups as well as scans ***
@@ -1810,7 +1807,15 @@ struct ReadOptions {
     BooleanDontCopyTrue& operator=(const BooleanDontCopyTrue& y) {
       assert(y.value == false); // relax just for debug
       ROCKSDB_VERIFY(this->value == false); // strict for release
-      this->value = false;
+      return *this;
+    }
+    BooleanDontCopyTrue(BooleanDontCopyTrue&& y) {
+      ROCKSDB_VERIFY(y.value == false); // strict for release
+      ROCKSDB_VERIFY(this->value == false); // strict for release
+    }
+    BooleanDontCopyTrue& operator=(BooleanDontCopyTrue&& y) {
+      ROCKSDB_VERIFY(y.value == false); // strict for release
+      ROCKSDB_VERIFY(this->value == false); // strict for release
       return *this;
     }
     BooleanDontCopyTrue& operator=(const bool) = delete;
@@ -1827,7 +1832,22 @@ struct ReadOptions {
   // Default: empty (every table will be scanned)
   terark::shared_function<bool(const TableProperties&, const FileMetaData&)> table_filter;
 
-  terark::narrow_shared_ptr<struct ReadOptionsTLS> pinning_tls = nullptr;
+  class SkipCopyPtrReadOptionsTLS {
+    struct ReadOptionsTLS* ptr = nullptr;
+  public:
+    ~SkipCopyPtrReadOptionsTLS() { reset(nullptr); }
+    SkipCopyPtrReadOptionsTLS() = default;
+    SkipCopyPtrReadOptionsTLS(const SkipCopyPtrReadOptionsTLS&) : ptr(nullptr) {}
+    SkipCopyPtrReadOptionsTLS(SkipCopyPtrReadOptionsTLS&& y) : ptr(y.ptr) { y.ptr = nullptr; }
+    auto& operator=(const SkipCopyPtrReadOptionsTLS&) { return *this; }
+    auto& operator=(SkipCopyPtrReadOptionsTLS&& y) { reset(y.ptr); y.ptr = nullptr; return *this; }
+    auto& operator=(struct ReadOptionsTLS* p) { reset(p); return *this; }
+    auto get() const { return ptr; }
+    void reset(struct ReadOptionsTLS*); // defined in dbimpl.cc
+    struct ReadOptionsTLS* operator->() const { return ptr; }
+    operator bool() const { return ptr != nullptr; }
+  };
+  SkipCopyPtrReadOptionsTLS pinning_tls;
 
   // *** END options for RocksDB internal use only ***
 
