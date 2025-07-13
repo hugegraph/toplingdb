@@ -177,6 +177,13 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
     }
     return myUnsafe.getObject(buffer, cleanerOffset) == null;
   }
+  public static int copyToDirectBuffer(long ptr, long len, ByteBuffer buf) {
+    assert buf.isDirect() : "The ByteBuffer must be direct";
+    long destAddr = myUnsafe.getLong(buf, addressOffset);
+    int cplen = Math.min((int)len, buf.remaining());
+    myUnsafe.copyMemory(ptr, destAddr + buf.position(), cplen);
+    return cplen;
+  }
 
   /**
    * Called from JNI to construct a new Java DirectSlice

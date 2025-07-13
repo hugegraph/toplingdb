@@ -1291,6 +1291,27 @@ public class RocksDB extends RocksObject {
         columnFamilyHandle.nativeHandle_);
   }
 
+  int getDirect1(final ReadOptions opt, final ByteBuffer key, final ByteBuffer value, final long cfh)
+      throws RocksDBException {
+    long result = getDirect(nativeHandle_, opt.nativeHandle_,
+        key, key.position(), key.remaining(),
+        value, value.position(), value.remaining(), cfh);
+    if ((result & 7) == 0) { // zero copy
+      long valuePtr = DirectSlice.getUnsafe().getLong(result + 0);
+      long valueLen = DirectSlice.getUnsafe().getLong(result + 8);
+      if (DirectSlice.supportDirectBorrowMemory(value)) {
+        DirectSlice.directBorrowMemory(value, valuePtr, valueLen);
+        return (int)(valueLen);
+      } else {
+        return DirectSlice.copyToDirectBuffer(valuePtr, valueLen, value);
+      }
+    } else {
+      // error or not found
+      assert (result & 7) == 1 : "Now just 1 is allowed";
+      return (int)(result >> 1);
+    }
+  }
+
   /**
    * Get the value associated with the specified key within column family.
    *
@@ -1314,8 +1335,7 @@ public class RocksDB extends RocksObject {
       throws RocksDBException {
     final int result;
     if (key.isDirect() && value.isDirect()) {
-      result = getDirect(nativeHandle_, opt.nativeHandle_, key, key.position(), key.remaining(),
-          value, value.position(), value.remaining(), 0);
+      result = getDirect1(opt, key, value, 0);
     } else if (!key.isDirect() && !value.isDirect()) {
       result =
           get(nativeHandle_, opt.nativeHandle_, key.array(), key.arrayOffset() + key.position(),
@@ -1355,9 +1375,7 @@ public class RocksDB extends RocksObject {
   public int get(final ColumnFamilyHandle columnFamilyHandle, final ReadOptions opt,
       final ByteBuffer key, final ByteBuffer value) throws RocksDBException {
     assert key.isDirect() && value.isDirect();
-    final int result =
-        getDirect(nativeHandle_, opt.nativeHandle_, key, key.position(), key.remaining(), value,
-            value.position(), value.remaining(), columnFamilyHandle.nativeHandle_);
+    final int result = getDirect1(opt, key, value, columnFamilyHandle.nativeHandle_);
     if (result != NOT_FOUND) {
       value.limit(Math.min(value.limit(), value.position() + result));
     }
@@ -5020,7 +5038,7 @@ public class RocksDB extends RocksObject {
   private native Map<String, String> getMapProperty(final long nativeHandle,
       final long cfHandle, final String property, final int propertyLength)
       throws RocksDBException;
-  private native int getDirect(long handle, long readOptHandle, ByteBuffer key, int keyOffset,
+  private native long getDirect(long handle, long readOptHandle, ByteBuffer key, int keyOffset,
       int keyLength, ByteBuffer value, int valueOffset, int valueLength, long cfHandle)
       throws RocksDBException;
   private native boolean keyMayExistDirect(final long handle, final long cfHhandle,

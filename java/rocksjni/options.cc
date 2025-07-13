@@ -8043,7 +8043,7 @@ void Java_org_rocksdb_WriteOptions_setMemtableInsertHintPerBatch(
  * Signature: ()J
  */
 jlong Java_org_rocksdb_ReadOptions_newReadOptions__(JNIEnv*, jclass) {
-  auto* read_options = new ROCKSDB_NAMESPACE::ReadOptions();
+  auto* read_options = new ROCKSDB_NAMESPACE::ReadOptionsWithValue();
   return GET_CPLUSPLUS_POINTER(read_options);
 }
 
@@ -8054,7 +8054,7 @@ jlong Java_org_rocksdb_ReadOptions_newReadOptions__(JNIEnv*, jclass) {
  */
 jlong Java_org_rocksdb_ReadOptions_newReadOptions__ZZ(
     JNIEnv*, jclass, jboolean jverify_checksums, jboolean jfill_cache) {
-  auto* read_options = new ROCKSDB_NAMESPACE::ReadOptions(
+  auto* read_options = new ROCKSDB_NAMESPACE::ReadOptionsWithValue(
       static_cast<bool>(jverify_checksums), static_cast<bool>(jfill_cache));
   return GET_CPLUSPLUS_POINTER(read_options);
 }
@@ -8066,8 +8066,8 @@ jlong Java_org_rocksdb_ReadOptions_newReadOptions__ZZ(
  */
 jlong Java_org_rocksdb_ReadOptions_copyReadOptions(JNIEnv*, jclass,
                                                    jlong jhandle) {
-  auto new_opt = new ROCKSDB_NAMESPACE::ReadOptions(
-      *(reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle)));
+  auto new_opt = new ROCKSDB_NAMESPACE::ReadOptionsWithValue(
+      *(reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jhandle)));
   return GET_CPLUSPLUS_POINTER(new_opt);
 }
 
@@ -8079,7 +8079,7 @@ jlong Java_org_rocksdb_ReadOptions_copyReadOptions(JNIEnv*, jclass,
 void Java_org_rocksdb_ReadOptions_disposeInternal(JNIEnv*, jobject,
                                                   jlong jhandle) {
   auto* read_options =
-      reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
+      reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jhandle);
   assert(read_options != nullptr);
   delete read_options;
 }
@@ -8682,6 +8682,50 @@ void Java_org_rocksdb_ReadOptions_setAsyncQueueDepth(
     JNIEnv *, jobject, jlong jhandle, jint queue_depth) {
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jhandle);
   opt->async_queue_depth = queue_depth;
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    startZeroCopy0
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_org_rocksdb_ReadOptions_startZeroCopy0
+(JNIEnv* env, jobject, jlong jhandle)
+{
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jhandle);
+  if (!opt->zero_copy_value_vec.empty()) {
+    auto s = ROCKSDB_NAMESPACE::Status::Corruption("zero_copy_value_vec.size = "
+         + std::to_string(opt->zero_copy_value_vec.size()) + ", must be empty");
+    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
+    return;
+  }
+  ROCKSDB_VERIFY(opt->internal_is_in_pinning_section == false);
+  opt->StartPin();
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    finishZeroCopy0
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_org_rocksdb_ReadOptions_finishZeroCopy0
+(JNIEnv*, jobject, jlong jhandle)
+{
+  auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jhandle);
+  ROCKSDB_VERIFY(opt->internal_is_in_pinning_section == true);
+  opt->zero_copy_value_vec.clear();
+  opt->FinishPin();
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    get_internal_is_in_pinning_section_offset
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_org_rocksdb_ReadOptions_get_1internal_1is_1in_1pinning_1section_1offset
+(JNIEnv *, jclass) {
+  static_assert(sizeof(bool) == 1);
+  return offsetof(ROCKSDB_NAMESPACE::ReadOptions, internal_is_in_pinning_section.value);
 }
 
 /////////////////////////////////////////////////////////////////////

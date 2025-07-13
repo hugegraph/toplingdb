@@ -8956,5 +8956,17 @@ class BlockBasedTableOptionsJni
   }
 };
 
+struct ReadOptionsWithValue : public ReadOptions {
+  using ReadOptions::ReadOptions;
+  // do not copy zero_copy_value_vec
+  ReadOptionsWithValue(const ReadOptionsWithValue& y) : ReadOptions(y) {}
+  ReadOptionsWithValue& operator=(const ReadOptionsWithValue& y) {
+    ReadOptions::operator=(y);
+    // do not copy zero_copy_value_vec
+    return *this;
+  }
+  mutable std::vector<std::unique_ptr<PinnableSlice> > zero_copy_value_vec;
+};
+
 }  // namespace ROCKSDB_NAMESPACE
 #endif  // JAVA_ROCKSJNI_PORTAL_H_
