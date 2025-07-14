@@ -863,8 +863,10 @@ public class ReadOptions extends RocksObject {
     finishZeroCopy0(nativeHandle_);
   }
 
-  public class AutoZeroCopy implements AutoCloseable {
-    public AutoZeroCopy() { startZeroCopy(); }
-    @Override public void close() throws Exception { finishZeroCopy(); }
+  public final AutoCloseable autoZeroCopy() {
+     return new AutoCloseable() {
+       { startZeroCopy(); }
+       @Override public void close() throws Exception { finishZeroCopy(); }
+     };
   }
 }
