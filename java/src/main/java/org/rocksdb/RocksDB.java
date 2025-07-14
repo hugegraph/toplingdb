@@ -1301,10 +1301,10 @@ public class RocksDB extends RocksObject {
       long valueLen = DirectSlice.getUnsafe().getLong(result + 8);
       if (DirectSlice.supportDirectBorrowMemory(value)) {
         DirectSlice.directBorrowMemory(value, valuePtr, valueLen);
-        return (int)(valueLen);
       } else {
-        return DirectSlice.copyToDirectBuffer(valuePtr, valueLen, value);
+        DirectSlice.copyToDirectBuffer(valuePtr, valueLen, value);
       }
+      return (int)(valueLen);
     } else {
       // error or not found
       assert (result & 7) == 1 : "Now just 1 is allowed";
