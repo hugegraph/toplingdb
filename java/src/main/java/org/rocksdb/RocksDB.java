@@ -1308,7 +1308,7 @@ public class RocksDB extends RocksObject {
     } else {
       // error or not found
       assert (result & 7) == 1 : "Now just 1 is allowed";
-      return (int)(result >> 1);
+      return (int)(result >> 3);
     }
   }
 

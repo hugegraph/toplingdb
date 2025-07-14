@@ -1056,8 +1056,8 @@ void Java_org_rocksdb_RocksDB_deleteRange__J_3BII_3BII(
 
 // low 3 bits of object ptr are always 0, we use 1 bits here
 #define JLONG_OF_PTR(ptr)      jlong(ptr)
-#define JLONG_OF_ERROR(err)  ((jlong(err) << 1) | 1)
-#define JLONG_OF_LENGTH(len) ((jlong(len) << 1) | 1)
+#define JLONG_OF_ERROR(err)  ((jlong(err) << 3) | 1)
+#define JLONG_OF_LENGTH(len) ((jlong(len) << 3) | 1)
 
 jlong rocksdb_get_helper_direct(
     JNIEnv* env, ROCKSDB_NAMESPACE::DB* db,
