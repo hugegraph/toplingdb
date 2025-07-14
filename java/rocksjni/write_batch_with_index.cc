@@ -552,6 +552,7 @@ jlong Java_org_rocksdb_WriteBatchWithIndex_iteratorWithBase(
       reinterpret_cast<ROCKSDB_NAMESPACE::JZeroCopyIter*>(jbase_iterator_handle);
   auto* base_iterator = zc_iter->iter;
   zc_iter->iter = nullptr; // ownership has been moved, reset to nullptr
+  delete zc_iter; // java side will not delete it, we delete it here
   ROCKSDB_NAMESPACE::ReadOptions* read_opts =
       jread_opts_handle == 0
           ? nullptr
