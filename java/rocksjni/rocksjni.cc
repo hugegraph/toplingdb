@@ -1085,8 +1085,20 @@ jlong rocksdb_get_helper_direct(
     *has_exception = true;
     return JLONG_OF_ERROR(kArgumentError);
   }
-  if (ro_opt && ro_opt->internal_is_in_pinning_section) {
-    // ignore jval,jval_off,jval_len & store value to zero_copy_value_vec
+  if (nullptr == jval) {
+    if (nullptr == ro_opt) {
+      ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env,
+          "When DirectByteBuffer for value is null in JNI, "
+          "it indicate zero copy, ReadOptions must not be null in this case");
+      *has_exception = true;
+      return JLONG_OF_ERROR(kArgumentError);
+    }
+    // not need {jval,jval_off,jval_len} & store value to zero_copy_value_vec
+    ROCKSDB_ASSERT_EQ(jval_off, -1);
+    ROCKSDB_ASSERT_EQ(jval_len, -1);
+    if (!ro_opt->internal_is_in_pinning_section) {
+      const_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(ro_opt)->StartPin();
+    }
     key += jkey_off;
     ROCKSDB_NAMESPACE::Slice key_slice(key, jkey_len);
     auto pinnable_value_up = std::make_unique<ROCKSDB_NAMESPACE::PinnableSlice>();
@@ -1128,7 +1140,7 @@ jlong rocksdb_get_helper_direct(
   value += jval_off;
 
   ROCKSDB_NAMESPACE::ReadOptions const& read_options = ro_opt == nullptr ? g_tls_rdopt : *ro_opt;
-  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&read_options);
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePinIfNotPinned scope_pin(&read_options);
 
   ROCKSDB_NAMESPACE::Slice key_slice(key, jkey_len);
 
@@ -1550,7 +1562,7 @@ jbyteArray rocksdb_get_helper(
     return nullptr;
   }
 
-  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&read_opt);
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePinIfNotPinned scope_pin(&read_opt);
 
   ROCKSDB_NAMESPACE::Slice key_slice(reinterpret_cast<char*>(key), jkey_len);
 
@@ -1681,7 +1693,7 @@ jint rocksdb_get_helper(
     return kStatusError;
   }
 
-  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&read_options);
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePinIfNotPinned scope_pin(&read_options);
 
   ROCKSDB_NAMESPACE::Slice key_slice(reinterpret_cast<char*>(key), jkey_len);
 
@@ -2028,7 +2040,7 @@ jobjectArray multi_get_helper(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
   size_t num = keys.size();
   std::vector<ROCKSDB_NAMESPACE::PinnableSlice> values(num);
   std::vector<ROCKSDB_NAMESPACE::Status> s(num);
-  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&rOpt);
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePinIfNotPinned scope_pin(&rOpt);
   if (auto uniq_cf = get_uniq_cf(db, cf_handles)) {
     db->MultiGet(rOpt, uniq_cf, num, keys.data(), values.data(), nullptr, s.data());
   } else {
@@ -2127,7 +2139,7 @@ void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
   }
 
   std::vector<ROCKSDB_NAMESPACE::Status> s(num_keys);
-  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&rOpt);
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePinIfNotPinned scope_pin(&rOpt);
   if (auto uniq_cf = get_uniq_cf(db, cf_handles)) {
     db->MultiGet(rOpt, uniq_cf, num_keys, keys.data(), values.data(), nullptr, s.data());
   } else {

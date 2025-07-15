@@ -846,21 +846,31 @@ public class ReadOptions extends RocksObject {
   private static final int internal_is_in_pinning_section_offset = get_internal_is_in_pinning_section_offset();
   private static final Unsafe myUnsafe = DirectSlice.getUnsafe();
 //private native bool isInZeroCopySection0(final long handle); // slow
-  public boolean isInZeroCopySection() { // fast
+  private boolean isInZeroCopySection() { // fast
     return myUnsafe.getByte(nativeHandle_ + internal_is_in_pinning_section_offset) != 0;
   }
+  private boolean goingToZeroCopy = false;
+  boolean isGoingToZeroCopy() { return goingToZeroCopy; } // package access
 
   public void startZeroCopy() {
-    if (isInZeroCopySection()) {
-      throw new IllegalStateException("ReadOptions is already in ZeroCopy section");
+    if (goingToZeroCopy) {
+      throw new IllegalStateException("ReadOptions is already set goingToZeroCopy");
     }
-    startZeroCopy0(nativeHandle_);
+    if (isInZeroCopySection()) {
+      throw new IllegalStateException(
+        "Native ReadOptions is in zero copy section, when goingToZeroCopy is false, it must not be in zero copy section");
+    }
+    goingToZeroCopy = true;
+    //startZeroCopy0(nativeHandle_); // not needed now
   }
   public void finishZeroCopy() {
-    if (!isInZeroCopySection()) {
-      throw new IllegalStateException("ReadOptions is not in ZeroCopy section");
+    if (!goingToZeroCopy) {
+      throw new IllegalStateException("ReadOptions.startZeroCopy() was not called");
     }
-    finishZeroCopy0(nativeHandle_);
+    if (isInZeroCopySection()) {
+      finishZeroCopy0(nativeHandle_);
+    }
+    goingToZeroCopy = false;
   }
 
   public final AutoCloseable autoZeroCopy() {

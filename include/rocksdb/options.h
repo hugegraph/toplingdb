@@ -1861,6 +1861,19 @@ struct ReadOptions {
     explicit ScopePin(const ReadOptions* ro) : ScopePin((ReadOptions*)ro) {}
     ~ScopePin() { ro_->FinishPin(); }
   };
+  class ScopePinIfNotPinned {
+    ReadOptions* ro_;
+   public:
+    explicit ScopePinIfNotPinned(ReadOptions* ro) {
+      if (ro->internal_is_in_pinning_section)
+        ro_ = nullptr;
+      else
+        ro_ = ro, ro->StartPin();
+    }
+    explicit ScopePinIfNotPinned(const ReadOptions* ro)
+           : ScopePinIfNotPinned((ReadOptions*)ro) {}
+    ~ScopePinIfNotPinned() { if (ro_) ro_->FinishPin(); }
+  };
 
   ReadOptions() {}
   ReadOptions(bool _verify_checksums, bool _fill_cache);

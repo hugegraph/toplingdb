@@ -1293,10 +1293,17 @@ public class RocksDB extends RocksObject {
 
   int getDirect1(final ReadOptions opt, final ByteBuffer key, final ByteBuffer value, final long cfh)
       throws RocksDBException {
-    long result = getDirect(nativeHandle_, opt.nativeHandle_,
+    final long result;
+    if (opt.isGoingToZeroCopy()) {
+      result = getDirect(nativeHandle_, opt.nativeHandle_,
+        key, key.position(), key.remaining(), null, -1, -1, cfh);
+    } else {
+      result = getDirect(nativeHandle_, opt.nativeHandle_,
         key, key.position(), key.remaining(),
         value, value.position(), value.remaining(), cfh);
+    }
     if ((result & 7) == 0) { // zero copy
+      assert opt.isGoingToZeroCopy();
       long valuePtr = DirectSlice.getUnsafe().getLong(result + 0);
       long valueLen = DirectSlice.getUnsafe().getLong(result + 8);
       if (DirectSlice.supportDirectBorrowMemory(value)) {
