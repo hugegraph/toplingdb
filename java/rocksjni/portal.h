@@ -8958,14 +8958,56 @@ class BlockBasedTableOptionsJni
 
 struct ReadOptionsWithValue : public ReadOptions {
   using ReadOptions::ReadOptions;
-  // do not copy zero_copy_value_vec
+  // do not copy m_inuse_list & m_zfree_list
   ReadOptionsWithValue(const ReadOptionsWithValue& y) : ReadOptions(y) {}
   ReadOptionsWithValue& operator=(const ReadOptionsWithValue& y) {
     ReadOptions::operator=(y);
-    // do not copy zero_copy_value_vec
+    // do not copy m_inuse_list & m_zfree_list
     return *this;
   }
-  mutable std::vector<std::unique_ptr<PinnableSlice> > zero_copy_value_vec;
+  struct PinnableSliceNode : PinnableSlice {
+    PinnableSliceNode* next;
+  };
+  struct PinnableSliceList {
+    ~PinnableSliceList() {
+      for (auto node = m_head; node; ) {
+        auto next = node->next;
+        delete node;
+        node = next;
+      }
+    }
+    PinnableSliceNode* m_head = nullptr;
+    size_t  m_size = 0;
+  };
+  size_t ZeroCopyListLen() const { return m_inuse_list.m_size; }
+  auto NewPinnableSlice() const {
+    if (auto p = m_zfree_list.m_head) {
+      m_zfree_list.m_head = p->next;
+      m_zfree_list.m_size--;
+      return std::unique_ptr<PinnableSliceNode>(p);
+    }
+    return std::unique_ptr<PinnableSliceNode>(new PinnableSliceNode());
+  }
+  void RegisterZeroCopy(std::unique_ptr<PinnableSliceNode>&& node) const {
+    node->next = m_inuse_list.m_head;
+    m_inuse_list.m_head = node.release();
+    m_inuse_list.m_size++;
+  }
+  void ClearZeroCopyList() {
+    auto pp = &m_inuse_list.m_head;
+    while (auto p = *pp)
+      p->Reset(), pp = &p->next;
+    *pp = m_zfree_list.m_head;
+    m_zfree_list.m_head  = m_inuse_list.m_head;
+    m_zfree_list.m_size += m_inuse_list.m_size;
+    new (&m_inuse_list) PinnableSliceList();
+  }
+  ~ReadOptionsWithValue() {
+    ROCKSDB_ASSERT_EQ(m_inuse_list.m_size, 0);
+  }
+private:
+  mutable PinnableSliceList m_inuse_list;
+  mutable PinnableSliceList m_zfree_list;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

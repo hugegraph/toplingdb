@@ -1093,7 +1093,7 @@ jlong rocksdb_get_helper_direct(
       *has_exception = true;
       return JLONG_OF_ERROR(kArgumentError);
     }
-    // not need {jval,jval_off,jval_len} & store value to zero_copy_value_vec
+    // not need {jval,jval_off,jval_len}, do register value to zero copy list
     ROCKSDB_ASSERT_EQ(jval_off, -1);
     ROCKSDB_ASSERT_EQ(jval_len, -1);
     if (!ro_opt->internal_is_in_pinning_section) {
@@ -1101,7 +1101,7 @@ jlong rocksdb_get_helper_direct(
     }
     key += jkey_off;
     ROCKSDB_NAMESPACE::Slice key_slice(key, jkey_len);
-    auto pinnable_value_up = std::make_unique<ROCKSDB_NAMESPACE::PinnableSlice>();
+    auto pinnable_value_up = ro_opt->NewPinnableSlice();
     auto pinnable_value = pinnable_value_up.get();
     auto cfh = column_family_handle ?
                column_family_handle : db->DefaultColumnFamily();
@@ -1114,7 +1114,7 @@ jlong rocksdb_get_helper_direct(
       ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
       return JLONG_OF_ERROR(kStatusError);
     }
-    ro_opt->zero_copy_value_vec.push_back(std::move(pinnable_value_up));
+    ro_opt->RegisterZeroCopy(std::move(pinnable_value_up));
     return JLONG_OF_PTR(pinnable_value);
   }
 

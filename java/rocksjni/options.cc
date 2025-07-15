@@ -8693,9 +8693,9 @@ JNIEXPORT void JNICALL Java_org_rocksdb_ReadOptions_startZeroCopy0
 (JNIEnv* env, jobject, jlong jhandle)
 {
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jhandle);
-  if (!opt->zero_copy_value_vec.empty()) {
-    auto s = ROCKSDB_NAMESPACE::Status::Corruption("zero_copy_value_vec.size = "
-         + std::to_string(opt->zero_copy_value_vec.size()) + ", must be empty");
+  if (opt->ZeroCopyListLen()) {
+    auto s = ROCKSDB_NAMESPACE::Status::Corruption("ZeroCopyListLen() = "
+         + std::to_string(opt->ZeroCopyListLen()) + ", must be 0");
     ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
     return;
   }
@@ -8713,7 +8713,7 @@ JNIEXPORT void JNICALL Java_org_rocksdb_ReadOptions_finishZeroCopy0
 {
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jhandle);
   ROCKSDB_VERIFY(opt->internal_is_in_pinning_section == true);
-  opt->zero_copy_value_vec.clear();
+  opt->ClearZeroCopyList();
   opt->FinishPin();
 }
 
