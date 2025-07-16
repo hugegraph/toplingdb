@@ -1059,6 +1059,42 @@ void Java_org_rocksdb_RocksDB_deleteRange__J_3BII_3BII(
 #define JLONG_OF_ERROR(err)  ((jlong(err) << 3) | 1)
 #define JLONG_OF_LENGTH(len) ((jlong(len) << 3) | 1)
 
+/*
+ * Class:     org_rocksdb_RocksDB
+ * Method:    byteArrayKeyGetDirect
+ * Signature: (JJ[BIIJ)J
+ */
+JNIEXPORT jlong JNICALL Java_org_rocksdb_RocksDB_byteArrayKeyGetDirect
+(JNIEnv* env, jobject, jlong dbh, jlong roh, jbyteArray jkey, jint kOffset, jint kLen, jlong lcfh)
+{
+  static const int kNotFound = -1;
+  static const int kStatusError = -2;
+  auto db = (ROCKSDB_NAMESPACE::DB*)dbh;
+  auto ro_opt = (ROCKSDB_NAMESPACE::ReadOptionsWithValue*)roh;
+  auto cfh = (ROCKSDB_NAMESPACE::ColumnFamilyHandle*)lcfh;
+  auto key = (jbyte*)alloca(kLen);
+  env->GetByteArrayRegion(jkey, kOffset, kLen, key);
+  if (env->ExceptionCheck()) {
+    // exception thrown: ArrayIndexOutOfBoundsException
+    return 0;
+  }
+  if (!ro_opt->internal_is_in_pinning_section) {
+    ro_opt->StartPin();
+  }
+  ROCKSDB_NAMESPACE::Slice key_slice((const char*)key, kLen);
+  auto pinnable_value_up = ro_opt->NewPinnableSlice();
+  auto pinnable_value = pinnable_value_up.get();
+  auto s = db->Get(*ro_opt, cfh, key_slice, pinnable_value);
+  if (s.IsNotFound()) {
+    return JLONG_OF_ERROR(kNotFound);
+  } else if (!s.ok()) {
+    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
+    return JLONG_OF_ERROR(kStatusError);
+  }
+  ro_opt->RegisterZeroCopy(std::move(pinnable_value_up));
+  return JLONG_OF_PTR(pinnable_value);
+}
+
 jlong rocksdb_get_helper_direct(
     JNIEnv* env, ROCKSDB_NAMESPACE::DB* db,
     const ROCKSDB_NAMESPACE::ReadOptionsWithValue* ro_opt,

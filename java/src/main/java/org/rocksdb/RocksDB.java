@@ -1390,6 +1390,48 @@ public class RocksDB extends RocksObject {
     return result;
   }
 
+  private int byteArrayKeyGetDirect1(final ReadOptions opt, final byte[] key, int kOffset,
+                    int kLen, final ByteBuffer value, long cfh) throws RocksDBException {
+    if (!value.isDirect()) {
+      return get(nativeHandle_, opt.nativeHandle_, key, kOffset, kLen, value.array(),
+                 value.arrayOffset() + value.position(), value.remaining(), cfh);
+    }
+    if (!opt.isGoingToZeroCopy()) {
+      throw new RocksDBException
+      ("Must be in zero copy section when get with ByteArray key & DirectBuffer value");
+    }
+    long result = byteArrayKeyGetDirect(nativeHandle_, opt.nativeHandle_, key, kOffset, kLen, cfh);
+    if ((result & 7) == 0) {
+      long valuePtr = DirectSlice.getUnsafe().getLong(result + 0);
+      long valueLen = DirectSlice.getUnsafe().getLong(result + 8);
+      if (DirectSlice.supportDirectBorrowMemory(value)) {
+        DirectSlice.directBorrowMemory(value, valuePtr, valueLen);
+      } else {
+        DirectSlice.copyToDirectBuffer(valuePtr, valueLen, value);
+      }
+      return (int)valueLen;
+    } else {
+      assert (result & 7) == 1; // currently just 1
+      return (int)(result >> 3);
+    }
+  }
+  public int get(final ReadOptions opt, final byte[] key, int kOffset, int kLen, final ByteBuffer value)
+      throws RocksDBException {
+    return byteArrayKeyGetDirect1(opt, key, kOffset, kLen, value, defaultColumnFamilyHandle_.nativeHandle_);
+  }
+  public int get(final ColumnFamilyHandle columnFamilyHandle, final ReadOptions opt,
+      final byte[] key, int kOffset, int kLen, final ByteBuffer value)
+      throws RocksDBException {
+    return byteArrayKeyGetDirect1(opt, key, kOffset, kLen, value, columnFamilyHandle.nativeHandle_);
+  }
+  public int get(final ReadOptions opt, final byte[] key, final ByteBuffer value) throws RocksDBException {
+    return get(opt, key, 0, key.length, value);
+  }
+  public int get(final ColumnFamilyHandle columnFamilyHandle, final ReadOptions opt,
+                 final byte[] key, final ByteBuffer value) throws RocksDBException {
+    return get(columnFamilyHandle, opt, key, 0, key.length, value);
+  }
+
   /**
    * Remove the database entry for {@code key}. Requires that the key exists
    * and was not overwritten. It is not an error if the key did not exist
@@ -5048,6 +5090,8 @@ public class RocksDB extends RocksObject {
   private native long getDirect(long handle, long readOptHandle, ByteBuffer key, int keyOffset,
       int keyLength, ByteBuffer value, int valueOffset, int valueLength, long cfHandle)
       throws RocksDBException;
+  private native long byteArrayKeyGetDirect(long handle, long readOptHandle,
+      byte[] key, int keyOffset, int keyLength, long cfHandle) throws RocksDBException;
   private native boolean keyMayExistDirect(final long handle, final long cfHhandle,
       final long readOptHandle, final ByteBuffer key, final int keyOffset, final int keyLength);
   private native int[] keyMayExistDirectFoundValue(final long handle, final long cfHhandle,

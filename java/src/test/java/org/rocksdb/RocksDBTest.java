@@ -254,6 +254,23 @@ public class RocksDBTest {
       result.get(tmp2);
       assertThat(tmp2).isEqualTo("val".getBytes());
 
+      if (optr.isGoingToZeroCopy()) {
+        // ToplingDB only: key is byte[], value is direct buffer
+        int vlen = db.get(optr, "key3".getBytes(), result);
+        assertThat(vlen).isEqualTo(4);
+        assertThat(result.position()).isEqualTo(0);
+        assertThat(result.limit()).isEqualTo(4);
+        assertThat(result.compareTo(ByteBuffer.wrap("val3".getBytes()))).isEqualTo(0);
+
+        int fail = db.get(optr, "key1000--".getBytes(), result);
+        assertThat(fail).isEqualTo(RocksDB.NOT_FOUND);
+
+        // assert result is unchanged after a failing get
+        assertThat(result.position()).isEqualTo(0);
+        assertThat(result.limit()).isEqualTo(4);
+        assertThat(result.compareTo(ByteBuffer.wrap("val3".getBytes()))).isEqualTo(0);
+      }
+
       // put
       final Segment key3 = sliceSegment("key3");
       final Segment key4 = sliceSegment("key4");
