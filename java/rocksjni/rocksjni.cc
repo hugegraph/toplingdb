@@ -1067,7 +1067,6 @@ void Java_org_rocksdb_RocksDB_deleteRange__J_3BII_3BII(
 JNIEXPORT jlong JNICALL Java_org_rocksdb_RocksDB_byteArrayKeyGetDirect
 (JNIEnv* env, jobject, jlong dbh, jlong roh, jbyteArray jkey, jint kOffset, jint kLen, jlong lcfh)
 {
-  static const int kNotFound = -1;
   static const int kStatusError = -2;
   auto db = (ROCKSDB_NAMESPACE::DB*)dbh;
   auto ro_opt = (ROCKSDB_NAMESPACE::ReadOptionsWithValue*)roh;
@@ -1086,7 +1085,7 @@ JNIEXPORT jlong JNICALL Java_org_rocksdb_RocksDB_byteArrayKeyGetDirect
   auto pinnable_value = pinnable_value_up.get();
   auto s = db->Get(*ro_opt, cfh, key_slice, pinnable_value);
   if (s.IsNotFound()) {
-    return JLONG_OF_ERROR(kNotFound);
+    return JLONG_OF_ERROR(org_rocksdb_RocksDB_NOT_FOUND);
   } else if (!s.ok()) {
     ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
     return JLONG_OF_ERROR(kStatusError);
