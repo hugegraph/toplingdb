@@ -1294,13 +1294,18 @@ public class RocksDB extends RocksObject {
   int getDirect1(final ReadOptions opt, final ByteBuffer key, final ByteBuffer value, final long cfh)
       throws RocksDBException {
     final long result;
+    final long keyPtr = DirectSlice.getDirectAddress(key) + key.position();
     if (opt.isGoingToZeroCopy()) {
       result = getDirect(nativeHandle_, opt.nativeHandle_,
-        key, key.position(), key.remaining(), null, -1, -1, cfh);
+        keyPtr, key.remaining(), 0, -1, cfh);
     } else {
+      long valuePtr = DirectSlice.getDirectAddress(value);
+      if (0 == valuePtr) {
+        throw new NullPointerException("DirectByteBuffer.address is null in non-zero-copy");
+      }
+      valuePtr += value.position();
       result = getDirect(nativeHandle_, opt.nativeHandle_,
-        key, key.position(), key.remaining(),
-        value, value.position(), value.remaining(), cfh);
+        keyPtr, key.remaining(), valuePtr, value.remaining(), cfh);
     }
     if ((result & 7) == 0) { // zero copy
       assert opt.isGoingToZeroCopy();
@@ -5087,8 +5092,8 @@ public class RocksDB extends RocksObject {
   private native Map<String, String> getMapProperty(final long nativeHandle,
       final long cfHandle, final String property, final int propertyLength)
       throws RocksDBException;
-  private native long getDirect(long handle, long readOptHandle, ByteBuffer key, int keyOffset,
-      int keyLength, ByteBuffer value, int valueOffset, int valueLength, long cfHandle)
+  private native long getDirect(long handle, long readOptHandle, long keyPtr,
+      int keyLength, long valuePtr, int valueLength, long cfHandle)
       throws RocksDBException;
   private native long byteArrayKeyGetDirect(long handle, long readOptHandle,
       byte[] key, int keyOffset, int keyLength, long cfHandle) throws RocksDBException;

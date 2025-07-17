@@ -1097,30 +1097,15 @@ JNIEXPORT jlong JNICALL Java_org_rocksdb_RocksDB_byteArrayKeyGetDirect
 jlong rocksdb_get_helper_direct(
     JNIEnv* env, ROCKSDB_NAMESPACE::DB* db,
     const ROCKSDB_NAMESPACE::ReadOptionsWithValue* ro_opt,
-    ROCKSDB_NAMESPACE::ColumnFamilyHandle* column_family_handle, jobject jkey,
-    jint jkey_off, jint jkey_len, jobject jval, jint jval_off, jint jval_len,
+    ROCKSDB_NAMESPACE::ColumnFamilyHandle* column_family_handle, jlong jkey,
+    jint jkey_len, jlong jval, jint jval_len,
     bool* has_exception) {
   static const int kNotFound = -1;
   static const int kStatusError = -2;
   static const int kArgumentError = -3;
 
-  char* key = reinterpret_cast<char*>(env->GetDirectBufferAddress(jkey));
-  if (key == nullptr) {
-    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(
-        env,
-        "Invalid key argument (argument is not a valid direct ByteBuffer)");
-    *has_exception = true;
-    return JLONG_OF_ERROR(kArgumentError);
-  }
-  if (env->GetDirectBufferCapacity(jkey) < (jkey_off + jkey_len)) {
-    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(
-        env,
-        "Invalid key argument. Capacity is less than requested region (offset "
-        "+ length).");
-    *has_exception = true;
-    return JLONG_OF_ERROR(kArgumentError);
-  }
-  if (nullptr == jval) {
+  char* key = reinterpret_cast<char*>(jkey);
+  if (0 == jval) {
     if (nullptr == ro_opt) {
       ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env,
           "When DirectByteBuffer for value is null in JNI, "
@@ -1128,13 +1113,11 @@ jlong rocksdb_get_helper_direct(
       *has_exception = true;
       return JLONG_OF_ERROR(kArgumentError);
     }
-    // not need {jval,jval_off,jval_len}, do register value to zero copy list
-    ROCKSDB_ASSERT_EQ(jval_off, -1);
+    // not need {jval,jval_len}, do register value to zero copy list
     ROCKSDB_ASSERT_EQ(jval_len, -1);
     if (!ro_opt->internal_is_in_pinning_section) {
       const_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(ro_opt)->StartPin();
     }
-    key += jkey_off;
     ROCKSDB_NAMESPACE::Slice key_slice(key, jkey_len);
     auto pinnable_value_up = ro_opt->NewPinnableSlice();
     auto pinnable_value = pinnable_value_up.get();
@@ -1153,26 +1136,7 @@ jlong rocksdb_get_helper_direct(
     return JLONG_OF_PTR(pinnable_value);
   }
 
-  char* value = reinterpret_cast<char*>(env->GetDirectBufferAddress(jval));
-  if (value == nullptr) {
-    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(
-        env,
-        "Invalid value argument (argument is not a valid direct ByteBuffer)");
-    *has_exception = true;
-    return JLONG_OF_ERROR(kArgumentError);
-  }
-
-  if (env->GetDirectBufferCapacity(jval) < (jval_off + jval_len)) {
-    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(
-        env,
-        "Invalid value argument. Capacity is less than requested region "
-        "(offset + length).");
-    *has_exception = true;
-    return JLONG_OF_ERROR(kArgumentError);
-  }
-
-  key += jkey_off;
-  value += jval_off;
+  char* value = reinterpret_cast<char*>(jval);
 
   ROCKSDB_NAMESPACE::ReadOptions const& read_options = ro_opt == nullptr ? g_tls_rdopt : *ro_opt;
   ROCKSDB_NAMESPACE::ReadOptions::ScopePinIfNotPinned scope_pin(&read_options);
@@ -1346,9 +1310,8 @@ void Java_org_rocksdb_RocksDB_clipColumnFamily(
  */
 jlong Java_org_rocksdb_RocksDB_getDirect(JNIEnv* env, jobject /*jdb*/,
                                         jlong jdb_handle, jlong jropt_handle,
-                                        jobject jkey, jint jkey_off,
-                                        jint jkey_len, jobject jval,
-                                        jint jval_off, jint jval_len,
+                                        jlong jkey, jint jkey_len,
+                                        jlong jval, jint jval_len,
                                         jlong jcf_handle) {
   auto* db_handle = reinterpret_cast<ROCKSDB_NAMESPACE::DB*>(jdb_handle);
   auto* ro_opt =
@@ -1359,7 +1322,7 @@ jlong Java_org_rocksdb_RocksDB_getDirect(JNIEnv* env, jobject /*jdb*/,
   return rocksdb_get_helper_direct(
       env, db_handle,
       ro_opt, cf_handle,
-      jkey, jkey_off, jkey_len, jval, jval_off, jval_len, &has_exception);
+      jkey, jkey_len, jval, jval_len, &has_exception);
 }
 
 //////////////////////////////////////////////////////////////////////////////
