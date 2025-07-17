@@ -248,7 +248,13 @@ class PinnableSlice : public Slice, public Cleanable {
     Cleanable::Reset();
     pinned_ = false;
     size_ = 0;
+   #if 0
     std::string().swap(self_space_); // free space
+   #else // much faster
+    using str = decltype(self_space_);
+    self_space_.~str();
+    new(&self_space_)str();
+   #endif
   }
 
   inline std::string* GetSelf() { return buf_; }
