@@ -8980,7 +8980,7 @@ struct ReadOptionsWithValue : public ReadOptions {
     size_t  m_size = 0;
   };
   size_t ZeroCopyListLen() const { return m_inuse_list.m_size; }
-  auto NewPinnableSlice() const {
+  auto NewPinnableSlice() {
     if (auto p = m_zfree_list.m_head) {
       m_zfree_list.m_head = p->next;
       m_zfree_list.m_size--;
@@ -8988,7 +8988,7 @@ struct ReadOptionsWithValue : public ReadOptions {
     }
     return std::unique_ptr<PinnableSliceNode>(new PinnableSliceNode());
   }
-  void RegisterZeroCopy(std::unique_ptr<PinnableSliceNode>&& node) const {
+  void RegisterZeroCopy(std::unique_ptr<PinnableSliceNode>&& node) {
     node->next = m_inuse_list.m_head;
     m_inuse_list.m_head = node.release();
     m_inuse_list.m_size++;
@@ -9006,8 +9006,8 @@ struct ReadOptionsWithValue : public ReadOptions {
     ROCKSDB_ASSERT_EQ(m_inuse_list.m_size, 0);
   }
 private:
-  mutable PinnableSliceList m_inuse_list;
-  mutable PinnableSliceList m_zfree_list;
+  PinnableSliceList m_inuse_list;
+  PinnableSliceList m_zfree_list;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

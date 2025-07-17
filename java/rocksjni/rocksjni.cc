@@ -1096,9 +1096,9 @@ JNIEXPORT jlong JNICALL Java_org_rocksdb_RocksDB_byteArrayKeyGetDirect
 
 jlong rocksdb_get_helper_direct(
     JNIEnv* env, ROCKSDB_NAMESPACE::DB* db,
-    const ROCKSDB_NAMESPACE::ReadOptionsWithValue* ro_opt,
-    ROCKSDB_NAMESPACE::ColumnFamilyHandle* column_family_handle, jlong jkey,
-    jint jkey_len, jlong jval, jint jval_len,
+    ROCKSDB_NAMESPACE::ReadOptionsWithValue* ro_opt,
+    ROCKSDB_NAMESPACE::ColumnFamilyHandle* column_family_handle,
+    jlong jkey, jint jkey_len, jlong jval, jint jval_len,
     bool* has_exception) {
   static const int kNotFound = -1;
   static const int kStatusError = -2;
@@ -1116,7 +1116,7 @@ jlong rocksdb_get_helper_direct(
     // not need {jval,jval_len}, do register value to zero copy list
     ROCKSDB_ASSERT_EQ(jval_len, -1);
     if (!ro_opt->internal_is_in_pinning_section) {
-      const_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(ro_opt)->StartPin();
+      ro_opt->StartPin();
     }
     ROCKSDB_NAMESPACE::Slice key_slice(key, jkey_len);
     auto pinnable_value_up = ro_opt->NewPinnableSlice();
@@ -1138,7 +1138,7 @@ jlong rocksdb_get_helper_direct(
 
   char* value = reinterpret_cast<char*>(jval);
 
-  ROCKSDB_NAMESPACE::ReadOptions const& read_options = ro_opt == nullptr ? g_tls_rdopt : *ro_opt;
+  ROCKSDB_NAMESPACE::ReadOptions& read_options = ro_opt == nullptr ? g_tls_rdopt : *ro_opt;
   ROCKSDB_NAMESPACE::ReadOptions::ScopePinIfNotPinned scope_pin(&read_options);
 
   ROCKSDB_NAMESPACE::Slice key_slice(key, jkey_len);
