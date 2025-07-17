@@ -233,6 +233,7 @@ class PinnableSlice : public Slice, public Cleanable {
     }
   }
 
+#if 0
   void remove_prefix(size_t n) {
     assert(n <= size());
     if (pinned_) {
@@ -243,6 +244,9 @@ class PinnableSlice : public Slice, public Cleanable {
       PinSelf();
     }
   }
+#else
+  void remove_prefix(size_t) = delete;
+#endif
 
   void Reset() {
     Cleanable::Reset();
