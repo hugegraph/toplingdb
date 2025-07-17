@@ -1533,9 +1533,6 @@ enum ReadTier : unsigned char {
   kMemtableTier = 0x3     // data in memtable. used for memtable-only iterators.
 };
 
-// We know ReadOptionsTLS is single dereived enable_shared_from_this
-inline auto base_enable_shared_from_this(struct ReadOptionsTLS* p) { return p; }
-
 // Options that control read operations
 struct ReadOptions {
   // *** BEGIN options relevant to point lookups as well as scans ***
@@ -1801,6 +1798,32 @@ struct ReadOptions {
 
   uint16_t async_queue_depth = 16;
 
+  struct BooleanDontCopyTrue {
+    explicit BooleanDontCopyTrue(bool x = false) : value(x) {}
+    BooleanDontCopyTrue(const BooleanDontCopyTrue& y) {
+      assert(y.value == false); // relax just for debug
+      this->value = false;
+    }
+    BooleanDontCopyTrue& operator=(const BooleanDontCopyTrue& y) {
+      assert(y.value == false); // relax just for debug
+      ROCKSDB_VERIFY(this->value == false); // strict for release
+      return *this;
+    }
+    BooleanDontCopyTrue(BooleanDontCopyTrue&& y) {
+      ROCKSDB_VERIFY(y.value == false); // strict for release
+      ROCKSDB_VERIFY(this->value == false); // strict for release
+    }
+    BooleanDontCopyTrue& operator=(BooleanDontCopyTrue&& y) {
+      ROCKSDB_VERIFY(y.value == false); // strict for release
+      ROCKSDB_VERIFY(this->value == false); // strict for release
+      return *this;
+    }
+    BooleanDontCopyTrue& operator=(const bool) = delete;
+    operator bool() const { return value; }
+    bool value;
+  };
+  BooleanDontCopyTrue internal_is_in_pinning_section{false};
+
   // A callback to determine whether relevant keys for this scan exist in a
   // given table based on the table's properties. The callback is passed the
   // properties of each table during iteration. If the callback returns false,
@@ -1809,7 +1832,22 @@ struct ReadOptions {
   // Default: empty (every table will be scanned)
   terark::shared_function<bool(const TableProperties&, const FileMetaData&)> table_filter;
 
-  terark::narrow_shared_ptr<struct ReadOptionsTLS> pinning_tls = nullptr;
+  class SkipCopyPtrReadOptionsTLS {
+    struct ReadOptionsTLS* ptr = nullptr;
+  public:
+    ~SkipCopyPtrReadOptionsTLS() { reset(nullptr); }
+    SkipCopyPtrReadOptionsTLS() = default;
+    SkipCopyPtrReadOptionsTLS(const SkipCopyPtrReadOptionsTLS&) : ptr(nullptr) {}
+    SkipCopyPtrReadOptionsTLS(SkipCopyPtrReadOptionsTLS&& y) : ptr(y.ptr) { y.ptr = nullptr; }
+    auto& operator=(const SkipCopyPtrReadOptionsTLS&) { return *this; }
+    auto& operator=(SkipCopyPtrReadOptionsTLS&& y) { reset(y.ptr); y.ptr = nullptr; return *this; }
+    auto& operator=(struct ReadOptionsTLS* p) { reset(p); return *this; }
+    auto get() const { return ptr; }
+    void reset(struct ReadOptionsTLS*); // defined in dbimpl.cc
+    struct ReadOptionsTLS* operator->() const { return ptr; }
+    operator bool() const { return ptr != nullptr; }
+  };
+  SkipCopyPtrReadOptionsTLS pinning_tls;
 
   // *** END options for RocksDB internal use only ***
 
@@ -1823,10 +1861,24 @@ struct ReadOptions {
     explicit ScopePin(const ReadOptions* ro) : ScopePin((ReadOptions*)ro) {}
     ~ScopePin() { ro_->FinishPin(); }
   };
+  class ScopePinIfNotPinned {
+    ReadOptions* ro_;
+   public:
+    explicit ScopePinIfNotPinned(ReadOptions* ro) {
+      if (ro->internal_is_in_pinning_section)
+        ro_ = nullptr;
+      else
+        ro_ = ro, ro->StartPin();
+    }
+    explicit ScopePinIfNotPinned(const ReadOptions* ro)
+           : ScopePinIfNotPinned((ReadOptions*)ro) {}
+    ~ScopePinIfNotPinned() { if (ro_) ro_->FinishPin(); }
+  };
 
   ReadOptions() {}
   ReadOptions(bool _verify_checksums, bool _fill_cache);
   explicit ReadOptions(Env::IOActivity _io_activity);
+  ReadOptions(const ReadOptions&, BooleanDontCopyTrue/*dispatch_tag*/);
   ReadOptions(const ReadOptions&);
   ReadOptions(ReadOptions&&);
   ReadOptions& operator=(const ReadOptions&);

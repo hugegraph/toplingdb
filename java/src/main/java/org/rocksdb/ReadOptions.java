@@ -4,6 +4,8 @@
 //  (found in the LICENSE.Apache file in the root directory).
 
 package org.rocksdb;
+import java.nio.ByteBuffer;
+import sun.misc.Unsafe;
 
 /**
  * The class that controls the get behavior.
@@ -836,4 +838,46 @@ public class ReadOptions extends RocksObject {
   private native void setAsyncIO(final long handle, final boolean async);
   private native int asyncQueueDepth(final long handle);
   private native void setAsyncQueueDepth(final long handle, final int queueDepth);
+
+  private native void startZeroCopy0(final long handle);
+  private native void finishZeroCopy0(final long handle);
+
+  private static native int get_internal_is_in_pinning_section_offset();
+  private static final int internal_is_in_pinning_section_offset = get_internal_is_in_pinning_section_offset();
+  private static final Unsafe myUnsafe = DirectSlice.getUnsafe();
+//private native bool isInZeroCopySection0(final long handle); // slow
+  private boolean isNativeSideInZeroCopySection() { // fast
+    return myUnsafe.getByte(nativeHandle_ + internal_is_in_pinning_section_offset) != 0;
+  }
+  private boolean goingToZeroCopy = false;
+  boolean isGoingToZeroCopy() { return goingToZeroCopy; } // package access
+
+  public void startZeroCopy() {
+    if (goingToZeroCopy) {
+      throw new IllegalStateException("ReadOptions is already set goingToZeroCopy");
+    }
+    if (isNativeSideInZeroCopySection()) {
+      throw new IllegalStateException(
+        "ReadOptions Native side is in zero copy section but goingToZeroCopy is false; " +
+        "When goingToZeroCopy is false, native side must not be in zero copy section");
+    }
+    goingToZeroCopy = true;
+    //startZeroCopy0(nativeHandle_); // not needed now
+  }
+  public void finishZeroCopy() {
+    if (!goingToZeroCopy) {
+      throw new IllegalStateException("ReadOptions.startZeroCopy() was not called");
+    }
+    if (isNativeSideInZeroCopySection()) {
+      finishZeroCopy0(nativeHandle_);
+    }
+    goingToZeroCopy = false;
+  }
+
+  public final AutoCloseable autoZeroCopy() {
+     return new AutoCloseable() {
+       { startZeroCopy(); }
+       @Override public void close() throws Exception { finishZeroCopy(); }
+     };
+  }
 }

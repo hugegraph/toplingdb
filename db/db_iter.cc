@@ -161,6 +161,38 @@ bool DBIter::ParseKey(ParsedInternalKey* ikey) {
 #endif
 }
 
+#if defined(__GLIBCXX__)
+void string_clear_no_touch_memory(std::string*);
+template <typename Money_t, Money_t std::string::* p>
+struct string_clear_thief {
+  __always_inline friend void string_clear_no_touch_memory(std::string* s) {
+    (s->*p)(0); // do not set string trailing zero
+  }
+};
+template struct string_clear_thief<void(std::string::size_type),
+               &std::string::_M_length>;
+#else
+__always_inline void string_clear_no_touch_memory(std::string* s) {
+  s->clear();
+}
+#endif
+
+__always_inline void DBIter::ClearSavedValue() {
+#if 1
+  string_clear_no_touch_memory(&saved_value_);
+  if (UNLIKELY(saved_value_.capacity() > 1048576)) {
+    saved_value_.shrink_to_fit();
+  }
+#else
+  if (UNLIKELY(saved_value_.capacity() > 1048576)) {
+    saved_value_.clear();
+    saved_value_.shrink_to_fit();
+  } else {
+    string_clear_no_touch_memory(&saved_value_);
+  }
+#endif
+}
+
 ROCKSDB_FLATTEN
 void DBIter::Next() {
   assert(valid_);
@@ -220,6 +252,71 @@ void DBIter::Next() {
     valid_ = false;
   }
 }
+
+ROCKSDB_FLATTEN
+Slice DBIter::NextWithKey() {
+  assert(valid_);
+  assert(status_.ok());
+
+#if defined(ROCKSDB_UNIT_TEST)
+  PERF_CPU_TIMER_GUARD(iter_next_cpu_nanos, clock_);
+#endif
+
+  // Release temporarily pinned blocks from last operation
+  ReleaseTempPinnedData();
+  ResetBlobValue();
+  ResetValueAndColumns();
+  local_stats_.skip_count_ += num_internal_keys_skipped_;
+  local_stats_.skip_count_--;
+  num_internal_keys_skipped_ = 0;
+  bool ok = true;
+  if (UNLIKELY(direction_ == kReverse)) {
+    is_key_seqnum_zero_ = false;
+    if (!ReverseToForward()) {
+      ok = false;
+    } else {
+      ok = iter_.Valid();
+    }
+  } else if (LIKELY(!current_entry_is_merged_)) {
+    // If the current value is not a merge, the iter position is the
+    // current key, which is already returned. We can safely issue a
+    // Next() without checking the current key.
+    // If the current key is a merge, very likely iter already points
+    // to the next internal position.
+    assert(iter_.Valid());
+    ok = iter_.Next();
+    PERF_COUNTER_ADD(internal_key_skipped_count, 1);
+  } else {
+    ok = iter_.Valid();
+  }
+
+  local_stats_.next_count_++;
+  if (LIKELY(ok)) {
+    ClearSavedValue();
+
+    if (prefix_same_as_start_) {
+      assert(prefix_extractor_ != nullptr);
+      const Slice prefix = prefix_.GetUserKey();
+      FindNextUserEntry(true /* skipping the current user key */, &prefix);
+    } else {
+      FindNextUserEntry(true /* skipping the current user key */, nullptr);
+    }
+    if (LIKELY(valid_)) {
+      local_stats_.next_found_count_++;
+      local_stats_.bytes_read_ += saved_key_.Size();
+      if (is_value_prepared_)
+        local_stats_.bytes_read_ += value_.size_;
+      return this->key();
+    }
+  } else {
+    is_key_seqnum_zero_ = false;
+    valid_ = false;
+  }
+  return Slice(nullptr, 0);
+}
+
+ROCKSDB_FLATTEN
+Slice DBIter::PrevWithKey() { return IterPrevWithKeyImpl(this); }
 
 bool DBIter::SetBlobValueIfNeeded(const Slice& user_key,
                                   const Slice& blob_index) {

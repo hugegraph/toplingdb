@@ -617,7 +617,7 @@ Status PlainTableReader::Get(const ReadOptions& ro, const Slice& target,
       bool dont_care __attribute__((__unused__));
       Cleanable noop_pinner;
       if (!get_context->SaveValue(found_key, found_value, &dont_care,
-                                  ro.pinning_tls ? &noop_pinner
+                            ro.internal_is_in_pinning_section ? &noop_pinner
                                                  : dummy_cleanable_.get())) {
         break;
       }

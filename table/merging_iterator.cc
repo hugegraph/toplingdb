@@ -258,7 +258,7 @@ struct HeapItemAndPrefix {
   FORCE_INLINE HeapItemAndPrefix() = default;
   FORCE_INLINE HeapItemAndPrefix(HeapItem* item) : item_ptr(item) {
     iter_type = item->type;
-    UpdatePrefixCache(*this);
+    UpdatePrefixCache(*this, &item->iter);
   }
   UintPrefix key_prefix = 0;
   HeapItem* item_ptr;
@@ -266,23 +266,24 @@ struct HeapItemAndPrefix {
 
   HeapItem* operator->() const noexcept { return item_ptr; }
 
-  FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefix& x) {
-    auto p = x.item_ptr;
+  FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefix& x, IteratorWrapper* iter) {
+    ROCKSDB_ASSERT_EQ(&x.item_ptr->iter, iter);
     if (LIKELY(HeapItem::ITERATOR == x.iter_type))
-      x.key_prefix = HostPrefixCacheIK(p->iter.key());
+      x.key_prefix = HostPrefixCacheIK(iter->key());
     else
-      x.key_prefix = HostPrefixCacheUK(p->tombstone_pik.user_key);
+      x.key_prefix = HostPrefixCacheUK(x.item_ptr->tombstone_pik.user_key);
   }
 };
 struct HeapItemAndPrefixFast : HeapItemAndPrefix {
   using HeapItemAndPrefix::HeapItemAndPrefix;
-  FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefixFast& x) {
+  FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefixFast& x, IteratorWrapper* iter) {
     ROCKSDB_ASSERT_EQ(HeapItem::ITERATOR, x.iter_type);
-    x.key_prefix = HostPrefixCacheIK(x.item_ptr->iter.key());
+    ROCKSDB_ASSERT_EQ(&x.item_ptr->iter, iter);
+    x.key_prefix = HostPrefixCacheIK(iter->key());
   }
 };
 static_assert(sizeof(HeapItemAndPrefixFast) == sizeof(HeapItemAndPrefix));
-inline static void UpdatePrefixCache(HeapItem*) {} // do nothing
+inline static void UpdatePrefixCache(HeapItem*, IteratorWrapper*) {}
 
 static FORCE_INLINE bool BytewiseCompareInternalKey(Slice x, Slice y) noexcept {
   size_t n = std::min(x.size_, y.size_) - 8;
@@ -522,6 +523,7 @@ class MergingIterTmpl final : public MergingIterator {
     inline const MergerMaxIterHeap* operator->() const { return this; }
   };
   static_assert(sizeof(MergerMinIterHeap) == sizeof(MergerMaxIterHeap));
+  static constexpr bool RangeTombstoneStaticEmpty = std::is_same_v<Item, HeapItemAndPrefixFast>;
 
 public:
   MergingIterTmpl() {}
@@ -759,16 +761,18 @@ public:
       AddToMinHeapOrCheckStatus(&child);
     }
 
-    for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
-      if (range_tombstone_iters_[i]) {
-        range_tombstone_iters_[i]->SeekToFirst();
-        if (range_tombstone_iters_[i]->Valid()) {
-          // It is possible to be invalid due to snapshots.
-          InsertRangeTombstoneToMinHeap(i);
+    if (!RangeTombstoneStaticEmpty) {
+      for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
+        if (range_tombstone_iters_[i]) {
+          range_tombstone_iters_[i]->SeekToFirst();
+          if (range_tombstone_iters_[i]->Valid()) {
+            // It is possible to be invalid due to snapshots.
+            InsertRangeTombstoneToMinHeap(i);
+          }
         }
       }
+      FindNextVisibleKey();
     }
-    FindNextVisibleKey();
     direction_ = kForward;
     current_ = CurrentForward();
   }
@@ -782,16 +786,18 @@ public:
       AddToMaxHeapOrCheckStatus(&child);
     }
 
-    for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
-      if (range_tombstone_iters_[i]) {
-        range_tombstone_iters_[i]->SeekToLast();
-        if (range_tombstone_iters_[i]->Valid()) {
-          // It is possible to be invalid due to snapshots.
-          InsertRangeTombstoneToMaxHeap(i);
+    if (!RangeTombstoneStaticEmpty) {
+      for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
+        if (range_tombstone_iters_[i]) {
+          range_tombstone_iters_[i]->SeekToLast();
+          if (range_tombstone_iters_[i]->Valid()) {
+            // It is possible to be invalid due to snapshots.
+            InsertRangeTombstoneToMaxHeap(i);
+          }
         }
       }
+      FindPrevVisibleKey();
     }
-    FindPrevVisibleKey();
     direction_ = kReverse;
     current_ = CurrentReverse();
   }
@@ -869,9 +875,9 @@ public:
       // replace_top() to restore the heap property.  When the same child
       // iterator yields a sequence of keys, this is cheap.
       assert(current_->status().ok());
-      UpdatePrefixCache(minHeap_.top());
+      UpdatePrefixCache(minHeap_.top(), current_);
       minHeap_.update_top();
-      if (LIKELY((std::is_same_v<Item, HeapItemAndPrefixFast>) || range_tombstone_iters_.empty())) {
+      if (LIKELY(RangeTombstoneStaticEmpty || range_tombstone_iters_.empty())) {
         current_ = &minHeap_.top()->iter; // current_ = CurrentForward();
         return true;
       }
@@ -928,9 +934,9 @@ public:
       // replace_top() to restore the heap property.  When the same child
       // iterator yields a sequence of keys, this is cheap.
       assert(current_->status().ok());
-      UpdatePrefixCache(maxHeap_->top());
-      maxHeap_->replace_top(maxHeap_->top());
-      if (LIKELY(range_tombstone_iters_.empty())) {
+      UpdatePrefixCache(maxHeap_->top(), current_);
+      maxHeap_->update_top();
+      if (LIKELY(RangeTombstoneStaticEmpty || range_tombstone_iters_.empty())) {
         current_ = &maxHeap_->top()->iter; // current_ = CurrentReverse();
         return;
       }
@@ -1189,7 +1195,7 @@ MergingIterMethod(void)SeekImpl(const Slice& target, size_t starting_level,
   // active range tombstones before `starting_level` remain active
   ClearHeaps(false /* clear_active */);
   ParsedInternalKey pik;
-  if (!range_tombstone_iters_.empty()) {
+  if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
     // pik is only used in InsertRangeTombstoneToMinHeap().
     ParseInternalKey(target, &pik, false).PermitUncheckedError();
   }
@@ -1201,7 +1207,7 @@ MergingIterMethod(void)SeekImpl(const Slice& target, size_t starting_level,
     PERF_TIMER_GUARD(seek_min_heap_time);
     AddToMinHeapOrCheckStatus(&children_[level]);
   }
-  if (!range_tombstone_iters_.empty()) {
+  if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
     // Add range tombstones from levels < starting_level. We can insert from
     // pinned_heap_item_ for the following reasons:
     // - pinned_heap_item_[level] is in minHeap_ iff
@@ -1252,7 +1258,7 @@ MergingIterMethod(void)SeekImpl(const Slice& target, size_t starting_level,
 
     PERF_COUNTER_ADD(seek_child_seek_count, 1);
 
-    if (!range_tombstone_iters_.empty()) {
+    if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
       if (range_tombstone_reseek) {
         // This seek is to some range tombstone end key.
         // Should only happen when there are range tombstones.
@@ -1314,7 +1320,7 @@ MergingIterMethod(void)SeekImpl(const Slice& target, size_t starting_level,
     }
   }
 
-  if (range_tombstone_iters_.empty()) {
+  if (RangeTombstoneStaticEmpty || range_tombstone_iters_.empty()) {
     for (auto& child : children_) {
       if (child.iter.status().IsTryAgain()) {
         child.iter.Seek(target);
@@ -1426,7 +1432,7 @@ MergingIterMethod(bool)SkipNextDeleted() {
     // it is valid
     if (current->iter.Next()) {
       assert(current->iter.status().ok());
-      UpdatePrefixCache(current);
+      UpdatePrefixCache(current, &current->iter);
       minHeap_.push(current);
     } else {
       // TODO(cbi): check status and early return if non-ok.
@@ -1466,7 +1472,7 @@ MergingIterMethod(bool)SkipNextDeleted() {
         // covered by range tombstone
         // Invariant (children_)
         if (current->iter.Next()) {
-          UpdatePrefixCache(current);
+          UpdatePrefixCache(current, &current->iter);
           minHeap_.replace_top(current);
         } else {
           considerStatus(current->iter.status());
@@ -1497,7 +1503,7 @@ MergingIterMethod(void)SeekForPrevImpl(const Slice& target,
   ClearHeaps(false /* clear_active */);
   InitMaxHeap();
   ParsedInternalKey pik;
-  if (!range_tombstone_iters_.empty()) {
+  if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
     ParseInternalKey(target, &pik, false).PermitUncheckedError();
   }
   for (size_t level = 0; level < starting_level; ++level) {
@@ -1535,7 +1541,7 @@ MergingIterMethod(void)SeekForPrevImpl(const Slice& target,
 
     PERF_COUNTER_ADD(seek_child_seek_count, 1);
 
-    if (!range_tombstone_iters_.empty()) {
+    if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
       if (range_tombstone_reseek) {
         // This seek is to some range tombstone end key.
         // Should only happen when there are range tombstones.
@@ -1581,7 +1587,7 @@ MergingIterMethod(void)SeekForPrevImpl(const Slice& target,
     }
   }
 
-  if (range_tombstone_iters_.empty()) {
+  if (RangeTombstoneStaticEmpty || range_tombstone_iters_.empty()) {
     for (auto& child : children_) {
       if (child.iter.status().IsTryAgain()) {
         child.iter.SeekForPrev(target);
@@ -1640,7 +1646,7 @@ MergingIterMethod(bool)SkipPrevDeleted() {
     current->iter.Prev();
     if (current->iter.Valid()) {
       assert(current->iter.status().ok());
-      UpdatePrefixCache(current);
+      UpdatePrefixCache(current, &current->iter);
       maxHeap_->push(current);
     } else {
       considerStatus(current->iter.status());
@@ -1683,7 +1689,7 @@ MergingIterMethod(bool)SkipPrevDeleted() {
       if (pik.sequence < range_tombstone_iters_[current->level]->seq()) {
         current->iter.Prev();
         if (current->iter.Valid()) {
-          UpdatePrefixCache(current);
+          UpdatePrefixCache(current, &current->iter);
           maxHeap_->replace_top(current);
         } else {
           considerStatus(current->iter.status());
@@ -2031,6 +2037,9 @@ MergingIterMethod(inline void)InitMaxHeap() {
 // key's level, then the current child iterator is simply advanced to its next
 // key without reseeking.
 MergingIterMethod(inline void)FindNextVisibleKey() {
+  if constexpr (RangeTombstoneStaticEmpty) {
+    return;
+  }
   if (LIKELY(range_tombstone_iters_.empty())) {
     return;
   }
@@ -2054,6 +2063,9 @@ MergingIterMethod(void)FindNextVisibleKeySlowPath() {
 }
 
 MergingIterMethod(inline void)FindPrevVisibleKey() {
+  if constexpr (RangeTombstoneStaticEmpty) {
+    return;
+  }
   if (LIKELY(range_tombstone_iters_.empty())) {
     return;
   }

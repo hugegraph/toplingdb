@@ -1397,7 +1397,7 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
   saver.is_blob_index = is_blob_index;
   saver.do_merge = do_merge;
   saver.allow_data_in_errors = moptions_.allow_data_in_errors;
-  saver.is_zero_copy = read_opts.pinning_tls != nullptr;
+  saver.is_zero_copy = read_opts.internal_is_in_pinning_section;
   saver.needs_user_key_cmp_in_get = needs_user_key_cmp_in_get_;
   if (LIKELY(value != nullptr)) {
     value->Reset();
@@ -1497,7 +1497,7 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
     saver.is_blob_index = &iter->is_blob_index;
     saver.do_merge = true;
     saver.allow_data_in_errors = moptions_.allow_data_in_errors;
-    saver.is_zero_copy = read_options.pinning_tls != nullptr;
+    saver.is_zero_copy = read_options.internal_is_in_pinning_section;
     saver.needs_user_key_cmp_in_get = needs_user_key_cmp_in_get_;
     table_->Get(read_options, *(iter->lkey), &saver, SaveValue);
 

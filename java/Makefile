@@ -256,6 +256,7 @@ JAVA_CMD := $(JAVA_HOME)/bin/java
 else
 JAVA_CMD := java
 endif
+JAVA_CMD := env LD_PRELOAD=libjemalloc.so:target/librocksdbjni-linux64.so ${JAVA_CMD}
 endif
 
 ifeq ($(JAVAC_CMD),)
@@ -311,6 +312,12 @@ ROCKSDB_PLUGIN_NATIVE_JAVA_CLASSES = $(foreach plugin, $(ROCKSDB_PLUGINS), $(for
 NATIVE_JAVA_CLASSES = $(NATIVE_JAVA_CLASSES) $(ROCKSDB_PLUGIN_NATIVE_JAVA_CLASSES)
 ROCKSDB_PLUGIN_JAVA_TESTS = $(foreach plugin, $(ROCKSDB_PLUGINS), $(foreach testclass, $($(plugin)_JAVA_TESTS), $(testclass)))
 ALL_JAVA_TESTS = $(JAVA_TESTS) $(ROCKSDB_PLUGIN_JAVA_TESTS)
+ifneq (${RUN_JAVA_TESTS},)
+  ALL_JAVA_TESTS := $(filter ${RUN_JAVA_TESTS}, ${ALL_JAVA_TESTS})
+endif
+ifneq (${SKIP_JAVA_TESTS},)
+  ALL_JAVA_TESTS := $(filter-out ${SKIP_JAVA_TESTS}, ${ALL_JAVA_TESTS})
+endif
 
 # When debugging add -Xcheck:jni to the java args
 ifneq ($(DEBUG_LEVEL),0)

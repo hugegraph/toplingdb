@@ -137,6 +137,7 @@ DEFINE_string(
     "multireadrandom,"
     "mixgraph,"
     "readseq,"
+    "nextwithkey,"
     "readtorowcache,"
     "readtocache,"
     "readreverse,"
@@ -183,6 +184,7 @@ DEFINE_string(
     " async mode\n"
     "\tdeleteseq     -- delete N keys in sequential order\n"
     "\tdeleterandom  -- delete N keys in random order\n"
+    "\tnextwithkey   -- read N times with iter.NextWithKey\n"
     "\treadseq       -- read N times sequentially\n"
     "\treadtocache   -- 1 thread reading database sequentially\n"
     "\treadreverse   -- read N times in reverse order\n"
@@ -3587,6 +3589,8 @@ class Benchmark {
         method = &Benchmark::WriteRandom;
       } else if (name == "readseq") {
         method = &Benchmark::ReadSequential;
+      } else if (name == "nextwithkey") {
+        method = &Benchmark::ScanNextWithKey;
       } else if (name == "readtorowcache") {
         if (!FLAGS_use_existing_keys || !FLAGS_row_cache_size) {
           fprintf(stderr,
@@ -5950,6 +5954,50 @@ class Benchmark {
       }
     }
 
+    delete iter;
+    thread->stats.AddBytes(bytes);
+  }
+
+  void ScanNextWithKey(ThreadState* thread) {
+    if (db_.db != nullptr) {
+      ScanNextWithKey(thread, db_.db);
+    } else {
+      for (const auto& db_with_cfh : multi_dbs_) {
+        ScanNextWithKey(thread, db_with_cfh.db);
+      }
+    }
+  }
+  void ScanNextWithKey(ThreadState* thread, DB* db) {
+    ReadOptions options = read_options_;
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
+    std::unique_ptr<char[]> ts_guard;
+    Slice ts;
+    if (user_timestamp_size_ > 0) {
+      ts_guard.reset(new char[user_timestamp_size_]);
+      ts = mock_app_clock_->GetTimestampForRead(thread->rand, ts_guard.get());
+      options.timestamp = &ts;
+    }
+   #endif
+    options.adaptive_readahead = FLAGS_adaptive_readahead;
+    options.async_io = FLAGS_async_io;
+    options.auto_readahead_size = FLAGS_auto_readahead_size;
+    options.fixed_user_key_len = FLAGS_scan_omit_key ? FLAGS_scan_omit_key : 0;
+    Iterator* iter = db->NewIterator(options);
+    int64_t i = 0, bytes = 0;
+    const auto limiter = thread->shared->read_rate_limiter.get();
+    const bool omit_value = FLAGS_scan_omit_value;
+    for (Slice key = iter->SeekToFirstWithKey(); i < reads_ && key.data(); ) {
+      bytes += key.size();
+      if (!omit_value) {
+        bytes += iter->value().size();
+      }
+      thread->stats.FinishedOps(nullptr, db, 1, kRead);
+      ++i;
+      if (limiter != nullptr && i % 1024 == 1023) {
+        limiter->Request(1024, Env::IO_HIGH, nullptr, RateLimiter::OpType::kRead);
+      }
+      key = iter->NextWithKey();
+    }
     delete iter;
     thread->stats.AddBytes(bytes);
   }

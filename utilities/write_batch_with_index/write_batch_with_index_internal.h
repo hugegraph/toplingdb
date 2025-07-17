@@ -84,6 +84,8 @@ class BaseDeltaIterator final : public Iterator {
   void SeekForPrev(const Slice& k) override;
   void Next() override;
   void Prev() override;
+  Slice NextWithKey() override { return IterNextWithKeyImpl(this); }
+  Slice PrevWithKey() override { return IterPrevWithKeyImpl(this); }
   Slice key() const override;
   Slice value() const override { return value_; }
 #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)

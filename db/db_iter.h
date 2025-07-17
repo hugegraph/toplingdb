@@ -233,6 +233,8 @@ class DBIter final : public Iterator {
 
   void Next() final override;
   void Prev() final override;
+  Slice NextWithKey() final override;
+  Slice PrevWithKey() final override;
   // 'target' does not contain timestamp, even if user timestamp feature is
   // enabled.
   void Seek(const Slice& target) final override;
@@ -304,14 +306,7 @@ class DBIter final : public Iterator {
     }
   }
 
-  inline void ClearSavedValue() {
-    if (saved_value_.capacity() > 1048576) {
-      std::string empty;
-      swap(empty, saved_value_);
-    } else {
-      saved_value_.clear();
-    }
-  }
+  inline void ClearSavedValue();
 
   inline void ResetInternalKeysSkippedCounter() {
     local_stats_.skip_count_ += num_internal_keys_skipped_;
@@ -354,6 +349,9 @@ class DBIter final : public Iterator {
   bool SetBlobValueIfNeeded(const Slice& user_key, const Slice& blob_index);
 
   void ResetBlobValue() {
+    if (!is_blob_) {
+      return;
+    }
     is_blob_ = false;
     blob_value_.Reset();
   }

@@ -204,7 +204,9 @@ inline Status WriteCommittedTxn::GetForUpdateImpl(
   }
 
   if (!read_options.timestamp) {
-    ReadOptions read_opts_copy = read_options;
+    ReadOptions& read_opts_copy = const_cast<ReadOptions&>(read_options);
+    auto old_timestamp = read_options.timestamp;
+    ROCKSDB_SCOPE_EXIT(read_opts_copy.timestamp = old_timestamp);
     char ts_buf[sizeof(kMaxTxnTimestamp)];
     EncodeFixed64(ts_buf, read_timestamp_);
     Slice ts(ts_buf, sizeof(ts_buf));

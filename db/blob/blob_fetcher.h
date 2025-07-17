@@ -40,7 +40,8 @@ class BlobFetcherCopyReadOptions : public BlobFetcher {
   const ReadOptions read_options_copy_;
 public:
   BlobFetcherCopyReadOptions(const Version* v, const ReadOptions& ro)
-   : BlobFetcher(v, read_options_copy_), read_options_copy_(ro) {}
+   : BlobFetcher(v, read_options_copy_),
+     read_options_copy_(ro, ReadOptions::BooleanDontCopyTrue()) {}
 };
 
 }  // namespace ROCKSDB_NAMESPACE

@@ -107,9 +107,11 @@ Status DBImplReadOnly::GetImpl(const ReadOptions& read_options,
           get_impl_options.columns, ts, &s, &merge_context,
           &max_covering_tombstone_seq, read_options,
           false /* immutable_memtable */, &read_cb)) {
+   #if 0 // ToplingDB must not need PinSelf() here, otherwise it assert fail
     if (get_impl_options.value) {
       get_impl_options.value->PinSelf();
     }
+   #endif
     RecordTick(stats_, MEMTABLE_HIT);
   } else {
     PERF_TIMER_GUARD(get_from_output_files_time);

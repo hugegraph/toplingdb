@@ -87,7 +87,7 @@ public class NativeLibraryLoader {
       }
     }
 
-    if (tmpDir.equals("LD_LIBRARY_PATH")) {
+    if (tmpDir != null && tmpDir.equals("LD_LIBRARY_PATH")) {
       return;
     }
 

@@ -33,7 +33,7 @@
 #undef min
 #endif
 
-static thread_local ROCKSDB_NAMESPACE::ReadOptions g_tls_rdopt;
+static thread_local ROCKSDB_NAMESPACE::ReadOptionsWithValue g_tls_rdopt;
 
 jlong rocksdb_open_helper(JNIEnv* env, jlong jopt_handle, jstring jdb_path,
                           std::function<ROCKSDB_NAMESPACE::Status(
@@ -1054,9 +1054,49 @@ void Java_org_rocksdb_RocksDB_deleteRange__J_3BII_3BII(
                               jend_key, jend_key_off, jend_key_len);
 }
 
-jint rocksdb_get_helper_direct(
+// low 3 bits of object ptr are always 0, we use 1 bits here
+#define JLONG_OF_PTR(ptr)      jlong(ptr)
+#define JLONG_OF_ERROR(err)  ((jlong(err) << 3) | 1)
+#define JLONG_OF_LENGTH(len) ((jlong(len) << 3) | 1)
+
+/*
+ * Class:     org_rocksdb_RocksDB
+ * Method:    byteArrayKeyGetDirect
+ * Signature: (JJ[BIIJ)J
+ */
+JNIEXPORT jlong JNICALL Java_org_rocksdb_RocksDB_byteArrayKeyGetDirect
+(JNIEnv* env, jobject, jlong dbh, jlong roh, jbyteArray jkey, jint kOffset, jint kLen, jlong lcfh)
+{
+  static const int kStatusError = -2;
+  auto db = (ROCKSDB_NAMESPACE::DB*)dbh;
+  auto ro_opt = (ROCKSDB_NAMESPACE::ReadOptionsWithValue*)roh;
+  auto cfh = (ROCKSDB_NAMESPACE::ColumnFamilyHandle*)lcfh;
+  auto key = (jbyte*)alloca(kLen);
+  env->GetByteArrayRegion(jkey, kOffset, kLen, key);
+  if (env->ExceptionCheck()) {
+    // exception thrown: ArrayIndexOutOfBoundsException
+    return 0;
+  }
+  if (!ro_opt->internal_is_in_pinning_section) {
+    ro_opt->StartPin();
+  }
+  ROCKSDB_NAMESPACE::Slice key_slice((const char*)key, kLen);
+  auto pinnable_value_up = ro_opt->NewPinnableSlice();
+  auto pinnable_value = pinnable_value_up.get();
+  auto s = db->Get(*ro_opt, cfh, key_slice, pinnable_value);
+  if (s.IsNotFound()) {
+    return JLONG_OF_ERROR(org_rocksdb_RocksDB_NOT_FOUND);
+  } else if (!s.ok()) {
+    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
+    return JLONG_OF_ERROR(kStatusError);
+  }
+  ro_opt->RegisterZeroCopy(std::move(pinnable_value_up));
+  return JLONG_OF_PTR(pinnable_value);
+}
+
+jlong rocksdb_get_helper_direct(
     JNIEnv* env, ROCKSDB_NAMESPACE::DB* db,
-    const ROCKSDB_NAMESPACE::ReadOptions& read_options,
+    const ROCKSDB_NAMESPACE::ReadOptionsWithValue* ro_opt,
     ROCKSDB_NAMESPACE::ColumnFamilyHandle* column_family_handle, jobject jkey,
     jint jkey_off, jint jkey_len, jobject jval, jint jval_off, jint jval_len,
     bool* has_exception) {
@@ -1070,7 +1110,7 @@ jint rocksdb_get_helper_direct(
         env,
         "Invalid key argument (argument is not a valid direct ByteBuffer)");
     *has_exception = true;
-    return kArgumentError;
+    return JLONG_OF_ERROR(kArgumentError);
   }
   if (env->GetDirectBufferCapacity(jkey) < (jkey_off + jkey_len)) {
     ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(
@@ -1078,7 +1118,39 @@ jint rocksdb_get_helper_direct(
         "Invalid key argument. Capacity is less than requested region (offset "
         "+ length).");
     *has_exception = true;
-    return kArgumentError;
+    return JLONG_OF_ERROR(kArgumentError);
+  }
+  if (nullptr == jval) {
+    if (nullptr == ro_opt) {
+      ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env,
+          "When DirectByteBuffer for value is null in JNI, "
+          "it indicate zero copy, ReadOptions must not be null in this case");
+      *has_exception = true;
+      return JLONG_OF_ERROR(kArgumentError);
+    }
+    // not need {jval,jval_off,jval_len}, do register value to zero copy list
+    ROCKSDB_ASSERT_EQ(jval_off, -1);
+    ROCKSDB_ASSERT_EQ(jval_len, -1);
+    if (!ro_opt->internal_is_in_pinning_section) {
+      const_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(ro_opt)->StartPin();
+    }
+    key += jkey_off;
+    ROCKSDB_NAMESPACE::Slice key_slice(key, jkey_len);
+    auto pinnable_value_up = ro_opt->NewPinnableSlice();
+    auto pinnable_value = pinnable_value_up.get();
+    auto cfh = column_family_handle ?
+               column_family_handle : db->DefaultColumnFamily();
+    auto s = db->Get(*ro_opt, cfh, key_slice, pinnable_value);
+    if (s.IsNotFound()) {
+      *has_exception = false;
+      return JLONG_OF_ERROR(kNotFound);
+    } else if (!s.ok()) {
+      *has_exception = true;
+      ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
+      return JLONG_OF_ERROR(kStatusError);
+    }
+    ro_opt->RegisterZeroCopy(std::move(pinnable_value_up));
+    return JLONG_OF_PTR(pinnable_value);
   }
 
   char* value = reinterpret_cast<char*>(env->GetDirectBufferAddress(jval));
@@ -1087,7 +1159,7 @@ jint rocksdb_get_helper_direct(
         env,
         "Invalid value argument (argument is not a valid direct ByteBuffer)");
     *has_exception = true;
-    return kArgumentError;
+    return JLONG_OF_ERROR(kArgumentError);
   }
 
   if (env->GetDirectBufferCapacity(jval) < (jval_off + jval_len)) {
@@ -1096,13 +1168,14 @@ jint rocksdb_get_helper_direct(
         "Invalid value argument. Capacity is less than requested region "
         "(offset + length).");
     *has_exception = true;
-    return kArgumentError;
+    return JLONG_OF_ERROR(kArgumentError);
   }
 
   key += jkey_off;
   value += jval_off;
 
-  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&read_options);
+  ROCKSDB_NAMESPACE::ReadOptions const& read_options = ro_opt == nullptr ? g_tls_rdopt : *ro_opt;
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePinIfNotPinned scope_pin(&read_options);
 
   ROCKSDB_NAMESPACE::Slice key_slice(key, jkey_len);
 
@@ -1118,7 +1191,7 @@ jint rocksdb_get_helper_direct(
 
   if (s.IsNotFound()) {
     *has_exception = false;
-    return kNotFound;
+    return JLONG_OF_ERROR(kNotFound);
   } else if (!s.ok()) {
     *has_exception = true;
     // Here since we are throwing a Java exception from c++ side.
@@ -1130,7 +1203,7 @@ jint rocksdb_get_helper_direct(
 
     // Return a dummy const value to avoid compilation error, although
     // java side might not have a chance to get the return value :)
-    return kStatusError;
+    return JLONG_OF_ERROR(kStatusError);
   }
 
   const jint pinnable_value_len = static_cast<jint>(pinnable_value.size());
@@ -1140,7 +1213,7 @@ jint rocksdb_get_helper_direct(
   pinnable_value.Reset();
 
   *has_exception = false;
-  return pinnable_value_len;
+  return JLONG_OF_LENGTH(pinnable_value_len);
 }
 
 /*
@@ -1271,7 +1344,7 @@ void Java_org_rocksdb_RocksDB_clipColumnFamily(
  * Method:    getDirect
  * Signature: (JJLjava/nio/ByteBuffer;IILjava/nio/ByteBuffer;IIJ)I
  */
-jint Java_org_rocksdb_RocksDB_getDirect(JNIEnv* env, jobject /*jdb*/,
+jlong Java_org_rocksdb_RocksDB_getDirect(JNIEnv* env, jobject /*jdb*/,
                                         jlong jdb_handle, jlong jropt_handle,
                                         jobject jkey, jint jkey_off,
                                         jint jkey_len, jobject jval,
@@ -1279,13 +1352,13 @@ jint Java_org_rocksdb_RocksDB_getDirect(JNIEnv* env, jobject /*jdb*/,
                                         jlong jcf_handle) {
   auto* db_handle = reinterpret_cast<ROCKSDB_NAMESPACE::DB*>(jdb_handle);
   auto* ro_opt =
-      reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jropt_handle);
+      reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jropt_handle);
   auto* cf_handle =
       reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
   bool has_exception = false;
   return rocksdb_get_helper_direct(
       env, db_handle,
-      ro_opt == nullptr ? g_tls_rdopt : *ro_opt, cf_handle,
+      ro_opt, cf_handle,
       jkey, jkey_off, jkey_len, jval, jval_off, jval_len, &has_exception);
 }
 
@@ -1524,7 +1597,7 @@ jbyteArray rocksdb_get_helper(
     return nullptr;
   }
 
-  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&read_opt);
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePinIfNotPinned scope_pin(&read_opt);
 
   ROCKSDB_NAMESPACE::Slice key_slice(reinterpret_cast<char*>(key), jkey_len);
 
@@ -1655,7 +1728,7 @@ jint rocksdb_get_helper(
     return kStatusError;
   }
 
-  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&read_options);
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePinIfNotPinned scope_pin(&read_options);
 
   ROCKSDB_NAMESPACE::Slice key_slice(reinterpret_cast<char*>(key), jkey_len);
 
@@ -2002,7 +2075,7 @@ jobjectArray multi_get_helper(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
   size_t num = keys.size();
   std::vector<ROCKSDB_NAMESPACE::PinnableSlice> values(num);
   std::vector<ROCKSDB_NAMESPACE::Status> s(num);
-  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&rOpt);
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePinIfNotPinned scope_pin(&rOpt);
   if (auto uniq_cf = get_uniq_cf(db, cf_handles)) {
     db->MultiGet(rOpt, uniq_cf, num, keys.data(), values.data(), nullptr, s.data());
   } else {
@@ -2101,7 +2174,7 @@ void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
   }
 
   std::vector<ROCKSDB_NAMESPACE::Status> s(num_keys);
-  ROCKSDB_NAMESPACE::ReadOptions::ScopePin scope_pin(&rOpt);
+  ROCKSDB_NAMESPACE::ReadOptions::ScopePinIfNotPinned scope_pin(&rOpt);
   if (auto uniq_cf = get_uniq_cf(db, cf_handles)) {
     db->MultiGet(rOpt, uniq_cf, num_keys, keys.data(), values.data(), nullptr, s.data());
   } else {
@@ -2651,7 +2724,8 @@ jlong Java_org_rocksdb_RocksDB_iterator(JNIEnv*, jobject, jlong db_handle,
       reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
   auto& read_options =
       *reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jread_options_handle);
-  return GET_CPLUSPLUS_POINTER(db->NewIterator(read_options, cf_handle));
+  auto iter = db->NewIterator(read_options, cf_handle);
+  return GET_CPLUSPLUS_POINTER(ROCKSDB_NAMESPACE::JZeroCopyIter::Make(iter));
 }
 
 /*
@@ -2698,9 +2772,10 @@ jlongArray Java_org_rocksdb_RocksDB_iterators(JNIEnv* env, jobject,
 
     for (std::vector<ROCKSDB_NAMESPACE::Iterator*>::size_type i = 0;
          i < iterators.size(); i++) {
+      auto zc_iter = ROCKSDB_NAMESPACE::JZeroCopyIter::Make(iterators[i]);
       env->SetLongArrayRegion(
           jLongArray, static_cast<jsize>(i), 1,
-          const_cast<jlong*>(reinterpret_cast<const jlong*>(&iterators[i])));
+          const_cast<jlong*>(reinterpret_cast<const jlong*>(&zc_iter)));
       if (env->ExceptionCheck()) {
         // exception thrown: ArrayIndexOutOfBoundsException
         env->DeleteLocalRef(jLongArray);

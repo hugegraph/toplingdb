@@ -33,6 +33,38 @@ Status Iterator::RefreshKeepSnapshot(bool keep_iter_pos) {
   return Refresh(reinterpret_cast<Snapshot*>(KEEP_SNAPSHOT), keep_iter_pos);
 }
 
+Slice Iterator::NextWithKey() { return IterNextWithKeyImpl(this); }
+Slice Iterator::PrevWithKey() { return IterPrevWithKeyImpl(this); }
+
+Slice Iterator::SeekToFirstWithKey() {
+  SeekToFirst();
+  if (Valid())
+    return key();
+  else
+    return Slice(nullptr, 0);
+}
+Slice Iterator::SeekToLastWithKey() {
+  SeekToLast();
+  if (Valid())
+    return key();
+  else
+    return Slice(nullptr, 0);
+}
+Slice Iterator::SeekWithKey(const Slice& target) {
+  Seek(target);
+  if (Valid())
+    return key();
+  else
+    return Slice(nullptr, 0);
+}
+Slice Iterator::SeekForPrevWithKey(const Slice& target) {
+  SeekForPrev(target);
+  if (Valid())
+    return key();
+  else
+    return Slice(nullptr, 0);
+}
+
 ArenaWrappedDBIter::ArenaWrappedDBIter() {
   // do nothing
 }
