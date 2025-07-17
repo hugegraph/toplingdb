@@ -36,11 +36,17 @@ public class ReadOptions extends RocksObject {
    * @param other The ReadOptions to copy.
    */
   public ReadOptions(final ReadOptions other) {
-    super(copyReadOptions(other.nativeHandle_));
+    super(copyReadOptions(other));
     this.iterateLowerBoundSlice_ = other.iterateLowerBoundSlice_;
     this.iterateUpperBoundSlice_ = other.iterateUpperBoundSlice_;
     this.timestampSlice_ = other.timestampSlice_;
     this.iterStartTs_ = other.iterStartTs_;
+  }
+  private static long copyReadOptions(final ReadOptions other) {
+    if (other.isGoingToZeroCopy()) {
+      throw new IllegalArgumentException("ReadOptions can not be copied in zero copy section");
+    }
+    return copyReadOptions(other.nativeHandle_);
   }
 
   /**
