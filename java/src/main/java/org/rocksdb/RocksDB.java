@@ -2614,19 +2614,44 @@ public class RocksDB extends RocksObject {
       keyLengths[i] = keysArray[i].limit();
     }
     final ByteBuffer[] valuesArray = values.toArray(new ByteBuffer[0]);
-    final int[] valuesSizeArray = new int[numValues];
+    final int[] valuesSizeArray = new int[numValues * 3];
     final Status[] statusArray = new Status[numValues];
 
+    final boolean zeroCopy;
+    if (readOptions.isGoingToZeroCopy()) {
+      int numSupportBorrow = 0;
+      for (int i = 0; i < numValues; i++) {
+        if (DirectSlice.supportDirectBorrowMemory(valuesArray[i])) {
+          numSupportBorrow++;
+        }
+      }
+      if (numSupportBorrow == 0)
+        zeroCopy = false;
+      else if (numSupportBorrow == numValues)
+        zeroCopy = true;
+      else
+        throw new IllegalArgumentException("Some value buffer support borrow memory but some do not, must be all or none");
+    } else {
+      zeroCopy = false;
+    }
     multiGet(nativeHandle_, readOptions.nativeHandle_, cfHandles, keysArray, keyOffsets, keyLengths,
-        valuesArray, valuesSizeArray, statusArray);
+        zeroCopy ? null : valuesArray, valuesSizeArray, statusArray);
 
     final List<ByteBufferGetStatus> results = new ArrayList<>();
     for (int i = 0; i < numValues; i++) {
       final Status status = statusArray[i];
       if (status.getCode() == Status.Code.Ok) {
         final ByteBuffer value = valuesArray[i];
-        value.position(Math.min(valuesSizeArray[i], value.capacity()));
-        value.flip(); // prepare for read out
+        if (zeroCopy) {
+          final long addr =
+               (long)(valuesSizeArray[numValues + 2*i + 0]) & 0xFFFFFFFFL |
+               (long)(valuesSizeArray[numValues + 2*i + 1]) << 32;
+          DirectSlice.directBorrowMemoryUnchecked(value, addr, valuesSizeArray[i]);
+          //System.err.printf("java: %d-th valueData = %X%n", i, valueData);
+        } else {
+          value.position(Math.min(valuesSizeArray[i], value.capacity()));
+          value.flip(); // prepare for read out
+        }
         results.add(new ByteBufferGetStatus(status, valuesSizeArray[i], value));
       } else {
         results.add(new ByteBufferGetStatus(status));

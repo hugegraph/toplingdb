@@ -2117,7 +2117,7 @@ jobjectArray multi_get_helper(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
  * @param jstatuses returned java RocksDB status values for per key
  */
 void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
-                             const ROCKSDB_NAMESPACE::ReadOptions& rOpt,
+                             ROCKSDB_NAMESPACE::ReadOptionsWithValue& rOpt,
                              jlongArray jcolumn_family_handles,
                              jobjectArray jkeys, jintArray jkey_offsets,
                              jintArray jkey_lengths, jobjectArray jvalues,
@@ -2137,6 +2137,9 @@ void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
   }
 
   std::vector<ROCKSDB_NAMESPACE::Status> s(num_keys);
+  if (jvalues == nullptr && !rOpt.internal_is_in_pinning_section) {
+    rOpt.StartPin(); // use zero copy
+  }
   ROCKSDB_NAMESPACE::ReadOptions::ScopePinIfNotPinned scope_pin(&rOpt);
   if (auto uniq_cf = get_uniq_cf(db, cf_handles)) {
     db->MultiGet(rOpt, uniq_cf, num_keys, keys.data(), values.data(), nullptr, s.data());
@@ -2157,6 +2160,11 @@ void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
   }
 
   std::vector<jint> value_size;
+  if (jvalues == nullptr) {
+    value_size.resize(num_keys * 3);
+  } else {
+    value_size.reserve(num_keys);
+  }
   for (int i = 0; i < num_keys; i++) {
     auto jstatus = ROCKSDB_NAMESPACE::StatusJni::construct(env, s[i]);
     if (jstatus == nullptr) {
@@ -2165,6 +2173,21 @@ void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
     }
     env->SetObjectArrayElement(jstatuses, i, jstatus);
 
+    if (jvalues == nullptr) {
+      if (s[i].ok()) {
+        auto zc_val = rOpt.NewPinnableSlice();
+        static_cast<ROCKSDB_NAMESPACE::PinnableSlice&>(*zc_val) = std::move(values[i]);
+        size_t addr = (size_t)(zc_val->data());
+        value_size[i] = (jint)(zc_val->size());
+        value_size[num_keys + 2*i + 0] = (jint)(addr);
+        value_size[num_keys + 2*i + 1] = (jint)(addr >> 32);
+        rOpt.RegisterZeroCopy(std::move(zc_val));
+        //fprintf(stderr, "C++: %d-th addr = %zX\n", i, addr);
+      } else {
+        value_size[i] = 0;
+      }
+      continue;
+    }
     if (s[i].ok()) {
       jobject jvalue_bytebuf = env->GetObjectArrayElement(jvalues, i);
       if (env->ExceptionCheck()) {
@@ -2200,7 +2223,7 @@ void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
     }
   }
 
-  env->SetIntArrayRegion(jvalue_sizes, 0, num_keys, value_size.data());
+  env->SetIntArrayRegion(jvalue_sizes, 0, (jsize)value_size.size(), value_size.data());
 }
 
 /*
@@ -2273,7 +2296,7 @@ void Java_org_rocksdb_RocksDB_multiGet__JJ_3J_3Ljava_nio_ByteBuffer_2_3I_3I_3Lja
     jintArray jvalues_sizes, jobjectArray jstatus_objects) {
   return multi_get_helper_direct(
       env, jdb, reinterpret_cast<ROCKSDB_NAMESPACE::DB*>(jdb_handle),
-      *reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptions*>(jropt_handle),
+      *reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jropt_handle),
       jcolumn_family_handles, jkeys, jkey_offsets, jkey_lengths, jvalues,
       jvalues_sizes, jstatus_objects);
 }
