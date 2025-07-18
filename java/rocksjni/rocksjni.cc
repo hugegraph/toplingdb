@@ -2129,7 +2129,9 @@ void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
     return;
   }
 
-  std::vector<ROCKSDB_NAMESPACE::PinnableSlice> values(num_keys);
+  auto values_up = rOpt.m_multi_get.NewObjectUniquePtr();
+  std::vector<ROCKSDB_NAMESPACE::PinnableSlice>& values = *values_up;
+  values.resize(num_keys);
 
   std::vector<ROCKSDB_NAMESPACE::ColumnFamilyHandle*> cf_handles;
   if (!cf_handles_from_jcf_handles(env, cf_handles, jcolumn_family_handles)) {
@@ -2175,13 +2177,10 @@ void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
 
     if (jvalues == nullptr) {
       if (s[i].ok()) {
-        auto zc_val = rOpt.NewPinnableSlice();
-        static_cast<ROCKSDB_NAMESPACE::PinnableSlice&>(*zc_val) = std::move(values[i]);
-        size_t addr = (size_t)(zc_val->data());
-        value_size[i] = (jint)(zc_val->size());
+        size_t addr = (size_t)(values[i].data());
+        value_size[i] = (jint)(values[i].size());
         value_size[num_keys + 2*i + 0] = (jint)(addr);
         value_size[num_keys + 2*i + 1] = (jint)(addr >> 32);
-        rOpt.RegisterZeroCopy(std::move(zc_val));
         //fprintf(stderr, "C++: %d-th addr = %zX\n", i, addr);
       } else {
         value_size[i] = 0;
@@ -2223,6 +2222,9 @@ void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
     }
   }
 
+  if (jvalues == nullptr) {
+    rOpt.m_multi_get.PinObject(std::move(values_up));
+  }
   env->SetIntArrayRegion(jvalue_sizes, 0, (jsize)value_size.size(), value_size.data());
 }
 

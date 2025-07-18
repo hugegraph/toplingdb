@@ -8956,58 +8956,82 @@ class BlockBasedTableOptionsJni
   }
 };
 
-struct ReadOptionsWithValue : public ReadOptions {
-  using ReadOptions::ReadOptions;
-  // do not copy m_inuse_list & m_zfree_list
-  ReadOptionsWithValue(const ReadOptionsWithValue& y) : ReadOptions(y) {}
-  ReadOptionsWithValue& operator=(const ReadOptionsWithValue& y) {
-    ReadOptions::operator=(y);
-    // do not copy m_inuse_list & m_zfree_list
-    return *this;
-  }
-  struct PinnableSliceNode : PinnableSlice {
-    PinnableSliceNode* next;
+/// requires Object::Reset()
+template<class Object>
+class ObjectPool {
+  struct ListNode : Object {
+    ListNode* next;
   };
-  struct PinnableSliceList {
-    ~PinnableSliceList() {
+  struct ListMeta {
+    ~ListMeta() {
       for (auto node = m_head; node; ) {
         auto next = node->next;
         delete node;
         node = next;
       }
     }
-    PinnableSliceNode* m_head = nullptr;
+    ListNode* m_head = nullptr;
     size_t  m_size = 0;
   };
-  size_t ZeroCopyListLen() const { return m_inuse_list.m_size; }
-  auto NewPinnableSlice() {
-    if (auto p = m_zfree_list.m_head) {
-      m_zfree_list.m_head = p->next;
-      m_zfree_list.m_size--;
-      return std::unique_ptr<PinnableSliceNode>(p);
+  ListMeta m_pinning_list;
+  ListMeta m_pooling_list;
+public:
+  ~ObjectPool() {
+    ROCKSDB_ASSERT_EQ(m_pinning_list.m_size, 0);
+  }
+  auto NewObjectUniquePtr() {
+    if (auto p = m_pooling_list.m_head) {
+      m_pooling_list.m_head = p->next;
+      m_pooling_list.m_size--;
+      return std::unique_ptr<ListNode>(p);
     }
-    return std::unique_ptr<PinnableSliceNode>(new PinnableSliceNode());
+    return std::unique_ptr<ListNode>(new ListNode());
   }
-  void RegisterZeroCopy(std::unique_ptr<PinnableSliceNode>&& node) {
-    node->next = m_inuse_list.m_head;
-    m_inuse_list.m_head = node.release();
-    m_inuse_list.m_size++;
+  void PinObject(std::unique_ptr<ListNode>&& node) {
+    node->next = m_pinning_list.m_head;
+    m_pinning_list.m_head = node.release();
+    m_pinning_list.m_size++;
   }
-  void ClearZeroCopyList() {
-    auto pp = &m_inuse_list.m_head;
+  void ClearPinningList() {
+    auto pp = &m_pinning_list.m_head;
     while (auto p = *pp)
       p->Reset(), pp = &p->next;
-    *pp = m_zfree_list.m_head;
-    m_zfree_list.m_head  = m_inuse_list.m_head;
-    m_zfree_list.m_size += m_inuse_list.m_size;
-    new (&m_inuse_list) PinnableSliceList();
+    *pp = m_pooling_list.m_head;
+    m_pooling_list.m_head  = m_pinning_list.m_head;
+    m_pooling_list.m_size += m_pinning_list.m_size;
+    new (&m_pinning_list) ListMeta();
   }
-  ~ReadOptionsWithValue() {
-    ROCKSDB_ASSERT_EQ(m_inuse_list.m_size, 0);
+  size_t PinningListLen() const { return m_pinning_list.m_size; }
+};
+
+struct ReadOptionsWithValue : public ReadOptions {
+  using ReadOptions::ReadOptions;
+  // do not copy m_single_get & m_multi_get
+  ReadOptionsWithValue(const ReadOptionsWithValue& y) : ReadOptions(y) {}
+  ReadOptionsWithValue& operator=(const ReadOptionsWithValue& y) {
+    ReadOptions::operator=(y);
+    // do not copy m_single_get & m_multi_get
+    return *this;
   }
-private:
-  PinnableSliceList m_inuse_list;
-  PinnableSliceList m_zfree_list;
+  size_t ZeroCopyListLen() const { return m_single_get.PinningListLen(); }
+  auto NewPinnableSlice() {
+    return m_single_get.NewObjectUniquePtr();
+  }
+  template<class PinnableSliceNode>
+  void RegisterZeroCopy(std::unique_ptr<PinnableSliceNode>&& node) {
+    m_single_get.PinObject(std::move(node));
+  }
+  void ClearZeroCopyList() {
+    m_single_get.ClearPinningList();
+  }
+  struct MultiGetVector : std::vector<PinnableSlice> {
+    void Reset() {
+      for (PinnableSlice& x : *this)
+        x.Reset();
+    }
+  };
+  ObjectPool<PinnableSlice> m_single_get;
+  ObjectPool<MultiGetVector> m_multi_get;
 };
 
 }  // namespace ROCKSDB_NAMESPACE

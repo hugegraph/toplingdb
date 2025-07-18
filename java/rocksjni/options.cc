@@ -8713,6 +8713,7 @@ JNIEXPORT void JNICALL Java_org_rocksdb_ReadOptions_finishZeroCopy0
 {
   auto* opt = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jhandle);
   ROCKSDB_VERIFY(opt->internal_is_in_pinning_section == true);
+  opt->m_multi_get.ClearPinningList();
   opt->ClearZeroCopyList();
   opt->FinishPin();
 }
