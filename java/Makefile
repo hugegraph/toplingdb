@@ -291,6 +291,10 @@ JAVAC_VERSION_GE_MIN := $(shell [ $(JAVAC_MAJOR_VERSION) -ge $(MIN_JAVAC_MAJOR_V
 # Set the default JAVA_ARGS to "" for DEBUG_LEVEL=0
 JAVA_ARGS ?=
 
+ifeq (${ROCKSDB_FORCE_DIRECT_BUFFER_ZERO_COPY},true)
+  JAVA_ARGS += --add-opens java.base/jdk.internal.ref=ALL-UNNAMED
+endif
+
 JAVAC_ARGS ?=
 
 # Read plugin configuration
