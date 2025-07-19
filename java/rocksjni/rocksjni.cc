@@ -2234,25 +2234,22 @@ void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
  * Signature: (JJJ[[BJ[Lorg/rocksdb/Status;)J
  */
 JNIEXPORT jlong JNICALL Java_org_rocksdb_RocksDB_multiGetZeroCopyNative
-(JNIEnv* env, jobject, jlong jdb, jlong jro, jlong jcfh, jobjectArray jkeys, jlong jsumKeyLen, jobjectArray jstatuses)
+(JNIEnv* env, jobject, jlong jdb, jlong jro, jlong jcfh, jlong jkeysBuf, jobjectArray jstatuses)
 {
-  jsize num_keys = env->GetArrayLength(jkeys);
+  jsize num_keys = env->GetArrayLength(jstatuses);
   auto& rOpt = *(ROCKSDB_NAMESPACE::ReadOptionsWithValue*)jro;
   auto values_up = rOpt.m_multi_get.NewObjectUniquePtr();
   auto& values = *values_up;
   values.resize(num_keys);
   auto& keys = values.m_slice_vec;
-  std::unique_ptr<jbyte[]> keys_mem(new jbyte[jsumKeyLen]);
   ROCKSDB_ASSERT_EQ(keys.size(), (size_t)num_keys);
   {
-    jbyte* cur = (jbyte*)keys_mem.get();
+    auto keysLen = (const jint*)jkeysBuf;
+    auto cur = (const char*)(keysLen + num_keys);
     for (jsize i = 0; i < num_keys; i++) { // jbyteArray is _jbyteArray*
-      auto jba_key = static_cast<jbyteArray>(env->GetObjectArrayElement(jkeys, i));
-      jsize len = env->GetArrayLength(jba_key);
-      env->GetByteArrayRegion(jba_key, 0, len, cur);
+      jsize len = keysLen[i];
       keys[i] = ROCKSDB_NAMESPACE::Slice((const char*)cur, len);
       cur += len;
-      env->DeleteLocalRef(jba_key);
     }
   }
   auto db = (ROCKSDB_NAMESPACE::DB*)jdb;

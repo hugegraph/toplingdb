@@ -2690,44 +2690,59 @@ public class RocksDB extends RocksObject {
     }
     long sumKeyLen = 0;
     for (byte[] key : keys) sumKeyLen += key.length;
-    final long cfh = columnFamilyHandle.nativeHandle_;
-    final long roh = readOptions.nativeHandle_;
-    final Status[] statusArray = new Status[keys.length];
-    final long valueSliceVec = multiGetZeroCopyNative
-         (nativeHandle_, roh, cfh, keys, sumKeyLen, statusArray);
-    final ByteBufferGetStatus[] results = new ByteBufferGetStatus[keys.length];
-    for (int i = 0; i < keys.length; i++) {
-      final Status status = statusArray[i];
-      if (Status.isOk(status)) {
-        ByteBuffer value = values.get(i);
-        if (value == null) { // auto create direct buffer
-          value = DirectSlice.newZeroCopyDirectBuffer();
-          values.set(i, value);
-        } else if (!value.isDirect()) {
-          throw new IllegalArgumentException("ByteBuffer for value must be direct");
-        }
-        long valuePtr = DirectSlice.getUnsafe().getLong(valueSliceVec + 16*i + 0);
-        long valueLen = DirectSlice.getUnsafe().getLong(valueSliceVec + 16*i + 8);
-        if (DirectSlice.supportDirectBorrowMemory(value)) {
-          DirectSlice.directBorrowMemoryUnchecked(value, valuePtr, valueLen);
-        } else {
-          int cplen = DirectSlice.copyToDirectBuffer(valuePtr, valueLen, value);
-          value.limit(Math.min(value.position() + cplen, value.limit()));
-        }
-        //System.err.printf("java: %d-th value = 0x%12X %4d%n", i, valuePtr, valueLen);
-        results[i] = new ByteBufferGetStatus(status, (int)valueLen, value);
-      } else {
-        results[i] = new ByteBufferGetStatus(status);
+    long keysBuffer = DirectSlice.getUnsafe().allocateMemory(4 * keys.length + sumKeyLen);
+    try {
+      for (int i = 0; i < keys.length; i++) {
+        DirectSlice.getUnsafe().putInt(keysBuffer + 4*i, keys[i].length);
       }
+      long curKeyData = keysBuffer + 4 * keys.length;
+      for (int i = 0; i < keys.length; i++) {
+        DirectSlice.getUnsafe().copyMemory(
+          keys[i], DirectSlice.getUnsafe().ARRAY_BYTE_BASE_OFFSET,
+          null, curKeyData, keys[i].length);
+        curKeyData += keys[i].length;
+      }
+      final long cfh = columnFamilyHandle.nativeHandle_;
+      final long roh = readOptions.nativeHandle_;
+      final Status[] statusArray = new Status[keys.length];
+      final long valueSliceVec = multiGetZeroCopyNative
+          (nativeHandle_, roh, cfh, keysBuffer, statusArray);
+      final ByteBufferGetStatus[] results = new ByteBufferGetStatus[keys.length];
+      for (int i = 0; i < keys.length; i++) {
+        final Status status = statusArray[i];
+        if (Status.isOk(status)) {
+          ByteBuffer value = values.get(i);
+          if (value == null) { // auto create direct buffer
+            value = DirectSlice.newZeroCopyDirectBuffer();
+            values.set(i, value);
+          } else if (!value.isDirect()) {
+            throw new IllegalArgumentException("ByteBuffer for value must be direct");
+          }
+          long valuePtr = DirectSlice.getUnsafe().getLong(valueSliceVec + 16*i + 0);
+          long valueLen = DirectSlice.getUnsafe().getLong(valueSliceVec + 16*i + 8);
+          if (DirectSlice.supportDirectBorrowMemory(value)) {
+            DirectSlice.directBorrowMemoryUnchecked(value, valuePtr, valueLen);
+          } else {
+            int cplen = DirectSlice.copyToDirectBuffer(valuePtr, valueLen, value);
+            value.limit(Math.min(value.position() + cplen, value.limit()));
+          }
+          //System.err.printf("java: %d-th value = 0x%12X %4d%n", i, valuePtr, valueLen);
+          results[i] = new ByteBufferGetStatus(status, (int)valueLen, value);
+        } else {
+          results[i] = new ByteBufferGetStatus(status);
+        }
+      }
+      return results;
+    } finally {
+      DirectSlice.getUnsafe().freeMemory(keysBuffer);
     }
-    return results;
   }
   public ByteBufferGetStatus[] multiGetZeroCopy(final ReadOptions readOptions,
       final byte[][] keys, final List<ByteBuffer> values) throws RocksDBException {
     return multiGetZeroCopy(readOptions, defaultColumnFamilyHandle_, keys, values);
   }
   private native long multiGetZeroCopyNative
-  (long dbh, long roh, long cfh, byte[][] keys, long sumKeyLen, Status[] sta);
+  (long dbh, long roh, long cfh, long keysBuffer, Status[] sta);
 
   /**
    *  Check if a key exists in the database.
