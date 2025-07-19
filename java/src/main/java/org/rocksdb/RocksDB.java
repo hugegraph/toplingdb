@@ -2712,8 +2712,10 @@ public class RocksDB extends RocksObject {
       final ByteBufferGetStatus[] results = new ByteBufferGetStatus[keys.length];
       final long valueSliceVec = keysBuffer; // C++ return'ed value slice
       for (int i = 0; i < keys.length; i++) {
+        long valuePtr = DirectSlice.getUnsafe().getLong(valueSliceVec + 16*i + 0);
+        long valueLen = DirectSlice.getUnsafe().getLong(valueSliceVec + 16*i + 8);
         final Status status = statusArray[i];
-        if (Status.isOk(status)) {
+        if (valuePtr != 0) { // Found the key
           ByteBuffer value = values.get(i);
           if (value == null) { // auto create direct buffer
             value = DirectSlice.newZeroCopyDirectBuffer();
@@ -2721,8 +2723,6 @@ public class RocksDB extends RocksObject {
           } else if (!value.isDirect()) {
             throw new IllegalArgumentException("ByteBuffer for value must be direct");
           }
-          long valuePtr = DirectSlice.getUnsafe().getLong(valueSliceVec + 16*i + 0);
-          long valueLen = DirectSlice.getUnsafe().getLong(valueSliceVec + 16*i + 8);
           if (DirectSlice.supportDirectBorrowMemory(value)) {
             DirectSlice.directBorrowMemoryUnchecked(value, valuePtr, valueLen);
           } else {
@@ -2731,6 +2731,10 @@ public class RocksDB extends RocksObject {
           }
           //System.err.printf("java: %d-th value = 0x%12X %4d%n", i, valuePtr, valueLen);
           results[i] = new ByteBufferGetStatus(status, (int)valueLen, value);
+        } else if (status == null) { // NotFound
+          // NotFound is a normal case, create status in java side is faster
+          results[i] = new ByteBufferGetStatus
+          (new Status(Status.Code.NotFound, Status.SubCode.None, "NotFound"));
         } else {
           results[i] = new ByteBufferGetStatus(status);
         }

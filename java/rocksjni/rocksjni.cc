@@ -2257,11 +2257,13 @@ JNIEXPORT void JNICALL Java_org_rocksdb_RocksDB_multiGetZeroCopyNative
       values_slice[i] = static_cast<ROCKSDB_NAMESPACE::Slice&>(values[i]);
     } else {
       values_slice[i] = ROCKSDB_NAMESPACE::Slice(nullptr, 0);
-      auto jstatus = ROCKSDB_NAMESPACE::StatusJni::construct(env, s[i]);
-      if (jstatus == nullptr) { // exception in context
-        return;
+      if (!s[i].IsNotFound()) {
+        auto jstatus = ROCKSDB_NAMESPACE::StatusJni::construct(env, s[i]);
+        if (jstatus == nullptr) { // exception in context
+          return;
+        }
+        env->SetObjectArrayElement(jstatuses, i, jstatus);
       }
-      env->SetObjectArrayElement(jstatuses, i, jstatus);
     }
   }
   rOpt.m_multi_get.PinObject(std::move(values_up));
