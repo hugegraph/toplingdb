@@ -215,7 +215,7 @@ public class MultiGetTest {
       }
 
       try (ReadOptions ro = new ReadOptions(); AutoCloseable zc = ro.autoZeroCopy()) {
-        final List<ByteBuffer> values = new ArrayList<>();
+        final ArrayList<ByteBuffer> values = new ArrayList<>();
         for (int i = 0; i < keys.size(); i++) {
           values.add(ByteBuffer.allocateDirect(4));
         }
@@ -227,7 +227,28 @@ public class MultiGetTest {
           assertThat(status.requiredSize).isEqualTo("value3ForKey3".getBytes().length);
           final ByteBuffer expected =
               ByteBuffer.allocateDirect(24).put(Arrays.copyOf("valueX".getBytes(), 4));
-          if (DirectSlice.supportDirectBorrowMemory(expected)) {
+          if (DirectSlice.supportDirectBorrowMemory(status.value)) {
+            assertThat(status.value.capacity()).isEqualTo(status.requiredSize);
+            assertThat(status.value.position()).isEqualTo(0);
+            assertThat(status.value.limit()).isEqualTo(status.value.capacity());
+          } else {
+            expected.flip();
+            assertThat(status.value).isEqualTo(expected);
+          }
+        }
+
+        values.clear();
+        values.add(null);
+        values.add(ByteBuffer.allocateDirect(4));
+        byte[][] ba_keys = {"key1".getBytes(), "key2".getBytes(), "key3".getBytes()};
+        final ByteBufferGetStatus[] statii2 = db.multiGetZeroCopy(ro, ba_keys, values);
+        assertThat(statii2.length).isEqualTo(ba_keys.length);
+        for (final ByteBufferGetStatus status : statii2) {
+          assertThat(status.isOk()).isEqualTo(true);
+          assertThat(status.requiredSize).isEqualTo("value3ForKey3".getBytes().length);
+          final ByteBuffer expected =
+              ByteBuffer.allocateDirect(24).put(Arrays.copyOf("valueX".getBytes(), 4));
+          if (DirectSlice.supportDirectBorrowMemory(status.value)) {
             assertThat(status.value.capacity()).isEqualTo(status.requiredSize);
             assertThat(status.value.position()).isEqualTo(0);
             assertThat(status.value.limit()).isEqualTo(status.value.capacity());

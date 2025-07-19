@@ -9029,6 +9029,11 @@ struct ReadOptionsWithValue : public ReadOptions {
       for (PinnableSlice& x : *this)
         x.Reset();
     }
+    void resize(size_t num) {
+      std::vector<PinnableSlice>::resize(num);
+      m_slice_vec.resize_no_init(num);
+    }
+    terark::valvec32<Slice> m_slice_vec;
   };
   ObjectPool<PinnableSlice> m_single_get;
   ObjectPool<MultiGetVector> m_multi_get;

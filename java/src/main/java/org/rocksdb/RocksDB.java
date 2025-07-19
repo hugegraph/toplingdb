@@ -2662,6 +2662,74 @@ public class RocksDB extends RocksObject {
   }
 
   /**
+   * Fetches multi values for the given keys.
+   * <p>
+   * Note: Every key is in columnFamilyHandle
+   * </p>
+   *
+   * @param readOptions Read options
+   * @param columnFamilyHandle {@link org.rocksdb.ColumnFamilyHandle} instances.
+   * @param keys array of byte array.
+   * @param values list of buffers to return retrieved values in, users can
+   * pass in an empty list, this function will auto create DirectByteBuffer
+   * and fill into, existing ByteBuffer in the list is reused, whatever it
+   * is direct or not, if it is not direct, values will be copied into.
+   * @throws RocksDBException if error happens in underlying native library.
+   * @throws IllegalArgumentException thrown if readOptions is not zero copy,
+   * if a ByteBuffer in values is not direct
+   * @return the array of values for the given list of keys
+   */
+  public ByteBufferGetStatus[] multiGetZeroCopy(final ReadOptions readOptions,
+      final ColumnFamilyHandle columnFamilyHandle, final byte[][] keys,
+      final List<ByteBuffer> values) throws RocksDBException {
+    if (!readOptions.isGoingToZeroCopy()) {
+      throw new IllegalArgumentException("multiGetZeroCopy must be in zero copy section");
+    }
+    for (int i = values.size(); i < keys.length; i++) {
+      values.add(DirectSlice.newZeroCopyDirectBuffer());
+    }
+    long sumKeyLen = 0;
+    for (byte[] key : keys) sumKeyLen += key.length;
+    final long cfh = columnFamilyHandle.nativeHandle_;
+    final long roh = readOptions.nativeHandle_;
+    final Status[] statusArray = new Status[keys.length];
+    final long valueSliceVec = multiGetZeroCopyNative
+         (nativeHandle_, roh, cfh, keys, sumKeyLen, statusArray);
+    final ByteBufferGetStatus[] results = new ByteBufferGetStatus[keys.length];
+    for (int i = 0; i < keys.length; i++) {
+      final Status status = statusArray[i];
+      if (Status.isOk(status)) {
+        ByteBuffer value = values.get(i);
+        if (value == null) { // auto create direct buffer
+          value = DirectSlice.newZeroCopyDirectBuffer();
+          values.set(i, value);
+        } else if (!value.isDirect()) {
+          throw new IllegalArgumentException("ByteBuffer for value must be direct");
+        }
+        long valuePtr = DirectSlice.getUnsafe().getLong(valueSliceVec + 16*i + 0);
+        long valueLen = DirectSlice.getUnsafe().getLong(valueSliceVec + 16*i + 8);
+        if (DirectSlice.supportDirectBorrowMemory(value)) {
+          DirectSlice.directBorrowMemoryUnchecked(value, valuePtr, valueLen);
+        } else {
+          int cplen = DirectSlice.copyToDirectBuffer(valuePtr, valueLen, value);
+          value.limit(Math.min(value.position() + cplen, value.limit()));
+        }
+        //System.err.printf("java: %d-th value = 0x%12X %4d%n", i, valuePtr, valueLen);
+        results[i] = new ByteBufferGetStatus(status, (int)valueLen, value);
+      } else {
+        results[i] = new ByteBufferGetStatus(status);
+      }
+    }
+    return results;
+  }
+  public ByteBufferGetStatus[] multiGetZeroCopy(final ReadOptions readOptions,
+      final byte[][] keys, final List<ByteBuffer> values) throws RocksDBException {
+    return multiGetZeroCopy(readOptions, defaultColumnFamilyHandle_, keys, values);
+  }
+  private native long multiGetZeroCopyNative
+  (long dbh, long roh, long cfh, byte[][] keys, long sumKeyLen, Status[] sta);
+
+  /**
    *  Check if a key exists in the database.
    *  This method is not as lightweight as {@code keyMayExist} but it gives a 100% guarantee
    *  of a correct result, whether the key exists or not.
