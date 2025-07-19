@@ -1402,7 +1402,7 @@ public class RocksDB extends RocksObject {
                  value.arrayOffset() + value.position(), value.remaining(), cfh);
     }
     if (!opt.isGoingToZeroCopy()) {
-      throw new RocksDBException
+      throw new IllegalArgumentException
       ("Must be in zero copy section when get with ByteArray key & DirectBuffer value");
     }
     long result = byteArrayKeyGetDirect(nativeHandle_, opt.nativeHandle_, key, kOffset, kLen, cfh);
