@@ -2672,8 +2672,7 @@ public class RocksDB extends RocksObject {
    * @param keys array of byte array.
    * @param values list of buffers to return retrieved values in, users can
    * pass in an empty list, this function will auto create DirectByteBuffer
-   * and fill into, existing ByteBuffer in the list is reused, whatever it
-   * is direct or not, if it is not direct, values will be copied into.
+   * and fill into, existing ByteBuffer in the list is reused.
    * @throws RocksDBException if error happens in underlying native library.
    * @throws IllegalArgumentException thrown if readOptions is not zero copy,
    * if a ByteBuffer in values is not direct
