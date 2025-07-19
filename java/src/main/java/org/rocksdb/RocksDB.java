@@ -2690,13 +2690,16 @@ public class RocksDB extends RocksObject {
     }
     long sumKeyLen = 0;
     for (byte[] key : keys) sumKeyLen += key.length;
-    long keysBuffer = DirectSlice.getUnsafe().allocateMemory(4 * keys.length + sumKeyLen);
+    long keysBuffer = DirectSlice.getUnsafe().allocateMemory(16 * keys.length + sumKeyLen);
     try {
-      for (int i = 0; i < keys.length; i++) {
-        DirectSlice.getUnsafe().putInt(keysBuffer + 4*i, keys[i].length);
+      long curKeyData = keysBuffer + 16 * keys.length;
+      for (int i = 0; i < keys.length; i++) { // fill C++ rocksdb::Slice
+        DirectSlice.getUnsafe().putLong(keysBuffer + 16*i + 0, curKeyData);
+        DirectSlice.getUnsafe().putLong(keysBuffer + 16*i + 8, keys[i].length);
+        curKeyData += keys[i].length;
       }
-      long curKeyData = keysBuffer + 4 * keys.length;
-      for (int i = 0; i < keys.length; i++) {
+      curKeyData = keysBuffer + 16 * keys.length; // re-init
+      for (int i = 0; i < keys.length; i++) { // copy keys content
         DirectSlice.getUnsafe().copyMemory(
           keys[i], DirectSlice.getUnsafe().ARRAY_BYTE_BASE_OFFSET,
           null, curKeyData, keys[i].length);
@@ -2705,9 +2708,9 @@ public class RocksDB extends RocksObject {
       final long cfh = columnFamilyHandle.nativeHandle_;
       final long roh = readOptions.nativeHandle_;
       final Status[] statusArray = new Status[keys.length];
-      final long valueSliceVec = multiGetZeroCopyNative
-          (nativeHandle_, roh, cfh, keysBuffer, statusArray);
+      multiGetZeroCopyNative(nativeHandle_, roh, cfh, keysBuffer, statusArray);
       final ByteBufferGetStatus[] results = new ByteBufferGetStatus[keys.length];
+      final long valueSliceVec = keysBuffer; // C++ return'ed value slice
       for (int i = 0; i < keys.length; i++) {
         final Status status = statusArray[i];
         if (Status.isOk(status)) {
@@ -2741,7 +2744,7 @@ public class RocksDB extends RocksObject {
       final byte[][] keys, final List<ByteBuffer> values) throws RocksDBException {
     return multiGetZeroCopy(readOptions, defaultColumnFamilyHandle_, keys, values);
   }
-  private native long multiGetZeroCopyNative
+  private native void multiGetZeroCopyNative
   (long dbh, long roh, long cfh, long keysBuffer, Status[] sta);
 
   /**

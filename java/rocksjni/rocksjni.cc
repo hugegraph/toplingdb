@@ -2233,7 +2233,7 @@ void multi_get_helper_direct(JNIEnv* env, jobject, ROCKSDB_NAMESPACE::DB* db,
  * Method:    multiGetZeroCopyNative
  * Signature: (JJJ[[BJ[Lorg/rocksdb/Status;)J
  */
-JNIEXPORT jlong JNICALL Java_org_rocksdb_RocksDB_multiGetZeroCopyNative
+JNIEXPORT void JNICALL Java_org_rocksdb_RocksDB_multiGetZeroCopyNative
 (JNIEnv* env, jobject, jlong jdb, jlong jro, jlong jcfh, jlong jkeysBuf, jobjectArray jstatuses)
 {
   jsize num_keys = env->GetArrayLength(jstatuses);
@@ -2241,26 +2241,16 @@ JNIEXPORT jlong JNICALL Java_org_rocksdb_RocksDB_multiGetZeroCopyNative
   auto values_up = rOpt.m_multi_get.NewObjectUniquePtr();
   auto& values = *values_up;
   values.resize(num_keys);
-  auto& keys = values.m_slice_vec;
-  ROCKSDB_ASSERT_EQ(keys.size(), (size_t)num_keys);
-  {
-    auto keysLen = (const jint*)jkeysBuf;
-    auto cur = (const char*)(keysLen + num_keys);
-    for (jsize i = 0; i < num_keys; i++) { // jbyteArray is _jbyteArray*
-      jsize len = keysLen[i];
-      keys[i] = ROCKSDB_NAMESPACE::Slice((const char*)cur, len);
-      cur += len;
-    }
-  }
+  auto keys = (ROCKSDB_NAMESPACE::Slice*)jkeysBuf;
   auto db = (ROCKSDB_NAMESPACE::DB*)jdb;
   auto cfh = (ROCKSDB_NAMESPACE::ColumnFamilyHandle*)jcfh;
   std::vector<ROCKSDB_NAMESPACE::Status> s(num_keys);
   if (!rOpt.internal_is_in_pinning_section) {
     rOpt.StartPin(); // use zero copy
   }
-  db->MultiGet(rOpt, cfh, num_keys, keys.data(), values.data(), nullptr, s.data());
+  db->MultiGet(rOpt, cfh, num_keys, keys, values.data(), nullptr, s.data());
   // `keys` as MultiGet param is not needed now, reuse it for value
-  auto& values_slice = keys;
+  ROCKSDB_NAMESPACE::Slice* values_slice = keys;
   for (int i = 0; i < num_keys; i++) {
     if (s[i].ok()) {
       //fprintf(stderr, "C++: %d-th value = %p %4zd\n", i, values[i].data(), values[i].size());
@@ -2269,13 +2259,12 @@ JNIEXPORT jlong JNICALL Java_org_rocksdb_RocksDB_multiGetZeroCopyNative
       values_slice[i] = ROCKSDB_NAMESPACE::Slice(nullptr, 0);
       auto jstatus = ROCKSDB_NAMESPACE::StatusJni::construct(env, s[i]);
       if (jstatus == nullptr) { // exception in context
-        return 0;
+        return;
       }
       env->SetObjectArrayElement(jstatuses, i, jstatus);
     }
   }
   rOpt.m_multi_get.PinObject(std::move(values_up));
-  return (jlong)values_slice.data();
 }
 
 /*
