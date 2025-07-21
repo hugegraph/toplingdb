@@ -2687,23 +2687,8 @@ public class RocksDB extends RocksObject {
     for (int i = values.size(); i < keys.length; i++) {
       values.add(DirectSlice.newZeroCopyDirectBuffer());
     }
-    long sumKeyLen = 0;
-    for (byte[] key : keys) sumKeyLen += key.length;
-    long keysBuffer = DirectSlice.getUnsafe().allocateMemory(16 * keys.length + sumKeyLen);
+    final long keysBuffer = createNativeSliceVec(keys);
     try {
-      long curKeyData = keysBuffer + 16 * keys.length;
-      for (int i = 0; i < keys.length; i++) { // fill C++ rocksdb::Slice
-        DirectSlice.getUnsafe().putLong(keysBuffer + 16*i + 0, curKeyData);
-        DirectSlice.getUnsafe().putLong(keysBuffer + 16*i + 8, keys[i].length);
-        curKeyData += keys[i].length;
-      }
-      curKeyData = keysBuffer + 16 * keys.length; // re-init
-      for (int i = 0; i < keys.length; i++) { // copy keys content
-        DirectSlice.getUnsafe().copyMemory(
-          keys[i], DirectSlice.getUnsafe().ARRAY_BYTE_BASE_OFFSET,
-          null, curKeyData, keys[i].length);
-        curKeyData += keys[i].length;
-      }
       final long cfh = columnFamilyHandle.nativeHandle_;
       final long roh = readOptions.nativeHandle_;
       final Status[] statusArray = new Status[keys.length];
@@ -2749,6 +2734,26 @@ public class RocksDB extends RocksObject {
   }
   private native void multiGetZeroCopyNative
   (long dbh, long roh, long cfh, long keysBuffer, Status[] sta);
+
+  private long createNativeSliceVec(byte[][] keys) {
+    long sumKeyLen = 0;
+    for (byte[] key : keys) sumKeyLen += key.length;
+    long sliceVec = DirectSlice.getUnsafe().allocateMemory(16 * keys.length + sumKeyLen);
+    long currData = sliceVec + 16 * keys.length;
+    for (int i = 0; i < keys.length; i++) { // fill C++ rocksdb::Slice
+      DirectSlice.getUnsafe().putLong(sliceVec + 16*i + 0, currData);
+      DirectSlice.getUnsafe().putLong(sliceVec + 16*i + 8, keys[i].length);
+      currData += keys[i].length;
+    }
+    currData = sliceVec + 16 * keys.length; // re-init
+    for (int i = 0; i < keys.length; i++) { // copy keys content
+      DirectSlice.getUnsafe().copyMemory(
+        keys[i], DirectSlice.getUnsafe().ARRAY_BYTE_BASE_OFFSET,
+        null, currData, keys[i].length);
+      currData += keys[i].length;
+    }
+    return sliceVec;
+  }
 
   /**
    *  Check if a key exists in the database.
