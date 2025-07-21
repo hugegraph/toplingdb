@@ -2424,17 +2424,49 @@ public class RocksDB extends RocksObject {
    */
   public List<byte[]> multiGetAsList(final ReadOptions opt,
       final List<byte[]> keys) throws RocksDBException {
+    return multiGetAsList(opt, defaultColumnFamilyHandle_, keys);
+  }
+  public List<byte[]> multiGetAsList(final ReadOptions opt,
+      final ColumnFamilyHandle columnFamilyHandle,
+      final List<byte[]> keys) throws RocksDBException {
     assert (!keys.isEmpty());
-
-    final byte[][] keysArray = keys.toArray(new byte[keys.size()][]);
-    final int[] keyOffsets = new int[keysArray.length];
-    final int[] keyLengths = new int[keysArray.length];
-    for(int i = 0; i < keyLengths.length; i++) {
-      keyLengths[i] = keysArray[i].length;
+    final boolean isInZeroCopySection = opt.isGoingToZeroCopy();
+    try {
+      if (!isInZeroCopySection) {
+        opt.startZeroCopy();
+      }
+      final byte[][] keysArray = keys.toArray(new byte[keys.size()][]);
+      final long sliceVec = createNativeSliceVec(keysArray);
+      try {
+        final long cfh = columnFamilyHandle.nativeHandle_;
+        final long roh = opt.nativeHandle_;
+        final Status[] statusArray = new Status[keysArray.length];
+        multiGetZeroCopyNative(nativeHandle_, roh, cfh, sliceVec, statusArray);
+        // sliceVec is reused as value slice in multiGetZeroCopyNative
+        return Arrays.asList(copyNativeSliceVec(keysArray.length, sliceVec));
+      }
+      finally {
+        DirectSlice.getUnsafe().freeMemory(sliceVec);
+      }
     }
+    finally {
+      if (!isInZeroCopySection)
+        opt.finishZeroCopy();
+    }
+  }
 
-    return Arrays.asList(multiGet(nativeHandle_, opt.nativeHandle_,
-        keysArray, keyOffsets, keyLengths));
+  private static byte[][] copyNativeSliceVec(int num, long nativeSliceVec) {
+    byte[][] baa = new byte[num][];
+    for (int i = 0; i < num; i++) { // C++ side rocksdb::Slice
+      long data = DirectSlice.getUnsafe().getLong(nativeSliceVec + i*16 + 0);
+      long size = DirectSlice.getUnsafe().getLong(nativeSliceVec + i*16 + 8);
+      if (data != 0) {
+        baa[i] = new byte[(int)size]; // can not skip redundant zero init
+        DirectSlice.getUnsafe().copyMemory(null, data,
+          baa[i], DirectSlice.getUnsafe().ARRAY_BYTE_BASE_OFFSET, size);
+      }
+    }
+    return baa;
   }
 
   /**
@@ -2467,6 +2499,10 @@ public class RocksDB extends RocksObject {
       throw new IllegalArgumentException(
           "For each key there must be a ColumnFamilyHandle.");
     }
+    ColumnFamilyHandle uniqueCF = getUniqueCF(columnFamilyHandleList);
+    if (uniqueCF != null) {
+      return multiGetAsList(opt, uniqueCF, keys);
+    }
     final long[] cfHandles = new long[columnFamilyHandleList.size()];
     for (int i = 0; i < columnFamilyHandleList.size(); i++) {
       cfHandles[i] = columnFamilyHandleList.get(i).nativeHandle_;
@@ -2481,6 +2517,27 @@ public class RocksDB extends RocksObject {
 
     return Arrays.asList(multiGet(nativeHandle_, opt.nativeHandle_,
         keysArray, keyOffsets, keyLengths, cfHandles));
+  }
+
+  public static ColumnFamilyHandle getUniqueCF(List<ColumnFamilyHandle> vec) {
+    if (vec.size() == 0)
+      return null;
+    ColumnFamilyHandle first = vec.get(0);
+    for (int i = 1; i < vec.size(); i++) {
+      if (vec.get(i) != first)
+        return null;
+    }
+    return first;
+  }
+  public static ColumnFamilyHandle getUniqueCF(ColumnFamilyHandle[] vec) {
+    if (vec.length == 0)
+      return null;
+    ColumnFamilyHandle first = vec[0];
+    for (int i = 1; i < vec.length; i++) {
+      if (vec[i] != first)
+        return null;
+    }
+    return first;
   }
 
   /**
