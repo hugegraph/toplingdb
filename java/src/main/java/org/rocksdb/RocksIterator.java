@@ -42,9 +42,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
     assert(isValid());
     long keyPtr = getZeroCopyKeyPtr();
     long keyLen = getZeroCopyKeyLen();
-    byte[] key = new byte[(int)keyLen];
-    myUnsafe.copyMemory(null, keyPtr, key, Unsafe.ARRAY_BYTE_BASE_OFFSET, keyLen);
-    return key;
+    return DirectSlice.copyOfNativeByteArray(keyPtr, keyLen);
   }
 
   private static final Unsafe myUnsafe = DirectSlice.getUnsafe();
@@ -243,9 +241,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
     fetchValue();
     long valueLen = getZeroCopyValueLen();
     long valuePtr = getZeroCopyValuePtr();
-    byte[] value = new byte[(int)valueLen];
-    myUnsafe.copyMemory(null, valuePtr, value, Unsafe.ARRAY_BYTE_BASE_OFFSET, valueLen);
-    return value;
+    return DirectSlice.copyOfNativeByteArray(valuePtr, valueLen);
   }
 
   /**

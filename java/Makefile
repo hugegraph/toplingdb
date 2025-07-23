@@ -297,6 +297,11 @@ endif
 
 JAVAC_ARGS ?=
 
+JAVAC_ARGS += --add-exports java.base/jdk.internal.misc=ALL-UNNAMED
+
+JAVADOC_CMD += --add-exports java.base/jdk.internal.misc=ALL-UNNAMED
+JAVADOC_CMD += -Xdoclint:none
+
 # Read plugin configuration
 PLUGIN_PATH = ../plugin
 ROCKSDB_PLUGIN_MKS = $(foreach plugin, $(ROCKSDB_PLUGINS), $(PLUGIN_PATH)/$(plugin)/*.mk)

@@ -2461,9 +2461,7 @@ public class RocksDB extends RocksObject {
       long data = DirectSlice.getUnsafe().getLong(nativeSliceVec + i*16 + 0);
       long size = DirectSlice.getUnsafe().getLong(nativeSliceVec + i*16 + 8);
       if (data != 0) {
-        baa[i] = new byte[(int)size]; // can not skip redundant zero init
-        DirectSlice.getUnsafe().copyMemory(null, data,
-          baa[i], DirectSlice.getUnsafe().ARRAY_BYTE_BASE_OFFSET, size);
+        baa[i] = DirectSlice.copyOfNativeByteArray(data, size);
       }
     }
     return baa;

@@ -195,6 +195,29 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
     return myUnsafe.getLong(buf, capacityOffset);
   }
 
+  private static final jdk.internal.misc.Unsafe moreUnsafe;
+  static {
+    String env = System.getenv("USE_INTERNAL_UNSAFE");
+    if (env != null && Boolean.parseBoolean(env)) {
+      moreUnsafe = jdk.internal.misc.Unsafe.getUnsafe();
+    } else {
+      moreUnsafe = null;
+    }
+  }
+  public static final byte[] copyOfNativeByteArray(long addr, long len) {
+    if (len > Integer.MAX_VALUE) {
+      throw new IllegalArgumentException("array len can not exceed Integer.MAX_VALUE");
+    }
+    final Object ba;
+    if (moreUnsafe == null) {
+      ba = new byte[(int)len];
+    } else {
+      ba = moreUnsafe.allocateUninitializedArray(byte.class, (int)len);
+    }
+    myUnsafe.copyMemory(null, addr, ba, Unsafe.ARRAY_BYTE_BASE_OFFSET, len);
+    return (byte[])ba;
+  }
+
   /**
    * Called from JNI to construct a new Java DirectSlice
    * without an underlying C++ object set
