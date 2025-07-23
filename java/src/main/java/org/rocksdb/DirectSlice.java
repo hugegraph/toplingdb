@@ -5,6 +5,9 @@
 
 package org.rocksdb;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
@@ -114,7 +117,34 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
   }
 
   private static native ByteBuffer newZeroCopyDirectBuffer0();
+
+  private static final MethodHandle constructZeroCopyBuffer;
+  static {
+    MethodHandle constructor = null;
+    try {
+      Class<?> clazz = Class.forName("java.nio.DirectByteBuffer");
+      MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(clazz, MethodHandles.lookup());
+      MethodHandle directByteBufferConstructor = lookup.findConstructor(
+            clazz, MethodType.methodType(void.class, long.class, long.class));
+      constructor = directByteBufferConstructor.asType(
+            MethodType.methodType(ByteBuffer.class, long.class, long.class));
+    } catch (Exception e) {
+      System.err.println("WARN: access java.nio.DirectByteBuffer failed: " + e + "\n" +
+            "use --add-opens java.base/java.nio=ALL-UNNAMED to " +
+            "create DirectByteBuffer faster(280ns to 60ns) by MethodHandle");
+    }
+    constructZeroCopyBuffer = constructor;
+  }
   public static ByteBuffer newZeroCopyDirectBuffer() {
+    if (constructZeroCopyBuffer != null) {
+      try {
+        long addr = 0L, cap = 0L;
+        return (ByteBuffer)constructZeroCopyBuffer.invokeExact(addr, cap);
+      } catch (Throwable e) {
+        throw new RuntimeException(e);
+      }
+    }
+    // this is slow path, constructorAsByteBuffer.invokeExact is faster
     if (!supportZeroCopy()) {
       throw new UnsupportedOperationException(
         "Zero-copy is not supported, try add java startup option " +
