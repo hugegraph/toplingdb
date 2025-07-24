@@ -2250,14 +2250,15 @@ public class RocksDB extends RocksObject {
   }
 
   // java side copy key to native and copy native value slice to byte[]
-  byte[] getInZeroCopy(final ColumnFamilyHandle columnFamilyHandle,
+  final byte[] getInZeroCopy(final ColumnFamilyHandle columnFamilyHandle,
         final ReadOptions opt, final byte[] key) throws RocksDBException {
     assert opt.isGoingToZeroCopy();
     return getInZeroCopy(columnFamilyHandle, opt, key, 0, key.length);
   }
-  byte[] getInZeroCopy(final ColumnFamilyHandle columnFamilyHandle,
+  final byte[] getInZeroCopy(final ColumnFamilyHandle columnFamilyHandle,
         final ReadOptions opt, final byte[] key,
         final int offset, final int len) throws RocksDBException {
+    assert opt.isGoingToZeroCopy();
     long keyPtr = DirectSlice.nativeCopyOf(key, offset, len);
     try {
       long cfh = columnFamilyHandle.nativeHandle_;
