@@ -2249,6 +2249,29 @@ public class RocksDB extends RocksObject {
         columnFamilyHandle.nativeHandle_);
   }
 
+  // java side copy key to native and copy native value slice to byte[]
+  byte[] getInZeroCopy(final ColumnFamilyHandle columnFamilyHandle,
+        final ReadOptions opt, final byte[] key) throws RocksDBException {
+    assert opt.isGoingToZeroCopy();
+    return getInZeroCopy(columnFamilyHandle, opt, key, 0, key.length);
+  }
+  byte[] getInZeroCopy(final ColumnFamilyHandle columnFamilyHandle,
+        final ReadOptions opt, final byte[] key,
+        final int offset, final int len) throws RocksDBException {
+    long keyPtr = DirectSlice.nativeCopyOf(key, offset, len);
+    try {
+      long cfh = columnFamilyHandle.nativeHandle_;
+      long roh = opt.nativeHandle_;
+      long result = getDirect(nativeHandle_, roh, keyPtr, len, 0, -1, cfh);
+      if ((result & 7) == 0) { // result is value slice
+        return DirectSlice.copyOfNativeByteArray(result);
+      }
+      return null;
+    } finally {
+      DirectSlice.getUnsafe().freeMemory(keyPtr);
+    }
+  }
+
   /**
    * The simplified version of get which returns a new byte array storing
    * the value associated with the specified input key if any.  null will be
@@ -2264,6 +2287,9 @@ public class RocksDB extends RocksObject {
    */
   public byte[] get(final ReadOptions opt, final byte[] key)
       throws RocksDBException {
+    if (opt.isGoingToZeroCopy()) {
+      return getInZeroCopy(defaultColumnFamilyHandle_, opt, key);
+    }
     return get(nativeHandle_, opt.nativeHandle_, key, 0, key.length);
   }
 
@@ -2287,6 +2313,9 @@ public class RocksDB extends RocksObject {
   public byte[] get(final ReadOptions opt, final byte[] key, final int offset,
       final int len) throws RocksDBException {
     CheckBounds(offset, len, key.length);
+    if (opt.isGoingToZeroCopy()) {
+      return getInZeroCopy(defaultColumnFamilyHandle_, opt, key, offset, len);
+    }
     return get(nativeHandle_, opt.nativeHandle_, key, offset, len);
   }
 
@@ -2307,6 +2336,9 @@ public class RocksDB extends RocksObject {
    */
   public byte[] get(final ColumnFamilyHandle columnFamilyHandle,
       final ReadOptions opt, final byte[] key) throws RocksDBException {
+    if (opt.isGoingToZeroCopy()) {
+      return getInZeroCopy(columnFamilyHandle, opt, key);
+    }
     return get(nativeHandle_, opt.nativeHandle_, key, 0, key.length,
         columnFamilyHandle.nativeHandle_);
   }
@@ -2334,6 +2366,9 @@ public class RocksDB extends RocksObject {
       final ReadOptions opt, final byte[] key, final int offset, final int len)
       throws RocksDBException {
     CheckBounds(offset, len, key.length);
+    if (opt.isGoingToZeroCopy()) {
+      return getInZeroCopy(columnFamilyHandle, opt, key, offset, len);
+    }
     return get(nativeHandle_, opt.nativeHandle_, key, offset, len,
         columnFamilyHandle.nativeHandle_);
   }

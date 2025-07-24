@@ -234,6 +234,11 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
       moreUnsafe = null;
     }
   }
+  public static final byte[] copyOfNativeByteArray(long slice) {
+    long ptr = myUnsafe.getLong(slice + 0);
+    long len = myUnsafe.getLong(slice + 8);
+    return copyOfNativeByteArray(ptr, len);
+  }
   public static final byte[] copyOfNativeByteArray(long addr, long len) {
     if (len > Integer.MAX_VALUE) {
       throw new IllegalArgumentException("array len can not exceed Integer.MAX_VALUE");
@@ -246,6 +251,29 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
     }
     myUnsafe.copyMemory(null, addr, ba, Unsafe.ARRAY_BYTE_BASE_OFFSET, len);
     return (byte[])ba;
+  }
+  // allocate and copy byte[] in java side is faster than in JNI side
+  public static final long nativeCopyOf(byte[] ba) {
+    long addr = myUnsafe.allocateMemory(ba.length);
+    myUnsafe.copyMemory(ba, Unsafe.ARRAY_BYTE_BASE_OFFSET, null, addr, ba.length);
+    return addr;
+  }
+  public static final long nativeCopyOf(byte[] ba, int offset, int len) {
+    assert offset >= 0;
+    assert offset <= ba.length; // (ba.length, 0) is a valid sub sequence
+    assert len >= 0;
+    assert offset + len <= ba.length;
+    long addr = myUnsafe.allocateMemory(len);
+    myUnsafe.copyMemory(ba, Unsafe.ARRAY_BYTE_BASE_OFFSET + offset, null, addr, len);
+    return addr;
+  }
+  public static final long nativeSliceOf(byte[] ba) {
+    long slice = myUnsafe.allocateMemory(16 + ba.length);
+    long data = slice + 16;
+    myUnsafe.putLong(slice + 0,  data);
+    myUnsafe.putLong(slice + 8,  ba.length);
+    myUnsafe.copyMemory(ba, Unsafe.ARRAY_BYTE_BASE_OFFSET, null, data, ba.length);
+    return slice;
   }
 
   /**
