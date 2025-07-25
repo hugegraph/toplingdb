@@ -486,6 +486,7 @@ class WriteBatch : public WriteBatchBase {
   bool HasProtectionInfo() const { return prot_info_ != nullptr; }
 
  private:
+ protected:
   friend class WriteBatchInternal;
   friend class LocalSavePoint;
   // TODO(myabandeh): this is needed for a hack to collapse the write batch and

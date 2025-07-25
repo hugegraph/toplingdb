@@ -1919,6 +1919,7 @@ public class RocksDB extends RocksObject {
    */
   public void write(final WriteOptions writeOpts, final WriteBatch updates)
       throws RocksDBException {
+    updates.updateNativeDataSizeFromJava();
     write0(nativeHandle_, writeOpts.nativeHandle_, updates.nativeHandle_);
   }
 

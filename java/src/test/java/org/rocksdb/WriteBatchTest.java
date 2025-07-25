@@ -521,6 +521,7 @@ class WriteBatchTestInternalHelper {
   }
 
   static void append(final WriteBatch wb1, final WriteBatch wb2) {
+    wb1.updateJavaAddrSizeCapFromNative();
     append(wb1.nativeHandle_, wb2.nativeHandle_);
   }
 
