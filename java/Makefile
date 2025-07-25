@@ -332,6 +332,8 @@ endif
 # When debugging add -Xcheck:jni to the java args
 ifneq ($(DEBUG_LEVEL),0)
 	JAVA_ARGS += -ea -Xcheck:jni
+endif
+ifeq (${ENABLE_JAVA_LINT},1)
 	JAVAC_ARGS += -Xlint:deprecation -Xlint:unchecked
 endif
 
