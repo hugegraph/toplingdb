@@ -256,7 +256,7 @@ JAVA_CMD := $(JAVA_HOME)/bin/java
 else
 JAVA_CMD := java
 endif
-JAVA_CMD := env LD_PRELOAD=libjemalloc.so:target/librocksdbjni-linux64.so ${JAVA_CMD}
+JAVA_CMD := env LD_PRELOAD=libjemalloc.so:librocksdbjni-linux64.so LD_LIBRARY_PATH=target:${LD_LIBRARY_PATH} ${JAVA_CMD}
 endif
 
 ifeq ($(JAVAC_CMD),)
