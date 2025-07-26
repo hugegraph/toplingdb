@@ -1131,6 +1131,10 @@ jlong rocksdb_get_helper_direct(
       *has_exception = true;
       ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
       return JLONG_OF_ERROR(kStatusError);
+    } else if (pinnable_value->size() > size_t(INT_MAX)) {
+      ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(
+          env, "Requested array size exceeds VM limit");
+      return JLONG_OF_ERROR(kStatusError);
     }
     ro_opt->RegisterZeroCopy(std::move(pinnable_value_up));
     return JLONG_OF_PTR(pinnable_value);

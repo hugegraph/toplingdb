@@ -241,7 +241,7 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
   }
   public static final byte[] copyOfNativeByteArray(long addr, long len) {
     if (len > Integer.MAX_VALUE) {
-      throw new IllegalArgumentException("array len can not exceed Integer.MAX_VALUE");
+      throw new IllegalArgumentException("array len " + len + " exceeds Integer.MAX_VALUE");
     }
     final Object ba;
     if (moreUnsafe == null) {
