@@ -2167,6 +2167,15 @@ public class RocksDB extends RocksObject {
         vOffset, vLen, columnFamilyHandle.nativeHandle_);
   }
 
+  private boolean isGetPreferZeroCopy_ = true;
+  {
+    String env = System.getenv("ROCKSDB_GET_PREFER_ZERO_COPY");
+    if (env != null)
+      isGetPreferZeroCopy_ = Boolean.parseBoolean(env);
+  }
+  final boolean isGetPreferZeroCopy() { return isGetPreferZeroCopy_; }
+  final void setGetPreferZeroCopy(boolean b) { isGetPreferZeroCopy_ = b; }
+
   /**
    * The simplified version of get which returns a new byte array storing
    * the value associated with the specified input key if any.  null will be
@@ -2180,6 +2189,15 @@ public class RocksDB extends RocksObject {
    *    native library.
    */
   public byte[] get(final byte[] key) throws RocksDBException {
+    if (isGetPreferZeroCopy_) {
+      final ReadOptions opt = tlsReadOptions_.get();
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(defaultColumnFamilyHandle_, opt, key);
+      } finally {
+        opt.finishZeroCopy();
+      }
+    }
     return get(nativeHandle_, key, 0, key.length);
   }
 
@@ -2202,6 +2220,15 @@ public class RocksDB extends RocksObject {
   public byte[] get(final byte[] key, final int offset,
       final int len) throws RocksDBException {
     CheckBounds(offset, len, key.length);
+    if (isGetPreferZeroCopy_) {
+      final ReadOptions opt = tlsReadOptions_.get();
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(defaultColumnFamilyHandle_, opt, key, offset, len);
+      } finally {
+        opt.finishZeroCopy();
+      }
+    }
     return get(nativeHandle_, key, offset, len);
   }
 
@@ -2221,6 +2248,15 @@ public class RocksDB extends RocksObject {
    */
   public byte[] get(final ColumnFamilyHandle columnFamilyHandle,
       final byte[] key) throws RocksDBException {
+    if (isGetPreferZeroCopy_) {
+      final ReadOptions opt = tlsReadOptions_.get();
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(columnFamilyHandle, opt, key);
+      } finally {
+        opt.finishZeroCopy();
+      }
+    }
     return get(nativeHandle_, key, 0, key.length,
         columnFamilyHandle.nativeHandle_);
   }
@@ -2247,6 +2283,15 @@ public class RocksDB extends RocksObject {
       final byte[] key, final int offset, final int len)
       throws RocksDBException {
     CheckBounds(offset, len, key.length);
+    if (isGetPreferZeroCopy_) {
+      final ReadOptions opt = tlsReadOptions_.get();
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(columnFamilyHandle, opt, key, offset, len);
+      } finally {
+        opt.finishZeroCopy();
+      }
+    }
     return get(nativeHandle_, key, offset, len,
         columnFamilyHandle.nativeHandle_);
   }
@@ -2292,6 +2337,13 @@ public class RocksDB extends RocksObject {
       throws RocksDBException {
     if (opt.isGoingToZeroCopy()) {
       return getInZeroCopy(defaultColumnFamilyHandle_, opt, key);
+    } else if (isGetPreferZeroCopy_) {
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(defaultColumnFamilyHandle_, opt, key);
+      } finally {
+        opt.finishZeroCopy();
+      }
     }
     return get(nativeHandle_, opt.nativeHandle_, key, 0, key.length);
   }
@@ -2318,6 +2370,13 @@ public class RocksDB extends RocksObject {
     CheckBounds(offset, len, key.length);
     if (opt.isGoingToZeroCopy()) {
       return getInZeroCopy(defaultColumnFamilyHandle_, opt, key, offset, len);
+    } else if (isGetPreferZeroCopy_) {
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(defaultColumnFamilyHandle_, opt, key, offset, len);
+      } finally {
+        opt.finishZeroCopy();
+      }
     }
     return get(nativeHandle_, opt.nativeHandle_, key, offset, len);
   }
@@ -2341,6 +2400,13 @@ public class RocksDB extends RocksObject {
       final ReadOptions opt, final byte[] key) throws RocksDBException {
     if (opt.isGoingToZeroCopy()) {
       return getInZeroCopy(columnFamilyHandle, opt, key);
+    } else if (isGetPreferZeroCopy_) {
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(columnFamilyHandle, opt, key);
+      } finally {
+        opt.finishZeroCopy();
+      }
     }
     return get(nativeHandle_, opt.nativeHandle_, key, 0, key.length,
         columnFamilyHandle.nativeHandle_);
@@ -2371,6 +2437,13 @@ public class RocksDB extends RocksObject {
     CheckBounds(offset, len, key.length);
     if (opt.isGoingToZeroCopy()) {
       return getInZeroCopy(columnFamilyHandle, opt, key, offset, len);
+    } else if (isGetPreferZeroCopy_) {
+      try {
+        opt.startZeroCopy();
+        return getInZeroCopy(columnFamilyHandle, opt, key, offset, len);
+      } finally {
+        opt.finishZeroCopy();
+      }
     }
     return get(nativeHandle_, opt.nativeHandle_, key, offset, len,
         columnFamilyHandle.nativeHandle_);
