@@ -42,10 +42,17 @@ struct JniWriteBatch : public WriteBatch {
     ROCKSDB_ASSERT_EQ(m_capa, jlong(rep_.capacity()));
     terark::string_resize_no_touch_memory(&rep_, m_size);
   }
-  void ensureCapacity(jlong newcap) {
+  void ensureCapacity(jlong newcap, JNIEnv* env) {
     updateNativeDataSizeFromJava();
+    if (max_bytes_ && size_t(newcap) > max_bytes_) {
+      RocksDBExceptionJni::ThrowNew(env, Status::MemoryLimit());
+      return;
+    }
     ROCKSDB_ASSERT_GT(newcap, m_capa);
     newcap = std::max(newcap, m_capa * 2);
+    if (max_bytes_) { // max_bytes_ maybe size_t(-1) SIZE_MAX
+      newcap = (jlong)std::min(size_t(newcap), max_bytes_);
+    }
     rep_.reserve(size_t(newcap));
     m_addr = (jlong)rep_.data();
   //m_size = (jlong)rep_.size(); // not needed
@@ -225,10 +232,10 @@ JNIEXPORT void JNICALL Java_org_rocksdb_WriteBatch_updateJavaAddrSizeCapFromNati
  * Signature: (JJ)V
  */
 JNIEXPORT void JNICALL Java_org_rocksdb_WriteBatch_ensureCapacity
-(JNIEnv *, jobject, jlong jwb, jlong newcap)
+(JNIEnv* env, jobject, jlong jwb, jlong newcap)
 {
   auto wb = (ROCKSDB_NAMESPACE::JniWriteBatch*)jwb;
-  wb->ensureCapacity(newcap);
+  wb->ensureCapacity(newcap, env);
 }
 
 /*
