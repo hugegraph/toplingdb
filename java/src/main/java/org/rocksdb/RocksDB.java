@@ -2500,30 +2500,18 @@ public class RocksDB extends RocksObject {
   private final byte[][] multiGetInZeroCopy(final ReadOptions opt,
       final ColumnFamilyHandle columnFamilyHandle,
       final byte[][] keysArray) throws RocksDBException {
-    final long sliceVec = createNativeSliceVec(keysArray);
+    final long sliceVec = DirectSlice.createNativeSliceVec(keysArray);
     try {
       final long cfh = columnFamilyHandle.nativeHandle_;
       final long roh = opt.nativeHandle_;
       final Status[] statusArray = new Status[keysArray.length];
       multiGetZeroCopyNative(nativeHandle_, roh, cfh, sliceVec, statusArray);
       // sliceVec is reused as value slice in multiGetZeroCopyNative
-      return copyNativeSliceVec(keysArray.length, sliceVec);
+      return DirectSlice.copyNativeSliceVec(keysArray.length, sliceVec);
     }
     finally {
       DirectSlice.getUnsafe().freeMemory(sliceVec);
     }
-  }
-
-  private static byte[][] copyNativeSliceVec(int num, long nativeSliceVec) {
-    byte[][] baa = new byte[num][];
-    for (int i = 0; i < num; i++) { // C++ side rocksdb::Slice
-      long data = DirectSlice.getUnsafe().getLong(nativeSliceVec + i*16 + 0);
-      long size = DirectSlice.getUnsafe().getLong(nativeSliceVec + i*16 + 8);
-      if (data != 0) {
-        baa[i] = DirectSlice.copyOfNativeByteArray(data, size);
-      }
-    }
-    return baa;
   }
 
   /**
@@ -2801,7 +2789,7 @@ public class RocksDB extends RocksObject {
     for (int i = values.size(); i < keys.length; i++) {
       values.add(DirectSlice.newZeroCopyDirectBuffer());
     }
-    final long keysBuffer = createNativeSliceVec(keys);
+    final long keysBuffer = DirectSlice.createNativeSliceVec(keys);
     try {
       final long cfh = columnFamilyHandle.nativeHandle_;
       final long roh = readOptions.nativeHandle_;
@@ -2848,26 +2836,6 @@ public class RocksDB extends RocksObject {
   }
   private native void multiGetZeroCopyNative
   (long dbh, long roh, long cfh, long keysBuffer, Status[] sta);
-
-  private long createNativeSliceVec(byte[][] keys) {
-    long sumKeyLen = 0;
-    for (byte[] key : keys) sumKeyLen += key.length;
-    long sliceVec = DirectSlice.getUnsafe().allocateMemory(16 * keys.length + sumKeyLen);
-    long currData = sliceVec + 16 * keys.length;
-    for (int i = 0; i < keys.length; i++) { // fill C++ rocksdb::Slice
-      DirectSlice.getUnsafe().putLong(sliceVec + 16*i + 0, currData);
-      DirectSlice.getUnsafe().putLong(sliceVec + 16*i + 8, keys[i].length);
-      currData += keys[i].length;
-    }
-    currData = sliceVec + 16 * keys.length; // re-init
-    for (int i = 0; i < keys.length; i++) { // copy keys content
-      DirectSlice.getUnsafe().copyMemory(
-        keys[i], DirectSlice.getUnsafe().ARRAY_BYTE_BASE_OFFSET,
-        null, currData, keys[i].length);
-      currData += keys[i].length;
-    }
-    return sliceVec;
-  }
 
   /**
    *  Check if a key exists in the database.

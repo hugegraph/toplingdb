@@ -275,6 +275,36 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
     myUnsafe.copyMemory(ba, Unsafe.ARRAY_BYTE_BASE_OFFSET, null, data, ba.length);
     return slice;
   }
+  public static final long createNativeSliceVec(byte[][] baa) {
+    long sumKeyLen = 0;
+    for (byte[] ba : baa) sumKeyLen += ba.length;
+    long sliceVec = myUnsafe.allocateMemory(16 * baa.length + sumKeyLen);
+    long currData = sliceVec + 16 * baa.length;
+    for (int i = 0; i < baa.length; i++) { // fill C++ rocksdb::Slice
+      myUnsafe.putLong(sliceVec + 16*i + 0, currData);
+      myUnsafe.putLong(sliceVec + 16*i + 8, baa[i].length);
+      currData += baa[i].length;
+    }
+    currData = sliceVec + 16 * baa.length; // re-init
+    for (int i = 0; i < baa.length; i++) { // copy keys content
+      myUnsafe.copyMemory(
+        baa[i], Unsafe.ARRAY_BYTE_BASE_OFFSET,
+        null, currData, baa[i].length);
+      currData += baa[i].length;
+    }
+    return sliceVec;
+  }
+  public static final byte[][] copyNativeSliceVec(int num, long sliceVec) {
+    byte[][] baa = new byte[num][];
+    for (int i = 0; i < num; i++) { // C++ side rocksdb::Slice
+      long data = myUnsafe.getLong(sliceVec + i*16 + 0);
+      long size = myUnsafe.getLong(sliceVec + i*16 + 8);
+      if (data != 0) {
+        baa[i] = copyOfNativeByteArray(data, size);
+      }
+    }
+    return baa;
+  }
 
   /**
    * Called from JNI to construct a new Java DirectSlice
