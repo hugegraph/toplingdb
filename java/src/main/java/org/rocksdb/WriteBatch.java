@@ -122,6 +122,7 @@ public class WriteBatch extends AbstractWriteBatch {
       updateJavaAddrSizeCapFromNative0(nativeHandle_);
     }
   }
+  private final native void ensureCapacity(long handle, long newCap);
   private final long repDataAddr() {
     return myUnsafe.getLong(nativeHandle_ + ADDR_SIZE_CAP_OFFSET);
   }
@@ -218,12 +219,8 @@ public class WriteBatch extends AbstractWriteBatch {
     long old_size = repSize();
     long inc_size = operationSize(cf_id, key, value);
     if (old_size + inc_size > repCap()) { // slow path, call to jni
-      if (cf != null) {
-        put(nativeHandle_, key, key.length, value, value.length, cf.nativeHandle_);
-      } else {
-        put(nativeHandle_, key, key.length, value, value.length);
-      }
-      return;
+      ensureCapacity(nativeHandle_, old_size + inc_size);
+      assert repCap() >= old_size + inc_size;
     }
     long ptr = repDataAddr() + old_size;
     if (cf_id == 0) {
@@ -258,12 +255,8 @@ public class WriteBatch extends AbstractWriteBatch {
     long old_size = repSize();
     long inc_size = operationSize(cf_id, key, value);
     if (old_size + inc_size > repCap()) { // slow path, call to jni
-      if (cf != null) {
-        merge(nativeHandle_, key, key.length, value, value.length, cf.nativeHandle_);
-      } else {
-        merge(nativeHandle_, key, key.length, value, value.length);
-      }
-      return;
+      ensureCapacity(nativeHandle_, old_size + inc_size);
+      assert repCap() >= old_size + inc_size;
     }
     long ptr = repDataAddr() + old_size;
     if (cf_id == 0) {
@@ -298,12 +291,8 @@ public class WriteBatch extends AbstractWriteBatch {
     long old_size = repSize();
     long inc_size = operationSize(cf_id, key);
     if (old_size + inc_size > repCap()) { // slow path, call to jni
-      if (cf != null) {
-        delete(nativeHandle_, key, key.length, cf.nativeHandle_);
-      } else {
-        delete(nativeHandle_, key, key.length);
-      }
-      return;
+      ensureCapacity(nativeHandle_, old_size + inc_size);
+      assert repCap() >= old_size + inc_size;
     }
     long ptr = repDataAddr() + old_size;
     if (cf_id == 0) {
@@ -337,12 +326,8 @@ public class WriteBatch extends AbstractWriteBatch {
     long old_size = repSize();
     long inc_size = operationSize(cf_id, key);
     if (old_size + inc_size > repCap()) { // slow path, call to jni
-      if (cf != null) {
-        singleDelete(nativeHandle_, key, key.length, cf.nativeHandle_);
-      } else {
-        singleDelete(nativeHandle_, key, key.length);
-      }
-      return;
+      ensureCapacity(nativeHandle_, old_size + inc_size);
+      assert repCap() >= old_size + inc_size;
     }
     long ptr = repDataAddr() + old_size;
     if (cf_id == 0) {
@@ -365,8 +350,8 @@ public class WriteBatch extends AbstractWriteBatch {
     long old_size = repSize();
     long inc_size = 1 + VarUint32Length(blob.length) + blob.length;
     if (old_size + inc_size > repCap()) { // slow path, call to jni
-      putLogData(nativeHandle_, blob, blob.length);
-      return;
+      ensureCapacity(nativeHandle_, old_size + inc_size);
+      assert repCap() >= old_size + inc_size;
     }
     long ptr = repDataAddr() + old_size;
     myUnsafe.putByte(ptr, kTypeLogData);
