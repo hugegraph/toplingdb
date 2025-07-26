@@ -2615,6 +2615,10 @@ gen-pc:
 # ---------------------------------------------------------------------------
 # Jni stuff
 # ---------------------------------------------------------------------------
+ifndef JAVA_HOME
+  JAVA_HOME := $(shell javac -J-XshowSettings:properties -version 2>&1 | awk '/java.home/{print $$NF}')
+  $(warning Auto detected JAVA_HOME = ${JAVA_HOME}, if it is not true please set JAVA_HOME)
+endif
 JAVA_INCLUDE = -I$(JAVA_HOME)/include/ -I$(JAVA_HOME)/include/linux
 ifeq ($(PLATFORM), OS_SOLARIS)
 	ARCH := $(shell isainfo -b)
