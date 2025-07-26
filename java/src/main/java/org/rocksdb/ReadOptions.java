@@ -880,10 +880,15 @@ public class ReadOptions extends RocksObject {
     goingToZeroCopy = false;
   }
 
-  public final AutoCloseable autoZeroCopy() {
-     return new AutoCloseable() {
-       { startZeroCopy(); }
-       @Override public void close() throws Exception { finishZeroCopy(); }
-     };
+  public final class AutoZeroCopy implements AutoCloseable {
+    AutoZeroCopy() throws RocksDBException {
+      startZeroCopy();
+    }
+    @Override public void close() throws RocksDBException {
+      finishZeroCopy();
+    }
+  }
+  public final AutoCloseable autoZeroCopy() throws RocksDBException {
+     return new AutoZeroCopy();
   }
 }
