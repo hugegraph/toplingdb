@@ -489,6 +489,7 @@ public class WriteBatchTest {
   }
 
   static byte[] getContents(final WriteBatch wb) {
+    wb.updateNativeDataSizeFromJava();
     return getContents(wb.nativeHandle_);
   }
 
