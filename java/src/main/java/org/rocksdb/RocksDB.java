@@ -2472,7 +2472,24 @@ public class RocksDB extends RocksObject {
       if (!isInZeroCopySection) {
         opt.startZeroCopy();
       }
+      return multiGetInZeroCopy(opt, columnFamilyHandle, keys);
+    }
+    finally {
+      if (!isInZeroCopySection)
+        opt.finishZeroCopy();
+    }
+  }
+
+  private final List<byte[]> multiGetInZeroCopy(final ReadOptions opt,
+      final ColumnFamilyHandle cf,
+      final List<byte[]> keys) throws RocksDBException {
       final byte[][] keysArray = keys.toArray(new byte[keys.size()][]);
+    final byte[][] values = multiGetInZeroCopy(opt, cf, keysArray);
+    return Arrays.asList(values);
+  }
+  private final byte[][] multiGetInZeroCopy(final ReadOptions opt,
+      final ColumnFamilyHandle columnFamilyHandle,
+      final byte[][] keysArray) throws RocksDBException {
       final long sliceVec = createNativeSliceVec(keysArray);
       try {
         final long cfh = columnFamilyHandle.nativeHandle_;
@@ -2480,15 +2497,10 @@ public class RocksDB extends RocksObject {
         final Status[] statusArray = new Status[keysArray.length];
         multiGetZeroCopyNative(nativeHandle_, roh, cfh, sliceVec, statusArray);
         // sliceVec is reused as value slice in multiGetZeroCopyNative
-        return Arrays.asList(copyNativeSliceVec(keysArray.length, sliceVec));
+      return copyNativeSliceVec(keysArray.length, sliceVec);
       }
       finally {
         DirectSlice.getUnsafe().freeMemory(sliceVec);
-      }
-    }
-    finally {
-      if (!isInZeroCopySection)
-        opt.finishZeroCopy();
     }
   }
 
