@@ -40,7 +40,7 @@ public class WriteBatch extends AbstractWriteBatch {
    */
   public WriteBatch(final int reserved_bytes) {
     super(newWriteBatch(reserved_bytes));
-    isJniWriteBatch = true;
+    isJniWriteBatch = BUILD_WRITE_BATCH_IN_JAVA_SIDE;
   }
 
   /**
@@ -51,10 +51,18 @@ public class WriteBatch extends AbstractWriteBatch {
    */
   public WriteBatch(final byte[] serialized) {
     super(newWriteBatch(serialized, serialized.length));
-    isJniWriteBatch = true;
+    isJniWriteBatch = BUILD_WRITE_BATCH_IN_JAVA_SIDE;
   }
 
   private final boolean isJniWriteBatch;
+  private static final boolean BUILD_WRITE_BATCH_IN_JAVA_SIDE;
+  static {
+    final String env = System.getenv("BUILD_WRITE_BATCH_IN_JAVA_SIDE");
+    if (env != null)
+      BUILD_WRITE_BATCH_IN_JAVA_SIDE = Boolean.parseBoolean(env);
+    else
+      BUILD_WRITE_BATCH_IN_JAVA_SIDE = true; // default
+  }
   private static final Unsafe myUnsafe = DirectSlice.getUnsafe();
   private static final long writeVarLenPrefixedByteArray(long dst, byte[] ba) {
     int len = ba.length;
