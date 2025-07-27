@@ -2550,16 +2550,14 @@ public class RocksDB extends RocksObject {
       final ColumnFamilyHandle columnFamilyHandle,
       final List<byte[]> keys) throws RocksDBException {
     assert (!keys.isEmpty());
-    final boolean isInZeroCopySection = opt.isGoingToZeroCopy();
-    try {
-      if (!isInZeroCopySection) {
-        opt.startZeroCopy();
-      }
+    if (opt.isGoingToZeroCopy()) {
       return multiGetInZeroCopy(opt, columnFamilyHandle, keys);
     }
-    finally {
-      if (!isInZeroCopySection)
-        opt.finishZeroCopy();
+    try {
+      opt.startZeroCopy();
+      return multiGetInZeroCopy(opt, columnFamilyHandle, keys);
+    } finally {
+      opt.finishZeroCopy();
     }
   }
 
