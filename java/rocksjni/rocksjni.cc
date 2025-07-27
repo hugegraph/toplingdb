@@ -1329,6 +1329,41 @@ jlong Java_org_rocksdb_RocksDB_getDirect(JNIEnv* env, jobject /*jdb*/,
       jkey, jkey_len, jval, jval_len, &has_exception);
 }
 
+/*
+ * Class:     org_rocksdb_RocksDB
+ * Method:    nativeGetInZeroCopy
+ * Signature: (JJ[BIIJ)J
+ */
+JNIEXPORT jlong JNICALL Java_org_rocksdb_RocksDB_nativeGetInZeroCopy
+(JNIEnv* env, jobject, jlong jdb, jlong jro, jbyteArray jkey, jint offset, jint len, jlong jcf)
+{
+  static const int kStatusError = -2;
+  auto db = reinterpret_cast<ROCKSDB_NAMESPACE::DB*>(jdb);
+  auto ro = reinterpret_cast<ROCKSDB_NAMESPACE::ReadOptionsWithValue*>(jro);
+  auto cf = reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf);
+  if (!ro->internal_is_in_pinning_section) {
+    ro->StartPin();
+  }
+  auto key = (jbyte*)alloca(len);
+  env->GetByteArrayRegion(jkey, offset, len, key);
+  auto pinnable_value_up = ro->NewPinnableSlice();
+  auto pinnable_value = pinnable_value_up.get();
+  ROCKSDB_NAMESPACE::Slice  key_slice((const char*)key, len);
+  auto s = db->Get(*ro, cf, key_slice, pinnable_value);
+  if (s.IsNotFound()) {
+    return JLONG_OF_ERROR(org_rocksdb_RocksDB_NOT_FOUND);
+  } else if (!s.ok()) {
+    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
+    return JLONG_OF_ERROR(kStatusError);
+  } else if (pinnable_value->size() > size_t(INT_MAX)) {
+    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(
+        env, "Requested array size exceeds VM limit");
+    return JLONG_OF_ERROR(kStatusError);
+  }
+  ro->RegisterZeroCopy(std::move(pinnable_value_up));
+  return JLONG_OF_PTR(pinnable_value);
+}
+
 //////////////////////////////////////////////////////////////////////////////
 // ROCKSDB_NAMESPACE::DB::Merge
 

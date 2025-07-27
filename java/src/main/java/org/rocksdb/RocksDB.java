@@ -2306,18 +2306,13 @@ public class RocksDB extends RocksObject {
         final ReadOptions opt, final byte[] key,
         final int offset, final int len) throws RocksDBException {
     assert opt.isGoingToZeroCopy();
-    long keyPtr = DirectSlice.nativeCopyOf(key, offset, len);
-    try {
-      long cfh = columnFamilyHandle.nativeHandle_;
-      long roh = opt.nativeHandle_;
-      long result = getDirect(nativeHandle_, roh, keyPtr, len, 0, -1, cfh);
-      if ((result & 7) == 0) { // result is value slice
-        return DirectSlice.copyOfNativeByteArray(result);
-      }
-      return null;
-    } finally {
-      DirectSlice.getUnsafe().freeMemory(keyPtr);
+    long cfh = columnFamilyHandle.nativeHandle_;
+    long roh = opt.nativeHandle_;
+    long result = nativeGetInZeroCopy(nativeHandle_, roh, key, offset, len, cfh);
+    if ((result & 7) == 0) { // result is value slice
+      return DirectSlice.copyOfNativeByteArray(result);
     }
+    return null;
   }
 
   /**
@@ -5365,6 +5360,8 @@ public class RocksDB extends RocksObject {
   private native long getDirect(long handle, long readOptHandle, long keyPtr,
       int keyLength, long valuePtr, int valueLength, long cfHandle)
       throws RocksDBException;
+  private native long nativeGetInZeroCopy(long handle, long readOptHandle, byte[] key,
+      int keyOffset, int keyLength, long cfHandle) throws RocksDBException;
   private native long byteArrayKeyGetDirect(long handle, long readOptHandle,
       byte[] key, int keyOffset, int keyLength, long cfHandle) throws RocksDBException;
   private native boolean keyMayExistDirect(final long handle, final long cfHhandle,
