@@ -285,6 +285,8 @@ struct rocksdb_perfcontext_t {
 struct rocksdb_pinnableslice_t {
   PinnableSlice rep;
 };
+static_assert(sizeof(rocksdb_pinnableslice_t) == sizeof(PinnableSlice));
+static_assert(sizeof(rocksdb_pinnableslice_t) == 96, "see _opaque_data_ in c.h");
 struct rocksdb_transactiondb_options_t {
   TransactionDBOptions rep;
 };
