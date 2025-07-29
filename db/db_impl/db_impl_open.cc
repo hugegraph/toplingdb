@@ -50,6 +50,11 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
   if (result.memtable_as_log_index) {
     result.recycle_log_file_num = 0;
     result.manual_wal_flush = false;
+#if !defined(ROCKSDB_UNIT_TEST)
+    // avoid infrequent CFs reference too many WALs when frequent CFs
+    // writing many data
+    result.atomic_flush = true;
+#endif
   }
 
   // result.max_open_files means an "infinite" open files.
