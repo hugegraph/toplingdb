@@ -25,6 +25,10 @@ USE_RTTI=1
 ROCKSDB_USE_IO_URING=0
 ROCKSDB_DISABLE_TCMALLOC=1
 SKIP_FORMAT_BUCK_CHECKS=1
+ifneq ($(shell command -v ld.gold),)
+  LDFLAGS += -fuse-ld=gold
+  #LDFLAGS += -Wl,--icf=all # only reduce size 3.2%
+endif
 # end topling specific
 
 # Transform parallel LOG output into something more readable.
