@@ -5,6 +5,9 @@
 
 package org.rocksdb;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
@@ -114,7 +117,34 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
   }
 
   private static native ByteBuffer newZeroCopyDirectBuffer0();
+
+  private static final MethodHandle constructZeroCopyBuffer;
+  static {
+    MethodHandle constructor = null;
+    try {
+      Class<?> clazz = Class.forName("java.nio.DirectByteBuffer");
+      MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(clazz, MethodHandles.lookup());
+      MethodHandle directByteBufferConstructor = lookup.findConstructor(
+            clazz, MethodType.methodType(void.class, long.class, long.class));
+      constructor = directByteBufferConstructor.asType(
+            MethodType.methodType(ByteBuffer.class, long.class, long.class));
+    } catch (Exception e) {
+      System.err.println("WARN: access java.nio.DirectByteBuffer failed: " + e + "\n" +
+            "use --add-opens java.base/java.nio=ALL-UNNAMED to " +
+            "create DirectByteBuffer faster(280ns to 60ns) by MethodHandle");
+    }
+    constructZeroCopyBuffer = constructor;
+  }
   public static ByteBuffer newZeroCopyDirectBuffer() {
+    if (constructZeroCopyBuffer != null) {
+      try {
+        long addr = 0L, cap = 0L;
+        return (ByteBuffer)constructZeroCopyBuffer.invokeExact(addr, cap);
+      } catch (Throwable e) {
+        throw new RuntimeException(e);
+      }
+    }
+    // this is slow path, constructorAsByteBuffer.invokeExact is faster
     if (!supportZeroCopy()) {
       throw new UnsupportedOperationException(
         "Zero-copy is not supported, try add java startup option " +
@@ -193,6 +223,87 @@ public class DirectSlice extends AbstractSlice<ByteBuffer> {
     assert buf.isDirect();
     assert capacityOffset >= 0;
     return myUnsafe.getLong(buf, capacityOffset);
+  }
+
+  private static final jdk.internal.misc.Unsafe moreUnsafe;
+  static {
+    String env = System.getenv("USE_INTERNAL_UNSAFE");
+    if (env != null && Boolean.parseBoolean(env)) {
+      moreUnsafe = jdk.internal.misc.Unsafe.getUnsafe();
+    } else {
+      moreUnsafe = null;
+    }
+  }
+  public static final byte[] copyOfNativeByteArray(long slice) {
+    long ptr = myUnsafe.getLong(slice + 0);
+    long len = myUnsafe.getLong(slice + 8);
+    return copyOfNativeByteArray(ptr, len);
+  }
+  public static final byte[] copyOfNativeByteArray(long addr, long len) {
+    if (len > Integer.MAX_VALUE) {
+      throw new IllegalArgumentException("array len " + len + " exceeds Integer.MAX_VALUE");
+    }
+    final Object ba;
+    if (moreUnsafe == null) {
+      ba = new byte[(int)len];
+    } else {
+      ba = moreUnsafe.allocateUninitializedArray(byte.class, (int)len);
+    }
+    myUnsafe.copyMemory(null, addr, ba, Unsafe.ARRAY_BYTE_BASE_OFFSET, len);
+    return (byte[])ba;
+  }
+  // allocate and copy byte[] in java side is faster than in JNI side
+  public static final long nativeCopyOf(byte[] ba) {
+    long addr = myUnsafe.allocateMemory(ba.length);
+    myUnsafe.copyMemory(ba, Unsafe.ARRAY_BYTE_BASE_OFFSET, null, addr, ba.length);
+    return addr;
+  }
+  public static final long nativeCopyOf(byte[] ba, int offset, int len) {
+    assert offset >= 0;
+    assert offset <= ba.length; // (ba.length, 0) is a valid sub sequence
+    assert len >= 0;
+    assert offset + len <= ba.length;
+    long addr = myUnsafe.allocateMemory(len);
+    myUnsafe.copyMemory(ba, Unsafe.ARRAY_BYTE_BASE_OFFSET + offset, null, addr, len);
+    return addr;
+  }
+  public static final long nativeSliceOf(byte[] ba) {
+    long slice = myUnsafe.allocateMemory(16 + ba.length);
+    long data = slice + 16;
+    myUnsafe.putLong(slice + 0,  data);
+    myUnsafe.putLong(slice + 8,  ba.length);
+    myUnsafe.copyMemory(ba, Unsafe.ARRAY_BYTE_BASE_OFFSET, null, data, ba.length);
+    return slice;
+  }
+  public static final long createNativeSliceVec(byte[][] baa) {
+    long sumKeyLen = 0;
+    for (byte[] ba : baa) sumKeyLen += ba.length;
+    long sliceVec = myUnsafe.allocateMemory(16 * baa.length + sumKeyLen);
+    long currData = sliceVec + 16 * baa.length;
+    for (int i = 0; i < baa.length; i++) { // fill C++ rocksdb::Slice
+      myUnsafe.putLong(sliceVec + 16*i + 0, currData);
+      myUnsafe.putLong(sliceVec + 16*i + 8, baa[i].length);
+      currData += baa[i].length;
+    }
+    currData = sliceVec + 16 * baa.length; // re-init
+    for (int i = 0; i < baa.length; i++) { // copy keys content
+      myUnsafe.copyMemory(
+        baa[i], Unsafe.ARRAY_BYTE_BASE_OFFSET,
+        null, currData, baa[i].length);
+      currData += baa[i].length;
+    }
+    return sliceVec;
+  }
+  public static final byte[][] copyNativeSliceVec(int num, long sliceVec) {
+    byte[][] baa = new byte[num][];
+    for (int i = 0; i < num; i++) { // C++ side rocksdb::Slice
+      long data = myUnsafe.getLong(sliceVec + i*16 + 0);
+      long size = myUnsafe.getLong(sliceVec + i*16 + 8);
+      if (data != 0) {
+        baa[i] = copyOfNativeByteArray(data, size);
+      }
+    }
+    return baa;
   }
 
   /**

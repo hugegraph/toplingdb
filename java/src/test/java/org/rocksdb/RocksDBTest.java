@@ -237,11 +237,11 @@ public class RocksDBTest {
 
       key.position(4);
 
-      if (!optr.isGoingToZeroCopy()) {
+      if (!(optr.isGoingToZeroCopy() && DirectSlice.supportDirectBorrowMemory(result))) {
         result.clear().position(9);
       }
       assertThat(db.get(optr, key, result)).isEqualTo(4);
-      if (!optr.isGoingToZeroCopy()) {
+      if (!(optr.isGoingToZeroCopy() && DirectSlice.supportDirectBorrowMemory(result))) {
         assertThat(result.position()).isEqualTo(9);
         assertThat(result.limit()).isEqualTo(12);
       } else {
@@ -254,7 +254,7 @@ public class RocksDBTest {
       result.get(tmp2);
       assertThat(tmp2).isEqualTo("val".getBytes());
 
-      if (optr.isGoingToZeroCopy()) {
+      if (optr.isGoingToZeroCopy() && DirectSlice.supportDirectBorrowMemory(result)) {
         // ToplingDB only: key is byte[], value is direct buffer
         int vlen = db.get(optr, "key3".getBytes(), result);
         assertThat(vlen).isEqualTo(4);

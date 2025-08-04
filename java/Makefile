@@ -256,7 +256,7 @@ JAVA_CMD := $(JAVA_HOME)/bin/java
 else
 JAVA_CMD := java
 endif
-JAVA_CMD := env LD_PRELOAD=libjemalloc.so:target/librocksdbjni-linux64.so ${JAVA_CMD}
+JAVA_CMD := env LD_PRELOAD=libjemalloc.so:librocksdbjni-linux64.so LD_LIBRARY_PATH=target:${LD_LIBRARY_PATH} ${JAVA_CMD}
 endif
 
 ifeq ($(JAVAC_CMD),)
@@ -291,7 +291,17 @@ JAVAC_VERSION_GE_MIN := $(shell [ $(JAVAC_MAJOR_VERSION) -ge $(MIN_JAVAC_MAJOR_V
 # Set the default JAVA_ARGS to "" for DEBUG_LEVEL=0
 JAVA_ARGS ?=
 
+ifeq (${ROCKSDB_FORCE_DIRECT_BUFFER_ZERO_COPY},true)
+  JAVA_ARGS += --add-opens java.base/jdk.internal.ref=ALL-UNNAMED
+endif
+JAVA_ARGS += --add-opens java.base/java.nio=ALL-UNNAMED
+
 JAVAC_ARGS ?=
+
+JAVAC_ARGS += --add-exports java.base/jdk.internal.misc=ALL-UNNAMED
+
+JAVADOC_CMD += --add-exports java.base/jdk.internal.misc=ALL-UNNAMED
+JAVADOC_CMD += -Xdoclint:none
 
 # Read plugin configuration
 PLUGIN_PATH = ../plugin
@@ -322,6 +332,8 @@ endif
 # When debugging add -Xcheck:jni to the java args
 ifneq ($(DEBUG_LEVEL),0)
 	JAVA_ARGS += -ea -Xcheck:jni
+endif
+ifeq (${ENABLE_JAVA_LINT},1)
 	JAVAC_ARGS += -Xlint:deprecation -Xlint:unchecked
 endif
 

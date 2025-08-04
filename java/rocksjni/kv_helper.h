@@ -284,8 +284,8 @@ class JDirectBufferPinnableSlice {
 class Iterator; // declare
 struct JZeroCopyIter {
   Iterator* iter;
-  Slice key;
-  Slice value;
+  Slice key{nullptr, 0};
+  Slice value{nullptr, 0};
   bool Valid() const { return key.data_ != nullptr; }
   ~JZeroCopyIter();
   JZeroCopyIter(Iterator* it) : iter(it) {}

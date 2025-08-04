@@ -453,6 +453,7 @@ void LDBCommand::OpenDB() {
     for (auto cfh : g_dbm->cf_handles) {
       cf_handles_[cfh->GetName()] = cfh;
     }
+    return;
   }
 
   PrepareOptions();
@@ -1074,6 +1075,11 @@ bool LDBCommand::ValidateCmdLineOptions() {
       fprintf(stderr, "Invalid command-line flag %s\n", itr->c_str());
       return false;
     }
+  }
+
+  if (auto env = getenv("TOPLING_SIDEPLUGIN_CONF")) {
+    fprintf(stderr, "using env TOPLING_SIDEPLUGIN_CONF=%s\n", env);
+    return true; // open by repo later
   }
 
   if (!NoDBOpen() && option_map_.find(ARG_DB) == option_map_.end() &&

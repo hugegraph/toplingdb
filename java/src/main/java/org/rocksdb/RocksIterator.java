@@ -42,9 +42,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
     assert(isValid());
     long keyPtr = getZeroCopyKeyPtr();
     long keyLen = getZeroCopyKeyLen();
-    byte[] key = new byte[(int)keyLen];
-    myUnsafe.copyMemory(null, keyPtr, key, Unsafe.ARRAY_BYTE_BASE_OFFSET, keyLen);
-    return key;
+    return DirectSlice.copyOfNativeByteArray(keyPtr, keyLen);
   }
 
   private static final Unsafe myUnsafe = DirectSlice.getUnsafe();
@@ -210,22 +208,21 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
     assert isOwningHandle();
     long zcKeyPtr = getZeroCopyKeyPtr();
     long zcKeyLen = getZeroCopyKeyLen();
-    final int result;
+    final int result = (int)zcKeyLen;
     if (key.isDirect()) {
       if (DirectSlice.supportDirectBorrowMemory(key)) { // do zero copy:
         DirectSlice.directBorrowMemoryUnchecked(key, zcKeyPtr, zcKeyLen);
-        result = (int)zcKeyLen; // just reset the buffer, no copy
         return result;
       } else {
-        result = keyDirect0(nativeHandle_, key, key.position(), key.remaining());
-        assert result == zcKeyLen;
+        long dest = DirectSlice.getDirectAddress(key) + key.position();
+        long cplen = Math.min((long)key.remaining(), zcKeyLen);
+        myUnsafe.copyMemory(zcKeyPtr, dest, cplen);
       }
     } else {
       assert key.hasArray();
       long keyOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + key.arrayOffset() + key.position();
       long cplen = Math.min((long)key.remaining(), zcKeyLen);
       myUnsafe.copyMemory(null, zcKeyPtr, key.array(), keyOffset, cplen);
-      result = (int)zcKeyLen;
     }
     key.limit(Math.min(key.position() + result, key.limit()));
     return result;
@@ -244,9 +241,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
     fetchValue();
     long valueLen = getZeroCopyValueLen();
     long valuePtr = getZeroCopyValuePtr();
-    byte[] value = new byte[(int)valueLen];
-    myUnsafe.copyMemory(null, valuePtr, value, Unsafe.ARRAY_BYTE_BASE_OFFSET, valueLen);
-    return value;
+    return DirectSlice.copyOfNativeByteArray(valuePtr, valueLen);
   }
 
   /**
@@ -265,30 +260,24 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
    */
   public int value(final ByteBuffer value) {
     assert isOwningHandle();
-    final int result;
+    fetchValue();
+    long valuePtr = getZeroCopyValuePtr();
+    long valueLen = getZeroCopyValueLen();
+    final int result = (int)valueLen;
     if (value.isDirect()) {
       if (DirectSlice.supportDirectBorrowMemory(value)) { // do zero copy:
-        fetchValue();
-        long valuePtr = getZeroCopyValuePtr();
-        long valueLen = getZeroCopyValueLen();
         DirectSlice.directBorrowMemoryUnchecked(value, valuePtr, valueLen);
-        result = (int)valueLen; // just reset the buffer, no copy
         return result;
       } else {
-        result = valueDirect0(nativeHandle_, value, value.position(), value.remaining());
+        long dest = DirectSlice.getDirectAddress(value) + value.position();
+        long cplen = Math.min((long)value.remaining(), valueLen);
+        myUnsafe.copyMemory(valuePtr, dest, cplen);
       }
-    } else if (isValueFetched()) {
+    } else {
       assert value.hasArray();
-      long valuePtr = getZeroCopyValuePtr();
-      long valueLen = getZeroCopyValueLen();
       long cplen = Math.min((long)value.remaining(), valueLen);
       long valueOffset = Unsafe.ARRAY_BYTE_BASE_OFFSET + value.arrayOffset() + value.position();
       myUnsafe.copyMemory(null, valuePtr, value.array(), valueOffset, cplen);
-      result = (int)valueLen;
-    } else {
-      assert value.hasArray();
-      result = valueByteArray0(
-          nativeHandle_, value.array(), value.arrayOffset() + value.position(), value.remaining());
     }
     value.limit(Math.min(value.position() + result, value.limit()));
     return result;
@@ -434,10 +423,5 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
       long handle, byte[] target, int targetOffset, int targetLen);
   @Override final native void status0(long handle) throws RocksDBException;
 
-  private native byte[] key0(long handle);
   private native byte[] value0(long handle);
-  private native int keyDirect0(long handle, ByteBuffer buffer, int bufferOffset, int bufferLen);
-  private native int keyByteArray0(long handle, byte[] array, int arrayOffset, int arrayLen);
-  private native int valueDirect0(long handle, ByteBuffer buffer, int bufferOffset, int bufferLen);
-  private native int valueByteArray0(long handle, byte[] array, int arrayOffset, int arrayLen);
 }

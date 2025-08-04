@@ -25,6 +25,10 @@ USE_RTTI=1
 ROCKSDB_USE_IO_URING=0
 ROCKSDB_DISABLE_TCMALLOC=1
 SKIP_FORMAT_BUCK_CHECKS=1
+ifneq ($(shell command -v ld.gold),)
+  LDFLAGS += -fuse-ld=gold
+  #LDFLAGS += -Wl,--icf=all # only reduce size 3.2%
+endif
 # end topling specific
 
 # Transform parallel LOG output into something more readable.
@@ -2615,6 +2619,10 @@ gen-pc:
 # ---------------------------------------------------------------------------
 # Jni stuff
 # ---------------------------------------------------------------------------
+ifndef JAVA_HOME
+  JAVA_HOME := $(shell javac -J-XshowSettings:properties -version 2>&1 | awk '/java.home/{print $$NF}')
+  $(warning Auto detected JAVA_HOME = ${JAVA_HOME}, if it is not true please set JAVA_HOME)
+endif
 JAVA_INCLUDE = -I$(JAVA_HOME)/include/ -I$(JAVA_HOME)/include/linux
 ifeq ($(PLATFORM), OS_SOLARIS)
 	ARCH := $(shell isainfo -b)
@@ -2966,7 +2974,7 @@ ifeq ($(JAVA_HOME),)
 endif
 	$(AM_V_at)rm -f ./java/target/$(ROCKSDBJNILIB)
 	$(AM_V_at)$(CXX) $(CXXFLAGS) -shared -fPIC -o ./java/target/$(ROCKSDBJNILIB) $(ALL_JNI_NATIVE_OBJECTS) $(LIB_OBJECTS) $(JAVA_LDFLAGS) $(LDFLAGS)
-	$(AM_V_at)cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/*${COMPILER}*-r.so java/target
+	$(AM_V_at)cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/*${COMPILER}*-${BUILD_TYPE_SIG}.so java/target
 	$(AM_V_at)cp -a sideplugin/rockside/src/topling/web/{style.css,index.html}      java/target
 ifeq ($(STRIP_DEBUG_INFO),1)
 	$(AM_V_at)strip java/target/*.so

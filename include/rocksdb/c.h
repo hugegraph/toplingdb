@@ -148,6 +148,11 @@ struct rocksdb_slice_t {
   size_t size;
 };
 typedef struct rocksdb_slice_t rocksdb_slice_t;
+struct rocksdb_pinnableslice_t {
+  const char* data;
+  size_t size;
+  unsigned char _opaque_data_[80];
+};
 #endif
 
 /* DB operations */
