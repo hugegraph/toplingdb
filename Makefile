@@ -374,13 +374,15 @@ CXXFLAGS += \
 LDFLAGS += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
            -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
 
+GIT_TOPLING_ROCKS ?= git@github.com:rockeet/topling-rocks
+
 ifndef WITH_TOPLING_ROCKS
   # auto check
   ifeq (,$(wildcard sideplugin/topling-rocks))
     # topling specific: just for people who has permission to topling-rocks
     dummy := $(shell set -e -x; \
       cd sideplugin; \
-      git clone git@github.com:rockeet/topling-rocks; \
+      git clone ${GIT_TOPLING_ROCKS}; \
       cd topling-rocks; \
       git submodule update --init --recursive \
     )
@@ -397,7 +399,7 @@ ifeq (,$(wildcard sideplugin/topling-rocks))
   # topling specific: just for people who has permission to topling-rocks
   dummy := $(shell set -e -x; \
     cd sideplugin; \
-    git clone git@github.com:rockeet/topling-rocks; \
+    git clone ${GIT_TOPLING_ROCKS}; \
     cd topling-rocks; \
     git submodule update --init --recursive \
   )
