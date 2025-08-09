@@ -286,7 +286,9 @@ struct rocksdb_pinnableslice_t {
   PinnableSlice rep;
 };
 static_assert(sizeof(rocksdb_pinnableslice_t) == sizeof(PinnableSlice));
+#if defined(__GLIBCXX__) && _GLIBCXX_USE_CXX11_ABI
 static_assert(sizeof(rocksdb_pinnableslice_t) == 96, "see _opaque_data_ in c.h");
+#endif
 struct rocksdb_transactiondb_options_t {
   TransactionDBOptions rep;
 };
