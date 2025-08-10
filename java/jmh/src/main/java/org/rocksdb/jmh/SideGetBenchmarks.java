@@ -43,6 +43,7 @@ public class SideGetBenchmarks {
   private final AtomicInteger keyIndex = new AtomicInteger();
   private ByteBuffer keyBuf;
   private ByteBuffer valueBuf;
+  private ByteBuffer zeroCopyBuf;
   private byte[] keyArr;
   private byte[] valueArr;
 
@@ -98,6 +99,7 @@ public class SideGetBenchmarks {
     keyBuf.flip();
     valueBuf.put(valueArr);
     valueBuf.flip();
+    zeroCopyBuf = DirectSlice.newZeroCopyDirectBuffer();
   }
 
   @TearDown(Level.Trial)
@@ -181,6 +183,16 @@ public class SideGetBenchmarks {
 
   private ByteBuffer getValueBuf() {
     return valueBuf;
+  }
+
+  @Benchmark
+  public void aZeroCopyGet() throws RocksDBException {
+    try {
+      readOptions.startZeroCopy();
+      db.get(getColumnFamily(), readOptions, getKeyArr(), zeroCopyBuf);
+    } finally {
+      readOptions.finishZeroCopy();
+    }
   }
 
   @Benchmark

@@ -11,6 +11,7 @@ args=(
     -p keyCount=10000
     -p keySize=128
     -p valueSize=512
+    #-p valueSize=65536 # larger value size showing zero copy faster
     #-p dbname=db_bench_enterprise
     #-p dbpath=/dev/shm/db_bench_enterprise
     -p sideConf=$topdir/sideplugin/rockside/sample-conf/db_bench_enterprise.yaml
