@@ -621,6 +621,9 @@ am__v_at_ = $(am__v_at_$(AM_DEFAULT_VERBOSITY))
 am__v_at_0 = @
 am__v_at_1 =
 
+export AM_V_at
+export AM_V_GEN
+
 AM_V_CC = $(am__v_CC_$(V))
 am__v_CC_ = $(am__v_CC_$(AM_DEFAULT_VERBOSITY))
 am__v_CC_0 = @echo "  CC      " $@;
@@ -2625,6 +2628,11 @@ ifndef JAVA_HOME
   JAVA_HOME := $(shell javac -J-XshowSettings:properties -version 2>&1 | awk '/java.home/{print $$NF}')
   $(warning Auto detected JAVA_HOME = ${JAVA_HOME}, if it is not true please set JAVA_HOME)
 endif
+ifneq ($(wildcard $(JAVA_HOME)/bin/javac),)
+  ifeq (${MAKE_RESTARTS},)
+    dummy := $(shell rm -f rocksdbjava-header)
+  endif
+endif
 JAVA_INCLUDE = -I$(JAVA_HOME)/include/ -I$(JAVA_HOME)/include/linux
 ifeq ($(PLATFORM), OS_SOLARIS)
 	ARCH := $(shell isainfo -b)
@@ -2969,7 +2977,9 @@ jl/%.o: %.cc
 	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -fPIC -c $< -o $@ $(COVERAGEFLAGS)
 
 ${ALL_JNI_NATIVE_OBJECTS}: CXXFLAGS += -I./java/. -I./java/rocksjni $(JAVA_INCLUDE) $(ROCKSDB_PLUGIN_JNI_CXX_INCLUDEFLAGS)
+ifeq ($(SKIP_DEPENDS),1)
 ${ALL_JNI_NATIVE_OBJECTS}: rocksdbjava-header
+endif
 rocksdbjava: $(LIB_OBJECTS) $(ALL_JNI_NATIVE_OBJECTS)
 ifeq ($(JAVA_HOME),)
 	$(error JAVA_HOME is not set)
@@ -2988,6 +2998,8 @@ endif
 	$(AM_V_at)cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR) style.css index.html
 	$(AM_V_at)cd java/target/classes; $(JAR_CMD) -uf ../$(ROCKSDB_JAR) org/rocksdb/*.class org/rocksdb/util/*.class
 	$(AM_V_at)openssl sha1 java/target/$(ROCKSDB_JAR) | sed 's/.*= \([0-9a-f]*\)/\1/' > java/target/$(ROCKSDB_JAR).sha1
+	$(AM_V_at)rm rocksdbjava-header
+	@echo make $@ done
 
 install-jni: rocksdbjava
 	mkdir -p $(INSTALL_LIBDIR)
@@ -2997,7 +3009,11 @@ rocksdbjava-header:
 ifeq ($(JAVA_HOME),)
 	$(error JAVA_HOME is not set)
 endif
-	$(AM_V_GEN)cd java; $(MAKE) javalib;
+	$(AM_V_GEN)flock .rocksdbjava-header -c \
+		'if [ ! -f rocksdbjava-header ]; then \
+			$(MAKE) -C java java_test; \
+			touch rocksdbjava-header; \
+		fi'
 
 jclean:
 	cd java;$(MAKE) clean;
@@ -3137,6 +3153,9 @@ endif
 # If skip dependencies is ON, skip including the dep files
 ifneq ($(SKIP_DEPENDS), 1)
 DEPFILES := $(patsubst %.cc, $(OBJ_DIR)/%.cc.d, $(ALL_SOURCES))
+ifneq ($(wildcard $(JAVA_HOME)/bin/javac),)
+DEPFILES += $(patsubst %.cc, $(OBJ_DIR)/%.cc.d, ${ALL_JNI_NATIVE_SOURCES})
+endif
 DEPFILES := $(patsubst %.cpp,$(OBJ_DIR)/%.cpp.d,$(DEPFILES))
 DEPFILES += $(patsubst %.c, $(OBJ_DIR)/%.c.d, $(LIB_SOURCES_C) $(TEST_MAIN_SOURCES_C))
 ifeq ($(USE_FOLLY_LITE),1)
@@ -3149,6 +3168,12 @@ endif
 
 # The .d file indicates .cc file's dependencies on .h files. We generate such
 # dependency by g++'s -MM option, whose output is a make dependency rule.
+$(OBJ_DIR)/java/%.cc.d: java/%.cc rocksdbjava-header
+	$(AM_V_at)mkdir -p $(@D)
+	$(AM_V_at)$(CXX) $(CXXFLAGS) \
+	  -Ijava -Ijava/rocksjni $(JAVA_INCLUDE) $(ROCKSDB_PLUGIN_JNI_CXX_INCLUDEFLAGS)\
+	  -MM -MT'$@' -MT'$(<:%.cc=$(OBJ_DIR)/%.o)' "$<" -o '$@'
+
 $(OBJ_DIR)/%.cc.d: %.cc
 	@mkdir -p $(@D) && $(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
 	  -MM -MT'$@' -MT'$(<:.cc=.o)' -MT'$(<:%.cc=$(OBJ_DIR)/%.o)' \

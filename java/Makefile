@@ -335,6 +335,8 @@ ifneq ($(DEBUG_LEVEL),0)
 endif
 ifeq (${ENABLE_JAVA_LINT},1)
 	JAVAC_ARGS += -Xlint:deprecation -Xlint:unchecked
+else
+	JAVAC_ARGS += -Xlint:none -nowarn -XDignore.symbol.file
 endif
 
 # Using a Facebook AWS account for S3 storage. (maven.org has a history
@@ -367,7 +369,15 @@ javalib: java java_test javadocs
 
 java: java-version
 	$(AM_V_GEN)mkdir -p $(MAIN_CLASSES)
-	$(AM_V_at) $(JAVAC_CMD) $(JAVAC_ARGS) -h $(NATIVE_INCLUDE) -d $(MAIN_CLASSES) $(SOURCES)
+	$(AM_V_GEN)mkdir -p $(NATIVE_INCLUDE)
+	$(AM_V_at)$(JAVAC_CMD) $(JAVAC_ARGS) -h $(NATIVE_INCLUDE)-tmp -d $(MAIN_CLASSES) $(SOURCES)
+	$(AM_V_at)cd $(NATIVE_INCLUDE)-tmp; \
+		for f in *.h; do \
+			if ! cmp -s $$f ../$(NATIVE_INCLUDE)/$$f; then \
+				mv $$f ../$(NATIVE_INCLUDE); \
+			fi \
+		done
+	$(AM_V_at)rm -rf $(NATIVE_INCLUDE)-tmp
 	$(AM_V_at)@cp ../HISTORY.md ./HISTORY-CPP.md
 	$(AM_V_at)@rm -f ./HISTORY-CPP.md
 
@@ -468,8 +478,15 @@ resolve_test_deps: $(JAVA_JUNIT_JAR_PATH) $(JAVA_HAMCREST_JAR_PATH) $(JAVA_MOCKI
 
 java_test: java resolve_test_deps
 	$(AM_V_GEN)mkdir -p $(TEST_CLASSES)
-	$(AM_V_at) $(JAVAC_CMD) $(JAVAC_ARGS) -cp $(MAIN_CLASSES):$(JAVA_TESTCLASSPATH) -h $(NATIVE_INCLUDE) -d $(TEST_CLASSES)\
+	$(AM_V_at) $(JAVAC_CMD) $(JAVAC_ARGS) -cp $(MAIN_CLASSES):$(JAVA_TESTCLASSPATH) -h $(NATIVE_INCLUDE)-test -d $(TEST_CLASSES)\
 		$(TEST_SOURCES)
+	$(AM_V_at)cd $(NATIVE_INCLUDE)-test; \
+		for f in *.h; do \
+			if ! cmp -s $$f ../$(NATIVE_INCLUDE)/$$f; then \
+				mv $$f ../$(NATIVE_INCLUDE); \
+			fi \
+		done
+	$(AM_V_at)rm -rf $(NATIVE_INCLUDE)-test
 
 test: java java_test
 	$(MAKE) run_test
