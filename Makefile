@@ -2628,10 +2628,11 @@ ifndef JAVA_HOME
   JAVA_HOME := $(shell javac -J-XshowSettings:properties -version 2>&1 | awk '/java.home/{print $$NF}')
   $(warning Auto detected JAVA_HOME = ${JAVA_HOME}, if it is not true please set JAVA_HOME)
 endif
+export JAVA_HOME
 ifneq ($(wildcard $(JAVA_HOME)/bin/javac),)
   ifeq (${MAKE_RESTARTS},)
     # java_test is for generate all jni header files
-    dummy := $(shell $(MAKE) -C java java_test)
+    dummy := $(shell $(MAKE) -C java java_test JAVA_HOME=${JAVA_HOME})
   endif
 endif
 JAVA_INCLUDE = -I$(JAVA_HOME)/include/ -I$(JAVA_HOME)/include/linux

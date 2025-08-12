@@ -250,6 +250,10 @@ JAVA_TESTCLASSPATH = $(JAVA_JUNIT_JAR_PATH):$(JAVA_HAMCREST_JAR_PATH):$(JAVA_MOC
 MVN_LOCAL = ~/.m2/repository
 
 # Set the path of the java commands
+ifndef JAVA_HOME
+  JAVA_HOME := $(shell javac -J-XshowSettings:properties -version 2>&1 | awk '/java.home/{print $$NF}')
+  $(warning Auto detected JAVA_HOME = ${JAVA_HOME}, if it is not true please set JAVA_HOME)
+endif
 ifeq ($(JAVA_CMD),)
 ifneq ($(JAVA_HOME),)
 JAVA_CMD := $(JAVA_HOME)/bin/java
