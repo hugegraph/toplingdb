@@ -2630,7 +2630,8 @@ ifndef JAVA_HOME
 endif
 ifneq ($(wildcard $(JAVA_HOME)/bin/javac),)
   ifeq (${MAKE_RESTARTS},)
-    dummy := $(shell rm -f rocksdbjava-header)
+    # java_test is for generate all jni header files
+    dummy := $(shell $(MAKE) -C java java_test)
   endif
 endif
 JAVA_INCLUDE = -I$(JAVA_HOME)/include/ -I$(JAVA_HOME)/include/linux
@@ -2977,9 +2978,6 @@ jl/%.o: %.cc
 	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -fPIC -c $< -o $@ $(COVERAGEFLAGS)
 
 ${ALL_JNI_NATIVE_OBJECTS}: CXXFLAGS += -I./java/. -I./java/rocksjni $(JAVA_INCLUDE) $(ROCKSDB_PLUGIN_JNI_CXX_INCLUDEFLAGS)
-ifeq ($(SKIP_DEPENDS),1)
-${ALL_JNI_NATIVE_OBJECTS}: rocksdbjava-header
-endif
 rocksdbjava: $(LIB_OBJECTS) $(ALL_JNI_NATIVE_OBJECTS)
 ifeq ($(JAVA_HOME),)
 	$(error JAVA_HOME is not set)
@@ -2998,7 +2996,6 @@ endif
 	$(AM_V_at)cd java/target; $(JAR_CMD) -uf $(ROCKSDB_JAR) style.css index.html
 	$(AM_V_at)cd java/target/classes; $(JAR_CMD) -uf ../$(ROCKSDB_JAR) org/rocksdb/*.class org/rocksdb/util/*.class
 	$(AM_V_at)openssl sha1 java/target/$(ROCKSDB_JAR) | sed 's/.*= \([0-9a-f]*\)/\1/' > java/target/$(ROCKSDB_JAR).sha1
-	$(AM_V_at)rm rocksdbjava-header
 	@echo make $@ done
 
 install-jni: rocksdbjava
@@ -3006,14 +3003,7 @@ install-jni: rocksdbjava
 	install -C -m 644 java/target/*.so $(INSTALL_LIBDIR)
 
 rocksdbjava-header:
-ifeq ($(JAVA_HOME),)
-	$(error JAVA_HOME is not set)
-endif
-	$(AM_V_GEN)flock .rocksdbjava-header -c \
-		'if [ ! -f rocksdbjava-header ]; then \
-			$(MAKE) -C java java_test; \
-			touch rocksdbjava-header; \
-		fi'
+	$(AM_V_GEN)$(MAKE) -C java java_test
 
 jclean:
 	cd java;$(MAKE) clean;
@@ -3168,7 +3158,7 @@ endif
 
 # The .d file indicates .cc file's dependencies on .h files. We generate such
 # dependency by g++'s -MM option, whose output is a make dependency rule.
-$(OBJ_DIR)/java/%.cc.d: java/%.cc rocksdbjava-header
+$(OBJ_DIR)/java/%.cc.d: java/%.cc
 	$(AM_V_at)mkdir -p $(@D)
 	$(AM_V_at)$(CXX) $(CXXFLAGS) \
 	  -Ijava -Ijava/rocksjni $(JAVA_INCLUDE) $(ROCKSDB_PLUGIN_JNI_CXX_INCLUDEFLAGS)\
