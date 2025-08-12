@@ -378,8 +378,6 @@ java: java-version
 			fi \
 		done
 	$(AM_V_at)rm -rf $(NATIVE_INCLUDE)-tmp
-	$(AM_V_at)@cp ../HISTORY.md ./HISTORY-CPP.md
-	$(AM_V_at)@rm -f ./HISTORY-CPP.md
 
 sample: java
 	$(AM_V_GEN)mkdir -p $(SAMPLES_MAIN_CLASSES)
