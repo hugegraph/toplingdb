@@ -621,9 +621,6 @@ am__v_at_ = $(am__v_at_$(AM_DEFAULT_VERBOSITY))
 am__v_at_0 = @
 am__v_at_1 =
 
-export AM_V_at
-export AM_V_GEN
-
 AM_V_CC = $(am__v_CC_$(V))
 am__v_CC_ = $(am__v_CC_$(AM_DEFAULT_VERBOSITY))
 am__v_CC_0 = @echo "  CC      " $@;
@@ -2629,12 +2626,6 @@ ifndef JAVA_HOME
   $(warning Auto detected JAVA_HOME = ${JAVA_HOME}, if it is not true please set JAVA_HOME)
 endif
 export JAVA_HOME
-ifneq ($(wildcard $(JAVA_HOME)/bin/javac),)
-  ifeq (${MAKE_RESTARTS},)
-    # java_test is for generate all jni header files
-    dummy := $(shell $(MAKE) -C java java_test JAVA_HOME=${JAVA_HOME})
-  endif
-endif
 JAVA_INCLUDE = -I$(JAVA_HOME)/include/ -I$(JAVA_HOME)/include/linux
 ifeq ($(PLATFORM), OS_SOLARIS)
 	ARCH := $(shell isainfo -b)
@@ -2979,7 +2970,7 @@ jl/%.o: %.cc
 	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -fPIC -c $< -o $@ $(COVERAGEFLAGS)
 
 ${ALL_JNI_NATIVE_OBJECTS}: CXXFLAGS += -I./java/. -I./java/rocksjni $(JAVA_INCLUDE) $(ROCKSDB_PLUGIN_JNI_CXX_INCLUDEFLAGS)
-rocksdbjava: $(LIB_OBJECTS) $(ALL_JNI_NATIVE_OBJECTS)
+rocksdbjava: $(LIB_OBJECTS) $(ALL_JNI_NATIVE_OBJECTS) rocksdbjava-header
 ifeq ($(JAVA_HOME),)
 	$(error JAVA_HOME is not set)
 endif
@@ -3005,9 +2996,11 @@ install-jni: rocksdbjava
 
 rocksdbjava-header:
 	$(AM_V_GEN)$(MAKE) -C java java_test
+	$(AM_V_at)touch $@
 
 jclean:
 	cd java;$(MAKE) clean;
+	$(AM_V_at)rm -f rocksdbjava-header
 
 jtest_compile: rocksdbjava
 	cd java;$(MAKE) java_test
@@ -3159,7 +3152,12 @@ endif
 
 # The .d file indicates .cc file's dependencies on .h files. We generate such
 # dependency by g++'s -MM option, whose output is a make dependency rule.
-$(OBJ_DIR)/java/%.cc.d: java/%.cc
+ifeq (${MAKE_RESTARTS},)
+  ifeq ($(wildcard rocksdbjava-header),)
+    GEN_ROCKSDB_JAVA_HEADER := rocksdbjava-header
+  endif
+endif
+$(OBJ_DIR)/java/%.cc.d: java/%.cc ${GEN_ROCKSDB_JAVA_HEADER}
 	$(AM_V_at)mkdir -p $(@D)
 	$(AM_V_at)$(CXX) $(CXXFLAGS) \
 	  -Ijava -Ijava/rocksjni $(JAVA_INCLUDE) $(ROCKSDB_PLUGIN_JNI_CXX_INCLUDEFLAGS)\

@@ -1,3 +1,14 @@
+AM_DEFAULT_VERBOSITY ?= 0
+
+AM_V_GEN = $(am__v_GEN_$(V))
+am__v_GEN_ = $(am__v_GEN_$(AM_DEFAULT_VERBOSITY))
+am__v_GEN_0 = @echo "  GEN     " $@;
+am__v_GEN_1 =
+AM_V_at = $(am__v_at_$(V))
+am__v_at_ = $(am__v_at_$(AM_DEFAULT_VERBOSITY))
+am__v_at_0 = @
+am__v_at_1 =
+
 NATIVE_JAVA_CLASSES = \
 	org.rocksdb.AbstractCompactionFilter\
 	org.rocksdb.AbstractCompactionFilterFactory\
@@ -372,8 +383,7 @@ javadocs: java
 javalib: java java_test javadocs
 
 java: java-version
-	$(AM_V_GEN)mkdir -p $(MAIN_CLASSES)
-	$(AM_V_GEN)mkdir -p $(NATIVE_INCLUDE)
+	$(AM_V_GEN)mkdir -p $(MAIN_CLASSES) $(NATIVE_INCLUDE)
 	$(AM_V_at)$(JAVAC_CMD) $(JAVAC_ARGS) -h $(NATIVE_INCLUDE)-tmp -d $(MAIN_CLASSES) $(SOURCES)
 	$(AM_V_at)cd $(NATIVE_INCLUDE)-tmp; \
 		for f in *.h; do \
