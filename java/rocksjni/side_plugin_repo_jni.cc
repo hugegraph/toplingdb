@@ -323,6 +323,8 @@ JNIEXPORT jlong JNICALL Java_org_rocksdb_SidePluginRepo_nativeCreateCF
   auto db = (DB*)hdb;
   DB_MultiCF* dbm = Get_DB_MultiCF(env, db, repo);
   if (!dbm) {
+    Status status = Status::InvalidArgument("DB_MultiCF not found", db->GetName());
+    RocksDBExceptionJni::ThrowNew(env, status);
     return 0;
   }
   const char* cfname = env->GetStringUTFChars(jcfname, nullptr);
@@ -333,6 +335,48 @@ JNIEXPORT jlong JNICALL Java_org_rocksdb_SidePluginRepo_nativeCreateCF
   );
   ColumnFamilyHandle* cfh = nullptr;
   Status status = dbm->CreateColumnFamily(cfname, spec, &cfh);
+  if (!status.ok()) {
+    RocksDBExceptionJni::ThrowNew(env, status);
+    return 0;
+  }
+  return (jlong)cfh;
+}
+
+/*
+ * Class:     org_rocksdb_SidePluginRepo
+ * Method:    nativeCreateCFWithImport
+ * Signature: (JJLjava/lang/String;Ljava/lang/String;J[J)J
+ */
+JNIEXPORT jlong JNICALL Java_org_rocksdb_SidePluginRepo_nativeCreateCFWithImport
+(JNIEnv* env, jobject, jlong hrepo, jlong hdb,
+ jstring jcfname, jstring jspec,
+ jlong jimport_options, jlongArray jmetadatas)
+{
+  auto repo = (SidePluginRepo*)hrepo;
+  auto db = (DB*)hdb;
+  DB_MultiCF* dbm = Get_DB_MultiCF(env, db, repo);
+  if (!dbm) {
+    Status status = Status::InvalidArgument("DB_MultiCF not found", db->GetName());
+    RocksDBExceptionJni::ThrowNew(env, status);
+    return 0;
+  }
+  auto import_options = (ImportColumnFamilyOptions*)jimport_options;
+  auto metadata_handles = env->GetLongArrayElements(jmetadatas, nullptr);
+  const char* cfname = env->GetStringUTFChars(jcfname, nullptr);
+  const char* spec = env->GetStringUTFChars(jspec, nullptr);
+  ROCKSDB_SCOPE_EXIT(
+    env->ReleaseStringUTFChars(jspec, spec);
+    env->ReleaseStringUTFChars(jcfname, cfname);
+    env->ReleaseLongArrayElements(jmetadatas, metadata_handles, 0);
+  );
+  jsize metadata_count = env->GetArrayLength(jmetadatas);
+  std::vector<const ExportImportFilesMetaData*> metadatas(metadata_count);
+  for (jsize i = 0; i < metadata_count; i++) {
+    metadatas[i] = (const ExportImportFilesMetaData*)metadata_handles[i];
+  }
+  ColumnFamilyHandle* cfh = nullptr;
+  Status status = dbm->CreateColumnFamilyWithImport
+                 (cfname, *import_options, metadatas, spec, &cfh);
   if (!status.ok()) {
     RocksDBExceptionJni::ThrowNew(env, status);
     return 0;

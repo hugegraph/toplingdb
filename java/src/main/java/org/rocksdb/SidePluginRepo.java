@@ -75,6 +75,17 @@ public class SidePluginRepo extends RocksObject {
         long cfh = nativeCreateCF(nativeHandle_, db.nativeHandle_, cfname, spec);
         return new ColumnFamilyHandle(db, cfh);
     }
+    public ColumnFamilyHandle createCFWithImport(RocksDB db, String cfname, String spec,
+                final ImportColumnFamilyOptions importColumnFamilyOptions,
+                final List<ExportImportFilesMetaData> metadatas) throws RocksDBException {
+        long[] metadataHandles = new long[metadatas.size()];
+        for (int i = 0; i < metadatas.size(); i++) {
+            metadataHandles[i] = metadatas.get(i).nativeHandle_;
+        }
+        long cfh = nativeCreateCFWithImport(nativeHandle_, db.nativeHandle_,
+            cfname, spec, importColumnFamilyOptions.nativeHandle_, metadataHandles);
+        return new ColumnFamilyHandle(db, cfh);
+    }
     public void dropCF(RocksDB db, String cfname) throws RocksDBException {
         nativeDropCF(nativeHandle_, db.nativeHandle_, cfname);
     }
@@ -134,6 +145,10 @@ public class SidePluginRepo extends RocksObject {
     private native long nativeCreateCF(long handle, long dbh, String cfname, String spec) throws RocksDBException;
     private native void nativeDropCF(long handle, long dbh, String cfname) throws RocksDBException;
     private native void nativeDropCF(long handle, long dbh, long cfh) throws RocksDBException;
+
+    private native long nativeCreateCFWithImport(final long handle,
+        final long dbHandle, final String columnFamilyName, final String spec,
+        long importCFOptions, final long[] metadataHandleList) throws RocksDBException;
 
     public SidePluginRepo() {
         super(newSidePluginRepo());
