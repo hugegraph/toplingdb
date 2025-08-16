@@ -195,6 +195,22 @@ void Java_org_rocksdb_SidePluginRepo_nativeCloseAllDB
 
 /*
  * Class:     org_rocksdb_SidePluginRepo
+ * Method:    nativeCloseOneDB
+ * Signature: (JJ)V
+ */
+JNIEXPORT void JNICALL Java_org_rocksdb_SidePluginRepo_nativeCloseOneDB
+(JNIEnv* env, jobject, jlong jhrepo, jlong jhdb)
+{
+  auto repo = (SidePluginRepo*)jhrepo;
+  auto db = (DB*)jhdb;
+  Status s = repo->CloseOneDB(db, false); // dont close DB and cf
+  if (!s.ok()) {
+    RocksDBExceptionJni::ThrowNew(env, s);
+  }
+}
+
+/*
+ * Class:     org_rocksdb_SidePluginRepo
  * Method:    nativePutDB
  * Signature: (Ljava/lang/String;Ljava/lang/String;Lorg/rocksdb/RocksDB;[Lorg/rocksdb/ColumnFamilyHandle;)V
  */

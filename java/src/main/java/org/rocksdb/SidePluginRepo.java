@@ -66,6 +66,11 @@ public class SidePluginRepo extends RocksObject {
         }
         dblist_ = null;
     }
+    public void closeOneDB(RocksDB db) {
+        if (dblist_.remove(db)) {
+            nativeCloseOneDB(nativeHandle_, db.nativeHandle_);
+        }
+    }
     public ColumnFamilyHandle createCF(RocksDB db, String cfname, String spec) throws RocksDBException {
         long cfh = nativeCreateCF(nativeHandle_, db.nativeHandle_, cfname, spec);
         return new ColumnFamilyHandle(db, cfh);
@@ -88,6 +93,7 @@ public class SidePluginRepo extends RocksObject {
 
     // call native->CloseAllDB(false)
     private native void nativeCloseAllDB(long handle);
+    private native void nativeCloseOneDB(long handle, long db_handle);
 
     public void put(String name, Options opt) {
         // vscode sucks on text block, use plain stupid string literal
