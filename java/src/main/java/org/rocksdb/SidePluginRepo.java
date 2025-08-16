@@ -12,6 +12,7 @@ public class SidePluginRepo extends RocksObject {
         RocksDB.loadLibrary();
     }
     public native void importAutoFile(String fname) throws RocksDBException;
+    public native void importJson(String strJson) throws RocksDBException;
     public RocksDB openDB(String js) throws RocksDBException {
         RocksDB db = nativeOpenDB(nativeHandle_, js);
         dblist_.add(db);

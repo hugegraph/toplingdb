@@ -68,6 +68,21 @@ void Java_org_rocksdb_SidePluginRepo_importAutoFile
   }
 }
 
+JNIEXPORT void JNICALL Java_org_rocksdb_SidePluginRepo_importJson
+(JNIEnv* env, jobject jrepo, jstring jstrJson)
+{
+  const auto* strjson = env->GetStringUTFChars(jstrJson, nullptr);
+  ROCKSDB_VERIFY(strjson != nullptr);
+  jclass clazz = env->GetObjectClass(jrepo);
+  jfieldID handleFieldID = env->GetFieldID(clazz, "nativeHandle_", "J"); // long
+  auto repo = (SidePluginRepo*)env->GetLongField(jrepo, handleFieldID);
+  auto status = repo->Import(std::string(strjson));
+  env->ReleaseStringUTFChars(jstrJson, strjson);
+  if (!status.ok()) {
+    RocksDBExceptionJni::ThrowNew(env, status);
+  }
+}
+
 static jobject CreateJDB
 (JNIEnv* env, DB* db, ColumnFamilyHandle** cfh_a, size_t cfh_n)
 {
