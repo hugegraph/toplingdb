@@ -431,3 +431,22 @@ jint Java_org_rocksdb_RocksIterator_valueByteArray0(
 
   return static_cast<jsize>(value_slice.size());
 }
+
+/*
+ * Class:     org_rocksdb_RocksIterator
+ * Method:    nativeRefreshForDatabaseGC
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_org_rocksdb_RocksIterator_nativeRefreshForDatabaseGC
+(JNIEnv* env, jobject, jlong jiter)
+{
+  auto zc_it = reinterpret_cast<JZeroCopyIter*>(jiter);
+  auto iter = zc_it->iter;
+  bool is_valid = iter->Valid();
+  ROCKSDB_NAMESPACE::Status s = iter->RefreshKeepSnapshot(true);
+  if (is_valid) {
+    zc_it->key = iter->key();
+    zc_it->value = iter->value();
+  }
+  ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
+}

@@ -402,6 +402,12 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
     prev0(nativeHandle_ | eagerFetchValue_);
   }
 
+  // iter position is kept and native key/value ptr may be updated
+  public final void refreshForDatabaseGC() throws RocksDBException {
+    nativeRefreshForDatabaseGC(nativeHandle_);
+  }
+  final native void nativeRefreshForDatabaseGC(long handle) throws RocksDBException;
+
   @Override protected final native void disposeInternal(final long handle);
   @Override final native boolean isValid0(long handle);
   @Override final native void seekToFirst0(long handle);
