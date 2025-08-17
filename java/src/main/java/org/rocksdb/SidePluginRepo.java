@@ -69,6 +69,7 @@ public class SidePluginRepo extends RocksObject {
     public void closeOneDB(RocksDB db) {
         if (dblist_.remove(db)) {
             nativeCloseOneDB(nativeHandle_, db.nativeHandle_);
+            db.close(); // can be called multiple times
         }
     }
     public ColumnFamilyHandle createCF(RocksDB db, String cfname, String spec) throws RocksDBException {
