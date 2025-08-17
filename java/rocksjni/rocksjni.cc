@@ -29,6 +29,9 @@
 #include "rocksjni/kv_helper.h"
 #include "rocksjni/portal.h"
 
+#include <terark/util/nolocks_localtime.hpp>
+#include <topling/side_plugin_repo.h>
+
 #ifdef min
 #undef min
 #endif
@@ -308,6 +311,11 @@ void Java_org_rocksdb_RocksDB_closeDatabase(JNIEnv* env, jclass,
                                             jlong jhandle) {
   auto* db = reinterpret_cast<ROCKSDB_NAMESPACE::DB*>(jhandle);
   assert(db != nullptr);
+  if (ROCKSDB_NAMESPACE::SidePluginRepo::DebugLevel() >= 1) {
+    fprintf(stderr,
+      "%s: INFO: %s:%d: Java_org_rocksdb_RocksDB_closeDatabase(): db = %p, dbname = %s\n",
+      terark::StrDateTimeNow(), __FILE__, __LINE__, db, db->GetName().c_str());
+  }
   ROCKSDB_NAMESPACE::Status s = db->Close();
   ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
 }
