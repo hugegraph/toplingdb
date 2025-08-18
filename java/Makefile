@@ -310,6 +310,7 @@ ifeq (${ROCKSDB_FORCE_DIRECT_BUFFER_ZERO_COPY},true)
   JAVA_ARGS += --add-opens java.base/jdk.internal.ref=ALL-UNNAMED
 endif
 JAVA_ARGS += --add-opens java.base/java.nio=ALL-UNNAMED
+JAVA_ARGS += --add-opens java.base/jdk.internal.misc=ALL-UNNAMED
 
 JAVAC_ARGS ?=
 
