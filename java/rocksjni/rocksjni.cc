@@ -2502,14 +2502,17 @@ jboolean key_exists_helper(JNIEnv* env, jlong jdb_handle, jlong jcf_handle,
   ROCKSDB_NAMESPACE::Slice key_slice(key, jkey_len);
 
   const bool may_exist =
+      true ? true : // minimize code diff, toplingdb doesn't need KeyMayExist
       db->KeyMayExist(read_opts, cf_handle, key_slice, &value, &value_found);
 
   if (may_exist) {
     ROCKSDB_NAMESPACE::Status s;
+    read_opts.just_check_key_exists = true;
     {
       ROCKSDB_NAMESPACE::PinnableSlice pinnable_val;
       s = db->Get(read_opts, cf_handle, key_slice, &pinnable_val);
     }
+    read_opts.just_check_key_exists = false;
     if (s.IsNotFound()) {
       return JNI_FALSE;
     } else if (s.ok()) {
