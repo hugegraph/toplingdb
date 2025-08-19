@@ -2560,9 +2560,6 @@ bool key_may_exist_direct_helper(JNIEnv* env, jlong jdb_handle,
 
 jboolean key_exists_helper(JNIEnv* env, jlong jdb_handle, jlong jcf_handle,
                            jlong jread_opts_handle, char* key, jint jkey_len) {
-  std::string value;
-  bool value_found = false;
-
   auto* db = reinterpret_cast<ROCKSDB_NAMESPACE::DB*>(jdb_handle);
 
   ROCKSDB_NAMESPACE::ColumnFamilyHandle* cf_handle;
@@ -2580,28 +2577,16 @@ jboolean key_exists_helper(JNIEnv* env, jlong jdb_handle, jlong jcf_handle,
                 jread_opts_handle));
 
   ROCKSDB_NAMESPACE::Slice key_slice(key, jkey_len);
-
-  const bool may_exist =
-      true ? true : // minimize code diff, toplingdb doesn't need KeyMayExist
-      db->KeyMayExist(read_opts, cf_handle, key_slice, &value, &value_found);
-
-  if (may_exist) {
-    ROCKSDB_NAMESPACE::Status s;
-    read_opts.just_check_key_exists = true;
-    {
-      ROCKSDB_NAMESPACE::PinnableSlice pinnable_val;
-      s = db->Get(read_opts, cf_handle, key_slice, &pinnable_val);
-    }
-    read_opts.just_check_key_exists = false;
-    if (s.IsNotFound()) {
-      return JNI_FALSE;
-    } else if (s.ok()) {
-      return JNI_TRUE;
-    } else {
-      ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
-      return JNI_FALSE;
-    }
+  read_opts.just_check_key_exists = true;
+  ROCKSDB_NAMESPACE::PinnableSlice pinnable_val;
+  auto s = db->Get(read_opts, cf_handle, key_slice, &pinnable_val);
+  read_opts.just_check_key_exists = false;
+  if (s.IsNotFound()) {
+    return JNI_FALSE;
+  } else if (s.ok()) {
+    return JNI_TRUE;
   } else {
+    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
     return JNI_FALSE;
   }
 }
@@ -2616,17 +2601,15 @@ jboolean Java_org_rocksdb_RocksDB_keyExists(JNIEnv* env, jobject,
                                             jlong jread_opts_handle,
                                             jbyteArray jkey, jint jkey_offset,
                                             jint jkey_len) {
-  jbyte* key = new jbyte[jkey_len];
+  jbyte* key = (jbyte*)alloca(jkey_len);
   env->GetByteArrayRegion(jkey, jkey_offset, jkey_len, key);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
-    delete[] key;
     return JNI_FALSE;
   } else {
     jboolean key_exists =
         key_exists_helper(env, jdb_handle, jcf_handle, jread_opts_handle,
                           reinterpret_cast<char*>(key), jkey_len);
-    delete[] key;
     return key_exists;
   }
 }
