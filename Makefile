@@ -344,13 +344,15 @@ ifeq (${DEBUG_LEVEL}, 2)
   BUILD_TYPE_SIG := d
   OBJ_DIR := ${BUILD_ROOT}/dbg
 endif
-ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test %_test2, $(MAKECMDGOALS)),)
+ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test %_test2 jtest, $(MAKECMDGOALS)),)
+  MAKE_UNIT_TEST ?= 1
+endif
+ifeq (${MAKE_UNIT_TEST},1)
   CXXFLAGS += -DROCKSDB_UNIT_TEST
   CXXFLAGS += -DROCKSDB_DYNAMIC_CREATE_CF
   CXXFLAGS += -DTOPLINGDB_WITH_TIMESTAMP
   CXXFLAGS += -DTOPLINGDB_WITH_WIDE_COLUMNS
   CXXFLAGS += -DTOPLINGDB_WITH_FABRICATED_COMPLEXITY
-  MAKE_UNIT_TEST := 1
   OBJ_DIR := $(subst build/,build-ut/,${OBJ_DIR})
 endif
 
