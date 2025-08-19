@@ -169,6 +169,8 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
       sst_partitioner_factory ? sst_partitioner_factory->Name() : "None");
   ROCKS_LOG_HEADER(log, "        Options.memtable_factory: %s",
                    memtable_factory->Name());
+  ROCKS_LOG_HEADER(log, "        memtable_factory options: %s",
+                   memtable_factory->GetPrintableOptions().c_str());
   ROCKS_LOG_HEADER(log, "           Options.table_factory: %s",
                    table_factory->Name());
   ROCKS_LOG_HEADER(log, "           table_factory options: %s",
