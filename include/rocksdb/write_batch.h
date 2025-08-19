@@ -99,6 +99,7 @@ class WriteBatch : public WriteBatchBase {
   }
   Status Put(ColumnFamilyHandle* column_family, const Slice& key,
              const Slice& ts, const Slice& value) override;
+  Status Put(ColumnFamilyHandle*, const KeyValuePopulator&) override;
 
   // Variant of Put() that gathers output like writev(2).  The key and value
   // that will be written to the database are concatenations of arrays of
@@ -145,6 +146,7 @@ class WriteBatch : public WriteBatchBase {
   Status Delete(const Slice& key) override { return Delete(nullptr, key); }
   Status Delete(ColumnFamilyHandle* column_family, const Slice& key,
                 const Slice& ts) override;
+  Status Delete(ColumnFamilyHandle*, const KeyValuePopulator&) override;
 
   // variant that takes SliceParts
   // These two variants of Delete(..., const SliceParts& key) can be used when
@@ -164,6 +166,7 @@ class WriteBatch : public WriteBatchBase {
   }
   Status SingleDelete(ColumnFamilyHandle* column_family, const Slice& key,
                       const Slice& ts) override;
+  Status SingleDelete(ColumnFamilyHandle*, const KeyValuePopulator&) override;
 
   // variant that takes SliceParts
   Status SingleDelete(ColumnFamilyHandle* column_family,
@@ -202,6 +205,7 @@ class WriteBatch : public WriteBatchBase {
   }
   Status Merge(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
                const Slice& /*ts*/, const Slice& /*value*/) override;
+  Status Merge(ColumnFamilyHandle*, const KeyValuePopulator&) override;
 
   // variant that takes SliceParts
   Status Merge(ColumnFamilyHandle* column_family, const SliceParts& key,

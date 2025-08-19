@@ -462,6 +462,7 @@ class DB : public CacheAlignedNewDelete {
                      const Slice& ts, const Slice& value) {
     return Put(options, DefaultColumnFamily(), key, ts, value);
   }
+  virtual Status Put(const WriteOptions&, ColumnFamilyHandle*, const KeyValuePopulator&);
 
   // Set the database entry for "key" in the column family specified by
   // "column_family" to the wide-column entity defined by "columns". If the key
@@ -493,6 +494,7 @@ class DB : public CacheAlignedNewDelete {
                         const Slice& ts) {
     return Delete(options, DefaultColumnFamily(), key, ts);
   }
+  virtual Status Delete(const WriteOptions&, ColumnFamilyHandle*, const KeyValuePopulator&);
 
   // Remove the database entry for "key". Requires that the key exists
   // and was not overwritten. Returns OK on success, and a non-OK status
@@ -523,6 +525,7 @@ class DB : public CacheAlignedNewDelete {
                               const Slice& ts) {
     return SingleDelete(options, DefaultColumnFamily(), key, ts);
   }
+  virtual Status SingleDelete(const WriteOptions&, ColumnFamilyHandle*, const KeyValuePopulator&);
 
   // Removes the database entries in the range ["begin_key", "end_key"), i.e.,
   // including "begin_key" and excluding "end_key". Returns OK on success, and
@@ -570,6 +573,7 @@ class DB : public CacheAlignedNewDelete {
                        ColumnFamilyHandle* /*column_family*/,
                        const Slice& /*key*/, const Slice& /*ts*/,
                        const Slice& /*value*/);
+  virtual Status Merge(const WriteOptions&, ColumnFamilyHandle*, const KeyValuePopulator&);
 
   // Apply the specified updates to the database.
   // If `updates` contains no update, WAL will still be synced if
