@@ -375,6 +375,7 @@ CXXFLAGS += \
 
 LDFLAGS += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
            -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
+TOPLING_ZBS_TARGET := ${BUILD_ROOT}/lib_shared/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.${PLATFORM_SHARED_EXT}
 
 GIT_TOPLING_ROCKS ?= git@github.com:rockeet/topling-rocks
 
@@ -2972,7 +2973,7 @@ jl/%.o: %.cc
 	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) -fPIC -c $< -o $@ $(COVERAGEFLAGS)
 
 ${ALL_JNI_NATIVE_OBJECTS}: CXXFLAGS += -I./java/. -I./java/rocksjni $(JAVA_INCLUDE) $(ROCKSDB_PLUGIN_JNI_CXX_INCLUDEFLAGS)
-rocksdbjava: $(LIB_OBJECTS) $(ALL_JNI_NATIVE_OBJECTS) rocksdbjava-header
+rocksdbjava: $(LIB_OBJECTS) $(ALL_JNI_NATIVE_OBJECTS) ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}
 ifeq ($(JAVA_HOME),)
 	$(error JAVA_HOME is not set)
 endif
@@ -2998,11 +2999,10 @@ install-jni: rocksdbjava
 
 rocksdbjava-header:
 	$(AM_V_GEN)$(MAKE) -C java java_test
-	$(AM_V_at)touch $@
 
 jclean:
 	cd java;$(MAKE) clean;
-	$(AM_V_at)rm -f rocksdbjava-header
+	$(AM_V_at)rm -f $(ALL_JNI_NATIVE_OBJECTS)
 
 jtest_compile: rocksdbjava
 	cd java;$(MAKE) java_test
@@ -3139,7 +3139,7 @@ endif
 # If skip dependencies is ON, skip including the dep files
 ifneq ($(SKIP_DEPENDS), 1)
 DEPFILES := $(patsubst %.cc, $(OBJ_DIR)/%.cc.d, $(ALL_SOURCES))
-ifneq ($(wildcard $(JAVA_HOME)/bin/javac),)
+ifneq ($(filter j% rocksdbjava%, $(MAKECMDGOALS)),)
 DEPFILES += $(patsubst %.cc, $(OBJ_DIR)/%.cc.d, ${ALL_JNI_NATIVE_SOURCES})
 endif
 DEPFILES := $(patsubst %.cpp,$(OBJ_DIR)/%.cpp.d,$(DEPFILES))
@@ -3155,9 +3155,7 @@ endif
 # The .d file indicates .cc file's dependencies on .h files. We generate such
 # dependency by g++'s -MM option, whose output is a make dependency rule.
 ifeq (${MAKE_RESTARTS},)
-  ifeq ($(wildcard rocksdbjava-header),)
-    GEN_ROCKSDB_JAVA_HEADER := rocksdbjava-header
-  endif
+  GEN_ROCKSDB_JAVA_HEADER := rocksdbjava-header
 endif
 $(OBJ_DIR)/java/%.cc.d: java/%.cc ${GEN_ROCKSDB_JAVA_HEADER}
 	$(AM_V_at)mkdir -p $(@D)
@@ -3201,7 +3199,6 @@ build_subset_tests: $(ROCKSDBTESTS_SUBSET)
 list_all_tests:
 	echo "$(ROCKSDBTESTS_SUBSET)"
 
-TOPLING_ZBS_TARGET := ${BUILD_ROOT}/lib_shared/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.${PLATFORM_SHARED_EXT}
 ${SHARED4}: ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}
 ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: CXXFLAGS =
 ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: LDFLAGS =
@@ -3283,7 +3280,7 @@ rust-support: $(filter-out util/build_version.cc, ${LIB_SOURCES}) $(OBJ_DIR)/uti
 
 # Remove the rules for which dependencies should not be generated and see if any are left.
 #If so, include the dependencies; if not, do not include the dependency files
-ROCKS_DEP_RULES:=$(filter-out clean format check-format check-buck-targets check-headers check-sources jclean jtest package analyze tags rocksdbjavastatic% unity.% unity_test checkout_folly, $(MAKECMDGOALS))
+ROCKS_DEP_RULES:=$(filter-out clean format check-format check-buck-targets check-headers check-sources jclean package analyze tags unity.% checkout_folly, $(MAKECMDGOALS))
 ROCKS_DEP_RULES:=$(filter-out rust-support, $(ROCKS_DEP_RULES))
 ifneq ("$(ROCKS_DEP_RULES)", "")
 -include $(DEPFILES)
