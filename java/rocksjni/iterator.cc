@@ -360,29 +360,14 @@ jint Java_org_rocksdb_RocksIterator_keyByteArray0(JNIEnv* env, jobject /*jobj*/,
 /*
  * Class:     org_rocksdb_RocksIterator
  * Method:    value0
- * Signature: (J)[B
+ * Signature: (J)V
  */
-jbyteArray Java_org_rocksdb_RocksIterator_value0(JNIEnv* env, jobject /*jobj*/,
+void Java_org_rocksdb_RocksIterator_value0(JNIEnv* env, jobject /*jobj*/,
                                                  jlong handle) {
-  auto* zc_it = reinterpret_cast<JZeroCopyIter*>(handle & jlong(~1L));
+  auto* zc_it = reinterpret_cast<JZeroCopyIter*>(handle);
   assert(zc_it->iter->Valid());
   assert(zc_it->key.data() != nullptr);
   zc_it->value = zc_it->iter->value();
-  if (handle & 1) { // just fetch the value
-    return nullptr; // do not copy, just return nullptr
-  }
-  ROCKSDB_NAMESPACE::Slice value_slice = zc_it->value;
-
-  jbyteArray jkeyValue =
-      env->NewByteArray(static_cast<jsize>(value_slice.size()));
-  if (jkeyValue == nullptr) {
-    // exception thrown: OutOfMemoryError
-    return nullptr;
-  }
-  env->SetByteArrayRegion(
-      jkeyValue, 0, static_cast<jsize>(value_slice.size()),
-      const_cast<jbyte*>(reinterpret_cast<const jbyte*>(value_slice.data())));
-  return jkeyValue;
 }
 
 /*

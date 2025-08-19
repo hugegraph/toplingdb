@@ -77,9 +77,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
   public final void fetchValue() {
     assert(isOwningHandle());
     if (getZeroCopyValuePtr() == 0) {
-      byte[] val = value0(nativeHandle_ | 1); // or 1 indicate just do fetch
-      assert(val == null); // just fetch the value, not copy it, must be null
-      // this will not copy the value, just set the zero-copy pointer
+      value0(nativeHandle_); // just set the zero-copy value ptr and len
       assert(getZeroCopyValuePtr() != 0);
     }
   }
@@ -429,5 +427,5 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
       long handle, byte[] target, int targetOffset, int targetLen);
   @Override final native void status0(long handle) throws RocksDBException;
 
-  private native byte[] value0(long handle);
+  private native void value0(long handle);
 }
