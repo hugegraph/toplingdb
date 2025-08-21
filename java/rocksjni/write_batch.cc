@@ -20,7 +20,7 @@
 #include "rocksdb/status.h"
 #include "rocksdb/write_buffer_manager.h"
 #include "rocksjni/cplusplus_to_java_convert.h"
-#include "rocksjni/portal.h"
+#include "rocksjni/kv_helper.h"
 #include "rocksjni/writebatchhandlerjnicallback.h"
 #include "table/scoped_arena_iterator.h"
 
@@ -117,6 +117,12 @@ struct JniWriteBatch : public WriteBatch {
     updateJavaAddrSizeCapFromNative();
     return s;
   }
+  Status Put(CFH* cf, const KeyValuePopulator& kvp) override {
+    updateNativeDataSizeFromJava();
+    Status s = WriteBatch::Put(cf, kvp);
+    updateJavaAddrSizeCapFromNative();
+    return s;
+  }
   using WriteBatch::Merge;
   Status Merge(CFH* cf, const Slice& k, const Slice& v) override {
     updateNativeDataSizeFromJava();
@@ -128,6 +134,12 @@ struct JniWriteBatch : public WriteBatch {
   override {
     updateNativeDataSizeFromJava();
     Status s = WriteBatch::Merge(cf, k, ts, v);
+    updateJavaAddrSizeCapFromNative();
+    return s;
+  }
+  Status Merge(CFH* cf, const KeyValuePopulator& kvp) override {
+    updateNativeDataSizeFromJava();
+    Status s = WriteBatch::Merge(cf, kvp);
     updateJavaAddrSizeCapFromNative();
     return s;
   }
@@ -158,6 +170,12 @@ struct JniWriteBatch : public WriteBatch {
     updateJavaAddrSizeCapFromNative();
     return s;
   }
+  Status Delete(CFH* cf, const KeyValuePopulator& kvp) override {
+    updateNativeDataSizeFromJava();
+    Status s = WriteBatch::Delete(cf, kvp);
+    updateJavaAddrSizeCapFromNative();
+    return s;
+  }
   using WriteBatch::SingleDelete;
   Status SingleDelete(CFH* cf, const Slice& k) override {
     updateNativeDataSizeFromJava();
@@ -171,6 +189,12 @@ struct JniWriteBatch : public WriteBatch {
     updateJavaAddrSizeCapFromNative();
     return s;
   }
+  Status SingleDelete(CFH* cf, const KeyValuePopulator& kvp) override {
+    updateNativeDataSizeFromJava();
+    Status s = WriteBatch::SingleDelete(cf, kvp);
+    updateJavaAddrSizeCapFromNative();
+    return s;
+  }
   Status PutLogData(const Slice& b) override {
     updateNativeDataSizeFromJava();
     Status s = WriteBatch::PutLogData(b);
@@ -179,6 +203,37 @@ struct JniWriteBatch : public WriteBatch {
   }
 };
 } // namespace ROCKSDB_NAMESPACE
+
+class JNIKeyValuePopulator0 : public ROCKSDB_NAMESPACE::KeyValuePopulator {
+  JNIEnv* env_;
+  jbyteArray jkey_, jval_;
+public:
+  virtual ~JNIKeyValuePopulator0() = default;
+  JNIKeyValuePopulator0(JNIEnv* env,
+                        jbyteArray jkey, jint jkey_len,
+                        jbyteArray jval, jint jval_len)
+    : KeyValuePopulator(jkey_len, jval_len),
+      env_(env), jkey_(jkey), jval_(jval) { }
+  void PopulateKeyValue(char* key, char* val) const override {
+    env_->GetByteArrayRegion(jkey_, 0, (jint)key_len_, (jbyte*)key);
+    ROCKSDB_NAMESPACE::KVException::ThrowOnError(env_);
+    env_->GetByteArrayRegion(jval_, 0, (jint)val_len_, (jbyte*)val);
+    ROCKSDB_NAMESPACE::KVException::ThrowOnError(env_);
+  }
+};
+
+class JNIKeyOnlyPopulator0 : public ROCKSDB_NAMESPACE::KeyValuePopulator {
+  JNIEnv* env_;
+  jbyteArray jkey_;
+public:
+  virtual ~JNIKeyOnlyPopulator0() = default;
+  JNIKeyOnlyPopulator0(JNIEnv* env, jbyteArray jkey, jint jkey_len)
+    : KeyValuePopulator(jkey_len, 0), env_(env), jkey_(jkey) { }
+  void PopulateKeyValue(char* key, char*) const override {
+    env_->GetByteArrayRegion(jkey_, 0, (jint)key_len_, (jbyte*)key);
+    ROCKSDB_NAMESPACE::KVException::ThrowOnError(env_);
+  }
+};
 
 /*
  * Class:     org_rocksdb_WriteBatch
@@ -377,6 +432,11 @@ void Java_org_rocksdb_WriteBatch_put__J_3BI_3BI(JNIEnv* env, jobject jobj,
                                                 jint jentry_value_len) {
   auto* wb = reinterpret_cast<ROCKSDB_NAMESPACE::WriteBatch*>(jwb_handle);
   assert(wb != nullptr);
+ #if JNI_USE_KEY_VALUE_POPULATOR
+  JNIKeyValuePopulator0 kvp(env, jkey, jkey_len, jentry_value, jentry_value_len);
+  ROCKSDB_NAMESPACE::Status status = wb->Put(nullptr, kvp);
+  ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
+ #else
   auto put = [&wb](ROCKSDB_NAMESPACE::Slice key,
                    ROCKSDB_NAMESPACE::Slice value) {
     return wb->Put(key, value);
@@ -387,6 +447,7 @@ void Java_org_rocksdb_WriteBatch_put__J_3BI_3BI(JNIEnv* env, jobject jobj,
   if (status != nullptr && !status->ok()) {
     ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
   }
+ #endif
 }
 
 /*
@@ -402,6 +463,11 @@ void Java_org_rocksdb_WriteBatch_put__J_3BI_3BIJ(
   auto* cf_handle =
       reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
   assert(cf_handle != nullptr);
+ #if JNI_USE_KEY_VALUE_POPULATOR
+  JNIKeyValuePopulator0 kvp(env, jkey, jkey_len, jentry_value, jentry_value_len);
+  ROCKSDB_NAMESPACE::Status status = wb->Put(cf_handle, kvp);
+  ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
+ #else
   auto put = [&wb, &cf_handle](ROCKSDB_NAMESPACE::Slice key,
                                ROCKSDB_NAMESPACE::Slice value) {
     return wb->Put(cf_handle, key, value);
@@ -412,6 +478,7 @@ void Java_org_rocksdb_WriteBatch_put__J_3BI_3BIJ(
   if (status != nullptr && !status->ok()) {
     ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
   }
+ #endif
 }
 
 /*
@@ -450,6 +517,11 @@ void Java_org_rocksdb_WriteBatch_merge__J_3BI_3BI(
     jbyteArray jentry_value, jint jentry_value_len) {
   auto* wb = reinterpret_cast<ROCKSDB_NAMESPACE::WriteBatch*>(jwb_handle);
   assert(wb != nullptr);
+ #if JNI_USE_KEY_VALUE_POPULATOR
+  JNIKeyValuePopulator0 kvp(env, jkey, jkey_len, jentry_value, jentry_value_len);
+  ROCKSDB_NAMESPACE::Status status = wb->Merge(nullptr, kvp);
+  ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
+ #else
   auto merge = [&wb](ROCKSDB_NAMESPACE::Slice key,
                      ROCKSDB_NAMESPACE::Slice value) {
     return wb->Merge(key, value);
@@ -460,6 +532,7 @@ void Java_org_rocksdb_WriteBatch_merge__J_3BI_3BI(
   if (status != nullptr && !status->ok()) {
     ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
   }
+ #endif
 }
 
 /*
@@ -475,6 +548,11 @@ void Java_org_rocksdb_WriteBatch_merge__J_3BI_3BIJ(
   auto* cf_handle =
       reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
   assert(cf_handle != nullptr);
+ #if JNI_USE_KEY_VALUE_POPULATOR
+  JNIKeyValuePopulator0 kvp(env, jkey, jkey_len, jentry_value, jentry_value_len);
+  ROCKSDB_NAMESPACE::Status status = wb->Merge(cf_handle, kvp);
+  ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
+ #else
   auto merge = [&wb, &cf_handle](ROCKSDB_NAMESPACE::Slice key,
                                  ROCKSDB_NAMESPACE::Slice value) {
     return wb->Merge(cf_handle, key, value);
@@ -485,6 +563,7 @@ void Java_org_rocksdb_WriteBatch_merge__J_3BI_3BIJ(
   if (status != nullptr && !status->ok()) {
     ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
   }
+ #endif
 }
 
 /*
@@ -497,12 +576,18 @@ void Java_org_rocksdb_WriteBatch_delete__J_3BI(JNIEnv* env, jobject jobj,
                                                jbyteArray jkey, jint jkey_len) {
   auto* wb = reinterpret_cast<ROCKSDB_NAMESPACE::WriteBatch*>(jwb_handle);
   assert(wb != nullptr);
+ #if JNI_USE_KEY_VALUE_POPULATOR
+  JNIKeyOnlyPopulator0 kvp(env, jkey, jkey_len);
+  ROCKSDB_NAMESPACE::Status status = wb->Delete(nullptr, kvp);
+  ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
+ #else
   auto remove = [&wb](ROCKSDB_NAMESPACE::Slice key) { return wb->Delete(key); };
   std::unique_ptr<ROCKSDB_NAMESPACE::Status> status =
       ROCKSDB_NAMESPACE::JniUtil::k_op(remove, env, jobj, jkey, jkey_len);
   if (status != nullptr && !status->ok()) {
     ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
   }
+ #endif
 }
 
 /*
@@ -519,6 +604,11 @@ void Java_org_rocksdb_WriteBatch_delete__J_3BIJ(JNIEnv* env, jobject jobj,
   auto* cf_handle =
       reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
   assert(cf_handle != nullptr);
+ #if JNI_USE_KEY_VALUE_POPULATOR
+  JNIKeyOnlyPopulator0 kvp(env, jkey, jkey_len);
+  ROCKSDB_NAMESPACE::Status status = wb->Delete(cf_handle, kvp);
+  ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
+ #else
   auto remove = [&wb, &cf_handle](ROCKSDB_NAMESPACE::Slice key) {
     return wb->Delete(cf_handle, key);
   };
@@ -527,6 +617,7 @@ void Java_org_rocksdb_WriteBatch_delete__J_3BIJ(JNIEnv* env, jobject jobj,
   if (status != nullptr && !status->ok()) {
     ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
   }
+ #endif
 }
 
 /*
@@ -540,6 +631,11 @@ void Java_org_rocksdb_WriteBatch_singleDelete__J_3BI(JNIEnv* env, jobject jobj,
                                                      jint jkey_len) {
   auto* wb = reinterpret_cast<ROCKSDB_NAMESPACE::WriteBatch*>(jwb_handle);
   assert(wb != nullptr);
+ #if JNI_USE_KEY_VALUE_POPULATOR
+  JNIKeyOnlyPopulator0 kvp(env, jkey, jkey_len);
+  ROCKSDB_NAMESPACE::Status status = wb->SingleDelete(nullptr, kvp);
+  ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
+ #else
   auto single_delete = [&wb](ROCKSDB_NAMESPACE::Slice key) {
     return wb->SingleDelete(key);
   };
@@ -549,6 +645,7 @@ void Java_org_rocksdb_WriteBatch_singleDelete__J_3BI(JNIEnv* env, jobject jobj,
   if (status != nullptr && !status->ok()) {
     ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
   }
+ #endif
 }
 
 /*
@@ -566,6 +663,11 @@ void Java_org_rocksdb_WriteBatch_singleDelete__J_3BIJ(JNIEnv* env, jobject jobj,
   auto* cf_handle =
       reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
   assert(cf_handle != nullptr);
+ #if JNI_USE_KEY_VALUE_POPULATOR
+  JNIKeyOnlyPopulator0 kvp(env, jkey, jkey_len);
+  ROCKSDB_NAMESPACE::Status status = wb->SingleDelete(cf_handle, kvp);
+  ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
+ #else
   auto single_delete = [&wb, &cf_handle](ROCKSDB_NAMESPACE::Slice key) {
     return wb->SingleDelete(cf_handle, key);
   };
@@ -575,6 +677,7 @@ void Java_org_rocksdb_WriteBatch_singleDelete__J_3BIJ(JNIEnv* env, jobject jobj,
   if (status != nullptr && !status->ok()) {
     ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, status);
   }
+ #endif
 }
 
 /*
