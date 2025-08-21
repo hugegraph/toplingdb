@@ -608,7 +608,6 @@ void Java_org_rocksdb_RocksDB_dropColumnFamilies(
   }
 }
 
-#define JNI_USE_KEY_VALUE_POPULATOR 1
 class JNIKeyValuePopulator : public ROCKSDB_NAMESPACE::KeyValuePopulator {
   JNIEnv* env_;
   jbyteArray jkey_, jval_;

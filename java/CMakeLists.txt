@@ -569,6 +569,9 @@ else ()
 
 endif()
 
+option(JNI_USE_KEY_VALUE_POPULATOR "use key value populator to reduce copy for write" 1)
+add_definitions(-DJNI_USE_KEY_VALUE_POPULATOR=${JNI_USE_KEY_VALUE_POPULATOR})
+
 add_jar(
     rocksdbjni_test_classes
     SOURCES
