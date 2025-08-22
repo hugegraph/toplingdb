@@ -125,6 +125,7 @@ dummy := $(shell (export ROCKSDB_ROOT="$(CURDIR)"; \
                   export LIB_MODE="$(LIB_MODE)"; \
                   export ROCKSDB_CXX_STANDARD="$(ROCKSDB_CXX_STANDARD)"; \
                   export USE_FOLLY="$(USE_FOLLY)"; \
+                  export USE_FOLLY_LITE="$(USE_FOLLY_LITE)"; \
                   "$(CURDIR)/build_tools/build_detect_platform" "$(CURDIR)/make_config.mk"))
 ifneq (${.SHELLSTATUS},0)
  ifneq (${.SHELLSTATUS},) # wsl .SHELLSTATUS is empty
