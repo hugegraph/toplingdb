@@ -30,6 +30,8 @@ struct SliceParts;
 // key_len() and val_len() sizes, respectively.
 class KeyValuePopulator {
  public:
+  KeyValuePopulator(const KeyValuePopulator&) = delete;
+  KeyValuePopulator& operator=(const KeyValuePopulator&) = delete;
   KeyValuePopulator() {} // intentionally not init key_len_ and val_len_
   KeyValuePopulator(size_t key_len, size_t val_len)
       : key_len_(key_len), val_len_(val_len) {}
