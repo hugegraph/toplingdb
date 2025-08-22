@@ -1552,11 +1552,11 @@ void Java_org_rocksdb_RocksDB_merge__JJ_3BII_3BIIJ(
       reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
   if (cf_handle != nullptr) {
     try {
-    #if JNI_USE_KEY_VALUE_POPULATOR
-     JNIKeyValuePopulator kvp(env, jkey, jkey_off, jkey_len, jval, jval_off, jval_len);
-     ROCKSDB_NAMESPACE::Status s = db->Merge(*write_options, cf_handle, kvp);
-     ROCKSDB_NAMESPACE::KVException::ThrowOnError(env, s);
-    #else
+     #if JNI_USE_KEY_VALUE_POPULATOR
+      JNIKeyValuePopulator kvp(env, jkey, jkey_off, jkey_len, jval, jval_off, jval_len);
+      ROCKSDB_NAMESPACE::Status s = db->Merge(*write_options, cf_handle, kvp);
+      ROCKSDB_NAMESPACE::KVException::ThrowOnError(env, s);
+     #else
       ROCKSDB_NAMESPACE::JByteArraySlice key(env, jkey, jkey_off, jkey_len);
       ROCKSDB_NAMESPACE::JByteArraySlice value(env, jval, jval_off, jval_len);
       ROCKSDB_NAMESPACE::KVException::ThrowOnError(
