@@ -350,6 +350,10 @@ ifeq (${DEBUG_LEVEL}, 2)
   OBJ_DIR := ${BUILD_ROOT}/dbg
 endif
 
+ifeq (${TOPLING_USE_DYNAMIC_TLS},1)
+  CXXFLAGS += -DTOPLING_USE_DYNAMIC_TLS
+endif
+
 TOPLING_LIB_OBJ_LIST_FILE := ${OBJ_DIR}/shared_lib_obj_list.mk
 -include ${TOPLING_CORE_DIR}/${TOPLING_LIB_OBJ_LIST_FILE}
 
