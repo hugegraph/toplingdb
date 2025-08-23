@@ -73,7 +73,8 @@ public class NativeLibraryLoader {
       //System.err.println("loaded " + jniLibraryName);
       return;
     } catch (final UnsatisfiedLinkError ule) {
-      System.err.println("failed " + jniLibraryName);
+      System.err.println("failed " + jniLibraryName + ule + " - try compile " +
+        "with make rocksdbjava DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1");
       // ignore - then try static library fallback or from jar
     }
 
