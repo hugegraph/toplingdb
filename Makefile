@@ -349,6 +349,10 @@ ifeq (${DEBUG_LEVEL}, 2)
   BUILD_TYPE_SIG := d
   OBJ_DIR := ${BUILD_ROOT}/dbg
 endif
+
+TOPLING_LIB_OBJ_LIST_FILE := ${OBJ_DIR}/shared_lib_obj_list.mk
+-include ${TOPLING_CORE_DIR}/${TOPLING_LIB_OBJ_LIST_FILE}
+
 ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test %_test2 jtest, $(MAKECMDGOALS)),)
   MAKE_UNIT_TEST ?= 1
 endif
@@ -2980,13 +2984,16 @@ jl/%.o: %.cc
 JNI_USE_KEY_VALUE_POPULATOR ?= 1
 ${ALL_JNI_NATIVE_OBJECTS}: CXXFLAGS += -DJNI_USE_KEY_VALUE_POPULATOR=${JNI_USE_KEY_VALUE_POPULATOR}
 ${ALL_JNI_NATIVE_OBJECTS}: CXXFLAGS += -I./java/. -I./java/rocksjni $(JAVA_INCLUDE) $(ROCKSDB_PLUGIN_JNI_CXX_INCLUDEFLAGS)
-rocksdbjava: $(LIB_OBJECTS) $(ALL_JNI_NATIVE_OBJECTS) ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}
+rocksdbjava: $(LIB_OBJECTS) $(ALL_JNI_NATIVE_OBJECTS) ${TOPLING_CORE_DIR}/${TOPLING_LIB_OBJ_LIST_FILE}
 ifeq ($(JAVA_HOME),)
 	$(error JAVA_HOME is not set)
 endif
 	$(AM_V_at)rm -f ./java/target/$(ROCKSDBJNILIB)
-	$(AM_V_at)$(CXX) $(CXXFLAGS) -shared -fPIC -o ./java/target/$(ROCKSDBJNILIB) $(ALL_JNI_NATIVE_OBJECTS) $(LIB_OBJECTS) $(JAVA_LDFLAGS) $(LDFLAGS)
-	$(AM_V_at)cp -a ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/*${COMPILER}*-${BUILD_TYPE_SIG}.so java/target
+	$(AM_V_at)$(CXX) $(CXXFLAGS) -shared -fPIC -o ./java/target/$(ROCKSDBJNILIB) \
+			  $(ALL_JNI_NATIVE_OBJECTS) $(LIB_OBJECTS) \
+			  $(addprefix ${TOPLING_CORE_DIR}/, $(TOPLING_LIB_OBJ_LIST_VAR)) \
+			  $(JAVA_LDFLAGS) \
+			  $(filter-out -L${TOPLING_CORE_DIR}% -lterark-%, $(LDFLAGS))
 	$(AM_V_at)cp -a sideplugin/rockside/src/topling/web/{style.css,index.html}      java/target
 ifeq ($(STRIP_DEBUG_INFO),1)
 	$(AM_V_at)strip java/target/*.so
@@ -3211,6 +3218,11 @@ ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: CXXFLAGS =
 ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}: LDFLAGS =
 ${TOPLING_CORE_DIR}/${TOPLING_ZBS_TARGET}:
 	+make -C ${TOPLING_CORE_DIR} ${TOPLING_ZBS_TARGET}
+
+${TOPLING_CORE_DIR}/${TOPLING_LIB_OBJ_LIST_FILE}: CXXFLAGS =
+${TOPLING_CORE_DIR}/${TOPLING_LIB_OBJ_LIST_FILE}: LDFLAGS =
+${TOPLING_CORE_DIR}/${TOPLING_LIB_OBJ_LIST_FILE}:
+	+make -C ${TOPLING_CORE_DIR} ${TOPLING_LIB_OBJ_LIST_FILE}
 
 ${STATIC_LIBRARY}: ${BUILD_ROOT}/lib_static/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.a
 ${BUILD_ROOT}/lib_static/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.a:
