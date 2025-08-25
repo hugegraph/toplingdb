@@ -324,11 +324,13 @@ ifneq ($(origin WITH_BMI2),environment)
 endif
 endif
 
+ifndef COMPILER
 COMPILER := $(shell set -e; tmpfile=`mktemp -u compiler-XXXXXX`; \
                     ${CXX} ${TOPLING_CORE_DIR}/tools/configure/compiler.cpp -o $${tmpfile}.exe; \
                     ./$${tmpfile}.exe && rm -f $${tmpfile}*)
 UNAME_MachineSystem := $(shell uname -m -s | sed 's:[ /]:-:g')
 MARCH ?= $(shell uname -m)
+endif
 ifeq "${MARCH}" "x86_64"
 WITH_BMI2 ?= $(shell bash ${TOPLING_CORE_DIR}/cpu_has_bmi2.sh)
 else
@@ -551,6 +553,8 @@ else
 endif
 endif
 
+WITH_TOPLING_DCOMPACT ?= 1
+ifeq (${WITH_TOPLING_DCOMPACT},1)
 ifeq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
   dummy := $(shell set -e -x; \
     cd sideplugin; \
@@ -574,6 +578,7 @@ ifneq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
 else
   $(warning NotFound sideplugin/topling-dcompact, this is ok, only topling-dcompact is disabled)
 endif
+endif # WITH_TOPLING_DCOMPACT
 
 export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
 ifeq (${WITH_TOPLING_ROCKS},1)
@@ -589,6 +594,7 @@ else
 endif
 endif
 
+ifeq (${WITH_TOPLING_DCOMPACT},1)
 TOPLING_DCOMPACT_USE_ETCD := 0
 ifneq (,$(wildcard sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/src/libetcd-cpp-api.${PLATFORM_SHARED_EXT}))
 ifneq (,$(wildcard sideplugin/topling-dcompact/3rdparty/etcd-cpp-apiv3/build/proto/gen/proto))
@@ -619,6 +625,7 @@ endif
 #ifeq (${TOPLING_DCOMPACT_USE_ETCD},0)
 #  $(warning NotFound etcd-cpp-apiv3, this is ok, only etcd is disabled)
 #endif
+endif # WITH_TOPLING_DCOMPACT
 
 #export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
 
@@ -3278,6 +3285,8 @@ sideplugin/toplingdb-fs/${TOPLINGDB_FS_GIT_VER_SRC}: \
   sideplugin/toplingdb-fs/Makefile
 	+make -C sideplugin/toplingdb-fs ${TOPLINGDB_FS_GIT_VER_SRC}
 endif
+
+ifeq (${WITH_TOPLING_DCOMPACT},1)
 ifneq (,$(wildcard sideplugin/topling-dcompact/src/dcompact))
 sideplugin/topling-dcompact/${TOPLING_DCOMPACT_GIT_VER_SRC}: \
   $(wildcard sideplugin/topling-dcompact/src/dcompact/*.h) \
@@ -3294,6 +3303,7 @@ else
 	cp -a sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/dcompact_worker.exe ${OBJ_DIR}
 endif
 endif
+endif # WITH_TOPLING_DCOMPACT
 
 ${OBJ_DIR}/sideplugin/rockside/src/topling/web/civetweb.o: CFLAGS += -DUSE_ZLIB
 
