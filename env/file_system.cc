@@ -289,7 +289,7 @@ IOStatus FSWritableFile::Appendv(const Slice* parts, size_t num, size_t,
 ReadonlyFileMmap::ReadonlyFileMmap(PrivateCons) {}
 ReadonlyFileMmap::~ReadonlyFileMmap() = default;
 
-std::shared_ptr<ReadonlyFileMmap> ReadonlyFileMmap::New
+boost::intrusive_ptr<ReadonlyFileMmap> ReadonlyFileMmap::New
 (IOStatus* ios, FileSystem& fs, size_t fileno, const std::string& fname, size_t mmap_size)
 {
   IODebugContext dbg;
@@ -307,7 +307,7 @@ std::shared_ptr<ReadonlyFileMmap> ReadonlyFileMmap::New
     mmap_size = fsize;
   }
   fopt.mmap_size = mmap_size;
-  auto fmap = std::make_shared<ReadonlyFileMmap>(PrivateCons());
+  boost::intrusive_ptr<ReadonlyFileMmap> fmap(new ReadonlyFileMmap(PrivateCons()));
   *ios = fs.NewRandomAccessFile(fname, fopt, &fmap->file_, &dbg);
   if (ios->ok()) {
     auto fp = fmap->file_.get();

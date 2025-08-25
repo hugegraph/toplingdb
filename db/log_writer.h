@@ -128,7 +128,7 @@ class Writer {
   bool BufferIsEmpty();
 
  private:
-  std::shared_ptr<ReadonlyFileMmap> mmap_reader_;
+  boost::intrusive_ptr<ReadonlyFileMmap> mmap_reader_;
   std::unique_ptr<WritableFileWriter> dest_;
   uint64_t log_number_;
   std::shared_ptr<uint64_t> log_offset_;

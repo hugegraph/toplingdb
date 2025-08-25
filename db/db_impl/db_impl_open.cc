@@ -1206,7 +1206,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
     // large sequence numbers).
     log::Reader reader(immutable_db_options_.info_log, std::move(file_reader),
                        &reporter, true /*checksum*/, wal_number);
-    std::shared_ptr<ReadonlyFileMmap> fmap;
+    boost::intrusive_ptr<ReadonlyFileMmap> fmap;
     if (immutable_db_options_.memtable_as_log_index) {
       reader.InitSetMemTableAsLogIndex(*fs_);
       IOStatus ios = ReadonlyFileMmap::New(&fmap, *fs_, wal_number, fname);
