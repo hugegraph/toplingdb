@@ -9,6 +9,7 @@ CXX_HOME=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64
 export CXX=${CXX_HOME}/bin/aarch64-linux-android34-clang++
 export CC=${CXX_HOME}/bin/aarch64-linux-android34-clang
 export LD=${CXX}
+export STRIP_CMD=${CXX_HOME}/bin/llvm-strip
 export ENABLE_AUTO_CHECK_LD=0
 export JAVAC_ARGS="-source 17 -target 17"
 export BUILD_PREFIX=../build-toplingdb/
