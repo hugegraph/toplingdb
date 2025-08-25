@@ -570,7 +570,7 @@ struct CatLogger : public Logger {
   }
 
   size_t GetLogFileSize() const override { return m_local->GetLogFileSize(); }
-  void Flush() {
+  void Flush() override {
     m_local->Flush();
     // do not: m_remote->Flush();
   }

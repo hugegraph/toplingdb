@@ -41,7 +41,7 @@ class CatFileSystem : public FileSystem {
                            IODebugContext* dbg) override;
 
   IOStatus ReopenWritableFile(const std::string& /*fname*/, const FileOptions&,
-                              std::unique_ptr<FSWritableFile>*, IODebugContext*);
+                              std::unique_ptr<FSWritableFile>*, IODebugContext*) override;
 
   IOStatus ReuseWritableFile(const std::string& fname,
                              const std::string& old_fname,
@@ -113,8 +113,8 @@ class CatFileSystem : public FileSystem {
                            std::string* output_path,
                            IODebugContext* dbg) override;
 
-  IOStatus GetTestDirectory(const IOOptions&, std::string* path, IODebugContext*);
-  IOStatus UnlockFile(FileLock*, const IOOptions&, IODebugContext*);
+  IOStatus GetTestDirectory(const IOOptions&, std::string* path, IODebugContext*) override;
+  IOStatus UnlockFile(FileLock*, const IOOptions&, IODebugContext*) override;
 
 private:
   std::shared_ptr<FileSystem> m_local, m_remote;

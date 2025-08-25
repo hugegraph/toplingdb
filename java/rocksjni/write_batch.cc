@@ -158,7 +158,7 @@ struct JniWriteBatch : public WriteBatch {
     return s;
   }
   using WriteBatch::Delete;
-  Status Delete(CFH* cf, const Slice& k) {
+  Status Delete(CFH* cf, const Slice& k) override {
     updateNativeDataSizeFromJava();
     Status s = WriteBatch::Delete(cf, k);
     updateJavaAddrSizeCapFromNative();
