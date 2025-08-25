@@ -1129,6 +1129,9 @@ void Java_org_rocksdb_RocksDB_deleteRange__J_3BII_3BII(
                               jend_key, jend_key_off, jend_key_len);
 }
 
+#if defined(__GNUC__)
+  #pragma GCC diagnostic ignored "-Wshift-negative-value"
+#endif
 // low 3 bits of object ptr are always 0, we use 1 bits here
 #define JLONG_OF_PTR(ptr)      jlong(ptr)
 #define JLONG_OF_ERROR(err)  ((jlong(err) << 3) | 1)
