@@ -344,6 +344,7 @@ EOF
 
     if ! test $ROCKSDB_DISABLE_ZLIB; then
         # Test whether zlib library is installed
+        test "$ZLIB_READY_SKIP_CHECK" = 1 ||
         $CXX $PLATFORM_CXXFLAGS $COMMON_FLAGS -x c++ - -o test.o 2>/dev/null  <<EOF
           #include <zlib.h>
           int main() {}
@@ -624,6 +625,7 @@ EOF
 
 fi
 
+if [ -z "${W_shorten_64_to_32}" ]; then
 # TODO(tec): Fix -Wshorten-64-to-32 errors on FreeBSD and enable the warning.
 # -Wshorten-64-to-32 breaks compilation on FreeBSD aarch64 and i386
 if ! { [ "$TARGET_OS" = FreeBSD ] && [ "$TARGET_ARCHITECTURE" = arm64 -o "$TARGET_ARCHITECTURE" = i386 ]; }; then
@@ -634,6 +636,7 @@ EOF
   if [ "$?" = 0 ]; then
     COMMON_FLAGS="$COMMON_FLAGS -Wshorten-64-to-32"
   fi
+fi
 fi
 
 if [ "$PORTABLE" == "" ] || [ "$PORTABLE" == 0 ]; then

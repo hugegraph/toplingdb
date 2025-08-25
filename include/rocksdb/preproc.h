@@ -570,4 +570,9 @@ decltype(ROCKSDB_PP_CAT2(func_on_exit_,__LINE__))> \
   #define __always_inline __forceinline
 #endif
 
+#if defined(__ANDROID__)
+  #undef __always_inline
+  #define __always_inline inline
+#endif
+
 // clang-format on

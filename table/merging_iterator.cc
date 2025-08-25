@@ -177,7 +177,7 @@ private:
   #else
     using UintPrefix = unsigned __int128;
     FORCE_INLINE UintPrefix bswap_prefix(UintPrefix x) {
-      return UintPrefix(__bswap_64(uint64_t(x))) << 64 | __bswap_64(uint64_t(x >> 64));
+      return UintPrefix(NativeOfBigEndian64(uint64_t(x))) << 64 | NativeOfBigEndian64(uint64_t(x >> 64));
     }
   #endif
 #endif
