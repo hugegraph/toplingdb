@@ -2711,6 +2711,23 @@ ZSTD_SHA256 ?= 98e9c3d949d1b924e28e01eccb7deed865eefebf25c2f21c702e5cd5b63b85e1
 ZSTD_DOWNLOAD_BASE ?= https://github.com/facebook/zstd/archive
 CURL_SSL_OPTS ?= --tlsv1
 
+ifneq ($(wildcard libz.a),)
+    BUNDLED_COMPRESSION_LIBS += libz.a
+    CXXFLAGS += -DZLIB -I./zlib-$(ZLIB_VER)
+endif
+ifneq ($(wildcard libbz2.a),)
+    BUNDLED_COMPRESSION_LIBS += libbz2.a
+    CXXFLAGS += -DBZIP2 -I./bzip2-$(BZIP2_VER)
+endif
+ifneq ($(wildcard libsnappy.a),)
+    BUNDLED_COMPRESSION_LIBS += libsnappy.a
+    CXXFLAGS += -DSNAPPY -I./snappy-$(SNAPPY_VER) -I./snappy-$(SNAPPY_VER)/build
+endif
+ifneq ($(wildcard liblz4.a),)
+    BUNDLED_COMPRESSION_LIBS += liblz4.a
+    CXXFLAGS += -DLZ4 -I./lz4-$(LZ4_VER)/lib
+endif
+
 ifeq ($(PLATFORM), OS_MACOSX)
 ifeq (,$(findstring librocksdbjni-osx,$(ROCKSDBJNILIB)))
 ifeq ($(MACHINE),arm64)
@@ -2783,7 +2800,7 @@ bzip2-$(BZIP2_VER).tar.gz:
 libbz2.a: bzip2-$(BZIP2_VER).tar.gz
 	-rm -rf bzip2-$(BZIP2_VER)
 	tar xvzf bzip2-$(BZIP2_VER).tar.gz
-	cd bzip2-$(BZIP2_VER) && $(MAKE) CFLAGS='-fPIC -O2 -g -D_FILE_OFFSET_BITS=64 $(ARCHFLAG) ${JAVA_STATIC_DEPS_CCFLAGS} ${EXTRA_CFLAGS}' LDFLAGS='${JAVA_STATIC_DEPS_LDFLAGS} ${EXTRA_LDFLAGS}' AR='ar ${EXTRA_ARFLAGS}' libbz2.a
+	cd bzip2-$(BZIP2_VER) && $(MAKE) CFLAGS='-fPIC -O2 -g -D_FILE_OFFSET_BITS=64 $(ARCHFLAG) ${JAVA_STATIC_DEPS_CCFLAGS} ${EXTRA_CFLAGS}' LDFLAGS='${JAVA_STATIC_DEPS_LDFLAGS} ${EXTRA_LDFLAGS}' AR='${AR} ${EXTRA_ARFLAGS}' libbz2.a CC=${CC} LD=${LD}
 	cp bzip2-$(BZIP2_VER)/libbz2.a .
 
 snappy-$(SNAPPY_VER).tar.gz:
@@ -2812,7 +2829,7 @@ lz4-$(LZ4_VER).tar.gz:
 liblz4.a: lz4-$(LZ4_VER).tar.gz
 	-rm -rf lz4-$(LZ4_VER)
 	tar xvzf lz4-$(LZ4_VER).tar.gz
-	cd lz4-$(LZ4_VER)/lib && $(MAKE) CFLAGS='-fPIC -O2 $(ARCHFLAG) ${JAVA_STATIC_DEPS_CCFLAGS} ${EXTRA_CFLAGS}' LDFLAGS='${JAVA_STATIC_DEPS_LDFLAGS} ${EXTRA_LDFLAGS}' all
+	cd lz4-$(LZ4_VER)/lib && $(MAKE) CFLAGS='-fPIC -O2 $(ARCHFLAG) ${JAVA_STATIC_DEPS_CCFLAGS} ${EXTRA_CFLAGS}' LDFLAGS='${JAVA_STATIC_DEPS_LDFLAGS} ${EXTRA_LDFLAGS}' all CC=${CC} LD=${LD}
 	cp lz4-$(LZ4_VER)/lib/liblz4.a .
 
 zstd-$(ZSTD_VER).tar.gz:
@@ -3010,6 +3027,9 @@ endif
 	$(AM_V_at)$(CXX) $(CXXFLAGS) -shared -fPIC -o ./java/target/$(ROCKSDBJNILIB) \
 			  $(ALL_JNI_NATIVE_OBJECTS) $(LIB_OBJECTS) \
 			  $(addprefix ${TOPLING_CORE_DIR}/, $(TOPLING_LIB_OBJ_LIST_VAR)) \
+			  -Wl,--whole-archive \
+				${BUNDLED_COMPRESSION_LIBS} \
+			  -Wl,--no-whole-archive \
 			  $(JAVA_LDFLAGS) \
 			  $(filter-out -L${TOPLING_CORE_DIR}% -lterark-%, $(LDFLAGS))
 	$(AM_V_at)cp -a sideplugin/rockside/src/topling/web/{style.css,index.html}      java/target
