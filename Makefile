@@ -18,6 +18,8 @@ MACHINE ?= $(shell uname -m)
 ARFLAGS = ${EXTRA_ARFLAGS} rs
 STRIPFLAGS = -S -x
 
+STRIP_CMD ?= strip
+
 # beg topling specific
 DISABLE_WARNING_AS_ERROR=1
 LIB_MODE=shared
@@ -2890,7 +2892,7 @@ rocksdbjavastatic_javalib:
 	  $(LIB_OBJECTS) $(COVERAGEFLAGS) \
 	  $(JAVA_COMPRESSIONS) $(JAVA_STATIC_LDFLAGS)
 	cd java/target;if [ "$(DEBUG_LEVEL)" == "0" ]; then \
-		strip $(STRIPFLAGS) $(ROCKSDBJNILIB); \
+		${STRIP_CMD} $(STRIPFLAGS) $(ROCKSDBJNILIB); \
 	fi
 
 rocksdbjava_jar:
@@ -3012,7 +3014,7 @@ endif
 			  $(filter-out -L${TOPLING_CORE_DIR}% -lterark-%, $(LDFLAGS))
 	$(AM_V_at)cp -a sideplugin/rockside/src/topling/web/{style.css,index.html}      java/target
 ifeq ($(STRIP_DEBUG_INFO),1)
-	$(AM_V_at)strip java/target/*.so
+	$(AM_V_at)${STRIP_CMD} java/target/*.so
 endif
 	$(AM_V_at)cd java; $(JAR_CMD) -cf target/$(ROCKSDB_JAR) HISTORY*.md
 ifeq (${ROCKSDB_JAR_WITH_DYNAMIC_LIBS},1)
