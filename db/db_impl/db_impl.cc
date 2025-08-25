@@ -120,6 +120,8 @@
 #include <terark/fstring.hpp>
 #if defined(_MSC_VER)
   #define TOPLINGDB_WITH_FIBER_AIO 0
+#elif defined(__ANDROID__)
+  #define TOPLINGDB_WITH_FIBER_AIO 0
 #else
   #define TOPLINGDB_WITH_FIBER_AIO 1
 #endif
