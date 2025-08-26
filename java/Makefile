@@ -500,6 +500,11 @@ java_test: java resolve_test_deps
 			fi \
 		done
 	$(AM_V_at)rm -rf $(NATIVE_INCLUDE)-test
+	$(AM_V_at)echo "JAVA_HEADER_LIST_VAR := $(wildcard ${NATIVE_INCLUDE}/*.h)" > $(NATIVE_INCLUDE)/java_header_list.mk.tmp
+	$(AM_V_at)cd $(NATIVE_INCLUDE); \
+		if ! cmp -s java_header_list.mk.tmp  java_header_list.mk; then \
+		     mv  -f java_header_list.mk.tmp  java_header_list.mk; \
+		else rm  -f java_header_list.mk.tmp; fi
 
 test: java java_test
 	$(MAKE) run_test

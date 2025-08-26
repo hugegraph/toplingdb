@@ -359,7 +359,14 @@ ifeq (${TOPLING_USE_DYNAMIC_TLS},1)
 endif
 
 TOPLING_LIB_OBJ_LIST_FILE := ${OBJ_DIR}/shared_lib_obj_list.mk
+ROCKS_DEP_RULES:=$(filter-out clean format check-format check-buck-targets check-headers check-sources jclean package analyze tags unity.% checkout_folly, $(MAKECMDGOALS))
+ROCKS_DEP_RULES:=$(filter-out rust-support, $(ROCKS_DEP_RULES))
+ifneq ("$(ROCKS_DEP_RULES)", "")
 -include ${TOPLING_CORE_DIR}/${TOPLING_LIB_OBJ_LIST_FILE}
+  ifneq ($(filter j% rocksdbjava%, $(MAKECMDGOALS)),)
+    -include java/include/java_header_list.mk
+  endif
+endif
 
 ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test %_test2 jtest, $(MAKECMDGOALS)),)
   MAKE_UNIT_TEST ?= 1
@@ -3049,7 +3056,7 @@ install-jni: rocksdbjava
 	mkdir -p $(INSTALL_LIBDIR)
 	install -C -m 644 java/target/*.so $(INSTALL_LIBDIR)
 
-rocksdbjava-header:
+java/include/java_header_list.mk:
 	$(AM_V_GEN)$(MAKE) -C java java_test
 
 jclean:
@@ -3191,7 +3198,7 @@ endif
 # If skip dependencies is ON, skip including the dep files
 ifneq ($(SKIP_DEPENDS), 1)
 DEPFILES := $(patsubst %.cc, $(OBJ_DIR)/%.cc.d, $(ALL_SOURCES))
-ifneq ($(filter j% rocksdbjava%, $(MAKECMDGOALS)),)
+ifneq (${JAVA_HEADER_LIST_VAR},)
 DEPFILES += $(patsubst %.cc, $(OBJ_DIR)/%.cc.d, ${ALL_JNI_NATIVE_SOURCES})
 endif
 DEPFILES := $(patsubst %.cpp,$(OBJ_DIR)/%.cpp.d,$(DEPFILES))
@@ -3206,10 +3213,7 @@ endif
 
 # The .d file indicates .cc file's dependencies on .h files. We generate such
 # dependency by g++'s -MM option, whose output is a make dependency rule.
-ifeq (${MAKE_RESTARTS},)
-  GEN_ROCKSDB_JAVA_HEADER := rocksdbjava-header
-endif
-$(OBJ_DIR)/java/%.cc.d: java/%.cc ${GEN_ROCKSDB_JAVA_HEADER}
+$(OBJ_DIR)/java/%.cc.d: java/%.cc java/include/java_header_list.mk
 	$(AM_V_at)mkdir -p $(@D)
 	$(AM_V_at)$(CXX) $(CXXFLAGS) \
 	  -Ijava -Ijava/rocksjni $(JAVA_INCLUDE) $(ROCKSDB_PLUGIN_JNI_CXX_INCLUDEFLAGS)\
