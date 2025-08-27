@@ -37,7 +37,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
    *
    * @return key for the current entry.
    */
-  public byte[] key() {
+  public final byte[] key() {
     assert(isOwningHandle());
     assert(isValid());
     long keyPtr = getZeroCopyKeyPtr();
@@ -234,7 +234,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
    * <p>REQUIRES: !AtEnd() &amp;&amp; !AtStart()</p>
    * @return value for the current entry.
    */
-  public byte[] value() {
+  public final byte[] value() {
     assert(isOwningHandle());
     fetchValue();
     long valueLen = getZeroCopyValueLen();
