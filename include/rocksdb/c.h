@@ -54,8 +54,10 @@
 #else
 #define ROCKSDB_LIBRARY_API
 #endif
+#define ROCKSDB_LIBRARY_API_WEAK ROCKSDB_LIBRARY_API
 #else
 #define ROCKSDB_LIBRARY_API
+#define ROCKSDB_LIBRARY_API_WEAK __attribute__((__weak__))
 #endif
 
 #ifdef __cplusplus
@@ -587,7 +589,7 @@ extern ROCKSDB_LIBRARY_API void rocksdb_batched_multi_get_cf(
     rocksdb_pinnableslice_t** values, char** errs, const bool sorted_input);
 
 #if !defined(ROCKSDB_C_API_IMPLEMENTATION)
-extern ROCKSDB_LIBRARY_API void rocksdb_batched_multi_get_cf_fast(
+extern ROCKSDB_LIBRARY_API_WEAK void rocksdb_batched_multi_get_cf_fast(
     rocksdb_t* db, const rocksdb_readoptions_t* options,
     rocksdb_column_family_handle_t* column_family, size_t num_keys,
     const rocksdb_slice_t* keys_list,
@@ -752,11 +754,11 @@ extern ROCKSDB_LIBRARY_API void rocksdb_iter_get_error(
     const rocksdb_iterator_t*, char** errptr);
 
 #if !defined(ROCKSDB_C_API_IMPLEMENTATION)
-extern ROCKSDB_LIBRARY_API rocksdb_slice_t rocksdb_iter_key_fast(
+extern ROCKSDB_LIBRARY_API_WEAK rocksdb_slice_t rocksdb_iter_key_fast(
     const rocksdb_iterator_t*);
-extern ROCKSDB_LIBRARY_API rocksdb_slice_t rocksdb_iter_value_fast(
+extern ROCKSDB_LIBRARY_API_WEAK rocksdb_slice_t rocksdb_iter_value_fast(
     const rocksdb_iterator_t*);
-extern ROCKSDB_LIBRARY_API rocksdb_slice_t rocksdb_iter_timestamp_fast(
+extern ROCKSDB_LIBRARY_API_WEAK rocksdb_slice_t rocksdb_iter_timestamp_fast(
     const rocksdb_iterator_t*);
 #endif
 
@@ -1935,13 +1937,13 @@ extern ROCKSDB_LIBRARY_API rocksdb_readoptions_t* rocksdb_readoptions_create(
     void);
 extern ROCKSDB_LIBRARY_API void rocksdb_readoptions_destroy(
     rocksdb_readoptions_t*);
-extern ROCKSDB_LIBRARY_API void rocksdb_readoptions_start_pin(
+extern ROCKSDB_LIBRARY_API_WEAK void rocksdb_readoptions_start_pin(
     rocksdb_readoptions_t*);
-extern ROCKSDB_LIBRARY_API void rocksdb_readoptions_finish_pin(
+extern ROCKSDB_LIBRARY_API_WEAK void rocksdb_readoptions_finish_pin(
     rocksdb_readoptions_t*);
-extern ROCKSDB_LIBRARY_API void rocksdb_readoptions_set_async_queue_depth(
+extern ROCKSDB_LIBRARY_API_WEAK void rocksdb_readoptions_set_async_queue_depth(
     rocksdb_readoptions_t*, size_t);
-extern ROCKSDB_LIBRARY_API size_t rocksdb_readoptions_get_async_queue_depth(
+extern ROCKSDB_LIBRARY_API_WEAK size_t rocksdb_readoptions_get_async_queue_depth(
     rocksdb_readoptions_t*);
 extern ROCKSDB_LIBRARY_API void rocksdb_readoptions_set_verify_checksums(
     rocksdb_readoptions_t*, unsigned char);
@@ -3076,33 +3078,33 @@ rocksdb_wait_for_compact_options_get_timeout(
 //
 typedef struct side_plugin_repo_t side_plugin_repo_t;
 
-extern ROCKSDB_LIBRARY_API side_plugin_repo_t* side_plugin_repo_create(void);
+extern ROCKSDB_LIBRARY_API_WEAK side_plugin_repo_t* side_plugin_repo_create(void);
 
-extern ROCKSDB_LIBRARY_API void side_plugin_repo_import_auto_file
+extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_import_auto_file
 (side_plugin_repo_t*, const char* fname, char** errptr);
 
-extern ROCKSDB_LIBRARY_API rocksdb_t*
+extern ROCKSDB_LIBRARY_API_WEAK rocksdb_t*
 side_plugin_repo_open(side_plugin_repo_t*, rocksdb_column_family_handle_t***,
                       size_t* num_cf, char** errptr);
 
-extern ROCKSDB_LIBRARY_API void side_plugin_repo_start_http(side_plugin_repo_t*, char** errptr);
-extern ROCKSDB_LIBRARY_API void side_plugin_repo_close_http(side_plugin_repo_t*);
+extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_start_http(side_plugin_repo_t*, char** errptr);
+extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_close_http(side_plugin_repo_t*);
 
-extern ROCKSDB_LIBRARY_API rocksdb_options_t*
+extern ROCKSDB_LIBRARY_API_WEAK rocksdb_options_t*
 side_plugin_repo_get_db_options(side_plugin_repo_t*, const char* name, char** errptr);
 
-extern ROCKSDB_LIBRARY_API void
+extern ROCKSDB_LIBRARY_API_WEAK void
 side_plugin_repo_put_db_options(side_plugin_repo_t*, const char* name, rocksdb_options_t*);
 
-extern ROCKSDB_LIBRARY_API rocksdb_options_t*
+extern ROCKSDB_LIBRARY_API_WEAK rocksdb_options_t*
 side_plugin_repo_get_cf_options(side_plugin_repo_t*, const char* name, char** errptr);
 
-extern ROCKSDB_LIBRARY_API void
+extern ROCKSDB_LIBRARY_API_WEAK void
 side_plugin_repo_put_cf_options(side_plugin_repo_t*, const char* name, rocksdb_options_t*);
 
-extern ROCKSDB_LIBRARY_API void side_plugin_repo_close_all(side_plugin_repo_t*);
+extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_close_all(side_plugin_repo_t*);
 
-extern ROCKSDB_LIBRARY_API const char* rocksdb_get_name(rocksdb_t*);
+extern ROCKSDB_LIBRARY_API_WEAK const char* rocksdb_get_name(rocksdb_t*);
 
 #ifdef __cplusplus
 } /* end extern "C" */
