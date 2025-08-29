@@ -713,7 +713,10 @@ $(error pkg-config failed)
 endif
 endif
 
+# the commit msg says it is for osx, and it fails for android x64-aarch64 build
+ifeq ($(PLATFORM),OS_MACOSX)
 CXXFLAGS += $(ARCHFLAG)
+endif
 
 ifeq (,$(shell $(CXX) -fsyntax-only -march=armv8-a+crc+crypto -xc /dev/null 2>&1))
 ifneq ($(PLATFORM),OS_MACOSX)
