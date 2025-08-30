@@ -3233,25 +3233,19 @@ $(OBJ_DIR)/%.cpp.d: %.cpp
 	  -MM -MT'$@' -MT'$(<:.cpp=.o)' -MT'$(<:%.cpp=$(OBJ_DIR)/%.o)' \
 	      "$<" -o '$@'
 
-ifeq ($(HAVE_POWER8),1)
 DEPFILES_C = $(patsubst %.c, $(OBJ_DIR)/%.c.d, $(LIB_SOURCES_C))
 DEPFILES_ASM = $(patsubst %.S, $(OBJ_DIR)/%.S.d, $(LIB_SOURCES_ASM))
 
 $(OBJ_DIR)/%.c.d: %.c
-	@$(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
-	  -MM -MT'$@' -MT'$(<:.c=.o)' "$<" -o '$@'
+	$(AM_V_CC) $(CC) $(CFLAGS) $(PLATFORM_SHARED_CFLAGS) \
+	  -MM -MT'$@' -MT'$(<:.c=.o)' -MT'$(<:%.c=$(OBJ_DIR)/%.o)' \
+	      "$<" -o '$@'
 
 $(OBJ_DIR)/%.S.d: %.S
 	@$(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
 	  -MM -MT'$@' -MT'$(<:.S=.o)' "$<" -o '$@'
 
-$(DEPFILES_C): %.c.d
-
-$(DEPFILES_ASM): %.S.d
-depend: $(DEPFILES) $(DEPFILES_C) $(DEPFILES_ASM)
-else
 depend: $(DEPFILES)
-endif
 
 build_subset_tests: $(ROCKSDBTESTS_SUBSET)
 	$(AM_V_GEN)if [ -n "$${ROCKSDBTESTS_SUBSET_TESTS_TO_FILE}" ]; then echo "$(ROCKSDBTESTS_SUBSET)" > "$${ROCKSDBTESTS_SUBSET_TESTS_TO_FILE}"; else echo "$(ROCKSDBTESTS_SUBSET)"; fi
