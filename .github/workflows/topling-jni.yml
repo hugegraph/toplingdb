@@ -10,7 +10,7 @@ on:
       use_lto:
         required: false
         description: Link Use LTO
-        default: '0'
+        default: '1'
       unit_test:
         required: false
         type: boolean
@@ -62,26 +62,58 @@ jobs:
          libbz2-dev libcurl4-gnutls-dev liburing-dev \
          libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
 
-         gcc --version
+      - name: Init submodule & Setup ssh
+        run: |
          git submodule update --init --recursive
          mkdir -p ~/.ssh && mkdir -p /opt/lib
          ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
-
          echo nproc = `nproc`
 
-      - name: Run Unit Test
+      - name: Git clone SidePlugin(s)
+        run: |
+          # this will be auto triggerred in normal build, we defined
+          # it here is just for seperate steps more clearly.
+          # there is no dedicated target for this purpose, so we use `clean`
+          # as the target, it need not any `clean` at this point.
+          # `clean` is just used for triggers auto git clone
+          make clean
+
+      - name: make depend for Compile Unit Test
         if: ${{ inputs.unit_test }}
         run: |
+          # this will be auto triggerred in normal build, we defined
+          # it here is just for seperate steps more clearly.
+          # need to explicit set MAKE_UNIT_TEST=1
+          echo JAVA_HOME = $JAVA_HOME
           set -xe
-          echo $JAVA_HOME
+          make depend java/include/java_header_list.mk \
+               MAKE_UNIT_TEST=1 \
+               -j`nproc` DEBUG_LEVEL=1 UPDATE_REPO=0 \
+               DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1
+
+      - name: Compile & Run Java Unit Test
+        if: ${{ inputs.unit_test }}
+        run: |
+          echo JAVA_HOME = $JAVA_HOME
+          set -xe
+          # Makefile will auto set MAKE_UNIT_TEST=1 for `jtest`
           make jtest -j`nproc` DEBUG_LEVEL=1 UPDATE_REPO=0 \
+               DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1
+
+      - name: make depend for Compile RocksDBJava Release
+        run: |
+          echo JAVA_HOME = $JAVA_HOME
+          set -xe
+          env USE_LTO=${{inputs.use_lto}} \
+          make depend java/include/java_header_list.mk \
+               -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0 \
                DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1 \
-               ROCKSDB_JAR_WITH_DYNAMIC_LIBS=1
+               STRIP_DEBUG_INFO=1 ROCKSDB_JAR_WITH_DYNAMIC_LIBS=1
 
       - name: Compile RocksDBJava Release
         run: |
+          echo JAVA_HOME = $JAVA_HOME
           set -xe
-          echo $JAVA_HOME
           env USE_LTO=${{inputs.use_lto}} \
           make rocksdbjava -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0 \
                DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1 \
@@ -94,6 +126,7 @@ jobs:
 
       - name: Move to Local & Publish rocksjni to GitHub Packages
         run: |
+          echo JAVA_HOME = $JAVA_HOME
           set -xe
           ROCKSDB_VERSION=`build_tools/version.sh full`
           ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${{inputs.version_suffix}}
@@ -123,7 +156,7 @@ jobs:
           db_artifactId=`sed -n 's/.*<artifactId>\(f\?rocksdbjni\)<\/artifactId>.*/\1/p' ../pom.xml`
           mvn clean package -e -ntp -f pom.xml \
                -D db.artifactId=${db_artifactId} \
-               -D db.version=${ROCKSDB_JAVA_VERSION} \
+               -D db.version=${ROCKSDB_JAVA_VERSION}
 
       - name: Run JMH SideGetBenchmarks
         if: ${{ inputs.jmh_test }}
@@ -133,14 +166,12 @@ jobs:
           ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${{inputs.version_suffix}}
           mkdir -p /dev/shm/db_bench_community
           cd $GITHUB_WORKSPACE/java/jmh
-          ls ../../sideplugin/rockside/src/topling/web
           cp -v $GITHUB_WORKSPACE/sideplugin/rockside/src/topling/web/{style.css,index.html} /dev/shm/db_bench_community
           export LD_LIBRARY_PATH=$GITHUB_WORKSPACE/java/target:$LD_LIBRARY_PATH
           # Note: webserver should visit while running
           db_artifactId=`sed -n 's/.*<artifactId>\(f\?rocksdbjni\)<\/artifactId>.*/\1/p' ../pom.xml`
-          java -jar target/rocksdbjni-jmh-1.0-SNAPSHOT-benchmarks.jar \
-               -D db.artifactId=${db_artifactId} \
-               -D db.version=${ROCKSDB_JAVA_VERSION} \
+          java --add-opens java.base/java.nio=ALL-UNNAMED \
+               -jar target/rocksdbjni-jmh-1.0-SNAPSHOT-benchmarks.jar \
                -p keyCount=1000 -p keySize=128 -p valueSize=32768 \
                -p sideConf=$GITHUB_WORKSPACE/sideplugin/rockside/sample-conf/db_bench_community.yaml SideGetBenchmarks
 
@@ -157,5 +188,3 @@ jobs:
             -D db.version=${ROCKSDB_JAVA_VERSION} \
             -s $GITHUB_WORKSPACE/settings.xml \
             -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/$GITHUB_REPOSITORY
-        #env:
-        #  GITHUB_TOKEN: ${{ github.token }}

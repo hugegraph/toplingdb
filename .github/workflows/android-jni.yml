@@ -9,7 +9,7 @@ on:
       use_lto:
         required: false
         description: Link Use LTO
-        default: '0'
+        default: '1'
       verbose_build_output:
         required: false
         description: run make with V=...
