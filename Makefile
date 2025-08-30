@@ -228,7 +228,7 @@ endif
 # supported natively in Makefile).
 ifeq ($(USE_LTO), 1)
 	CXXFLAGS += -flto
-	LDFLAGS += -flto -fuse-linker-plugin
+	LDFLAGS += -flto=auto -fuse-linker-plugin
 endif
 
 # `COERCE_CONTEXT_SWITCH=1` will inject spurious wakeup and
