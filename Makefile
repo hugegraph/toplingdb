@@ -109,6 +109,20 @@ endif
 
 $(info $$DEBUG_LEVEL is $(DEBUG_LEVEL), $$LIB_MODE is $(LIB_MODE))
 
+ifneq (${DISABLE_JEMALLOC},)
+ifneq (${ROCKSDB_DISABLE_JEMALLOC},)
+  ifneq (${DISABLE_JEMALLOC},${ROCKSDB_DISABLE_JEMALLOC})
+    $(error DISABLE_JEMALLOC="${DISABLE_JEMALLOC}" but ROCKSDB_DISABLE_JEMALLOC="${ROCKSDB_DISABLE_JEMALLOC}")
+  endif
+endif
+endif
+ifeq (${DISABLE_JEMALLOC},1)
+  ifeq  (${ROCKSDB_DISABLE_JEMALLOC},)
+    export_ROCKSDB_DISABLE_JEMALLOC := export ROCKSDB_DISABLE_JEMALLOC=1;
+	export ROCKSDB_DISABLE_JEMALLOC = 1
+  endif
+endif
+
 # Detect what platform we're building on.
 # Export some common variables that might have been passed as Make variables
 # instead of environment variables.
@@ -121,6 +135,7 @@ dummy := $(shell (export ROCKSDB_ROOT="$(CURDIR)"; \
                   export PORTABLE="$(PORTABLE)"; \
                   export ROCKSDB_NO_FBCODE="$(ROCKSDB_NO_FBCODE)"; \
                   export ROCKSDB_USE_IO_URING="$(ROCKSDB_USE_IO_URING)"; \
+                  ${export_ROCKSDB_DISABLE_JEMALLOC} \
                   export ROCKSDB_DISABLE_TCMALLOC="$(ROCKSDB_DISABLE_TCMALLOC)"; \
                   export ROCKSDB_DISABLE_ZSTD=1; \
                   export USE_CLANG="$(USE_CLANG)"; \
