@@ -172,9 +172,6 @@ public interface ColumnFamilyOptionsInterface<T extends ColumnFamilyOptionsInter
    */
   T setMergeOperator(MergeOperator mergeOperator);
 
-  String mergeOperatorName();
-  MergeOperator mergeOperator();
-
   /**
    * A single CompactionFilter instance to call into during compaction.
    * Allows an application to modify/delete a key-value during background
