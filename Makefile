@@ -383,6 +383,7 @@ ifneq ("$(ROCKS_DEP_RULES)", "")
     -include java/include/java_header_list.mk
   endif
 endif
+TOPLING_LIB_OBJECTS = $(addprefix ${TOPLING_CORE_DIR}/, ${TOPLING_LIB_OBJ_LIST_VAR})
 
 ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test %_test2 jtest, $(MAKECMDGOALS)),)
   MAKE_UNIT_TEST ?= 1
@@ -413,8 +414,6 @@ CXXFLAGS += \
   -I${TOPLING_CORE_DIR}/boost-include \
   -I${TOPLING_CORE_DIR}/3rdparty/zstd
 
-LDFLAGS += -L${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared \
-           -lterark-{zbs,fsa,core}-${COMPILER}-${BUILD_TYPE_SIG}
 TOPLING_ZBS_TARGET := ${BUILD_ROOT}/lib_shared/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.${PLATFORM_SHARED_EXT}
 
 GIT_TOPLING_ROCKS ?= git@github.com:rockeet/topling-rocks
@@ -1366,8 +1365,8 @@ $(SHARED3): $(SHARED4)
 	ln -fs $(SHARED4) $(SHARED3)
 
 endif   # PLATFORM_SHARED_VERSIONED
-$(SHARED4): $(LIB_OBJECTS)
-	$(AM_V_CCLD) $(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(LIB_OBJECTS) $(EXTRA_SHARED_LIB_LIB) -Wl,-rpath,'$$ORIGIN' $(LDFLAGS) -o $@
+$(SHARED4): $(LIB_OBJECTS) ${TOPLING_CORE_DIR}/${TOPLING_LIB_OBJ_LIST_FILE}
+	$(AM_V_CCLD) $(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(LIB_OBJECTS) $(TOPLING_LIB_OBJECTS) $(EXTRA_SHARED_LIB_LIB) -Wl,-rpath,'$$ORIGIN' $(LDFLAGS) -o $@
 endif  # PLATFORM_SHARED_EXT
 
 .PHONY: check clean coverage ldb_tests package dbg gen-pc build_size \
@@ -1799,7 +1798,7 @@ package:
 # ---------------------------------------------------------------------------
 $(STATIC_LIBRARY): $(LIB_OBJECTS)
 	$(AM_V_AR)rm -f $@ $(SHARED1) $(SHARED2) $(SHARED3) $(SHARED4)
-	$(AM_V_at)$(AR) $(ARFLAGS) $@ $(LIB_OBJECTS)
+	$(AM_V_at)$(AR) $(ARFLAGS) $@ $(LIB_OBJECTS) $(TOPLING_LIB_OBJECTS)
 
 $(STATIC_TEST_LIBRARY): $(TEST_OBJECTS)
 	$(AM_V_AR)rm -f $@ $(SHARED_TEST_LIBRARY)
@@ -2625,20 +2624,16 @@ install-headers: gen-pc
 	cp -ar ${TOPLING_CORE_DIR}/boost-include/boost  $(DESTDIR)/$(PREFIX)/include
 	install -C -m 644 rocksdb.pc $(INSTALL_LIBDIR)/pkgconfig/rocksdb.pc
 
-install-static: TOPLING_LIB_STATIC_FILES := $(shell echo ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_static/libterark-{core,fsa,zbs}-${COMPILER}-${BUILD_TYPE_SIG}.a)
 install-static: $(LIBRARY) static_lib
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(LIBRARY) $(INSTALL_LIBDIR)
-	cp -a ${TOPLING_LIB_STATIC_FILES} $(INSTALL_LIBDIR)
 
-install-shared: TOPLING_LIB_SHARED_FILES := $(shell echo ${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared/libterark-{core,fsa,zbs}-${COMPILER}-${BUILD_TYPE_SIG}.${PLATFORM_SHARED_EXT})
 install-shared: $(SHARED4) shared_lib
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(SHARED4) $(INSTALL_LIBDIR)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED2)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED1)
-	cp -a ${TOPLING_LIB_SHARED_FILES} $(INSTALL_LIBDIR)
 
 install: install-${LIB_MODE}
 
@@ -2667,7 +2662,6 @@ gen-pc:
 	-echo 'Description: An embeddable persistent key-value store for fast storage' >> rocksdb.pc
 	-echo Version: $(shell ./build_tools/version.sh full) >> rocksdb.pc
 	-echo 'Libs: -L$${libdir} $(EXEC_LDFLAGS) -lrocksdb' >> rocksdb.pc
-	-echo 'Libs.private: -lterark-zbs-r -lterark-fsa-r -lterark-core-r $(PLATFORM_LDFLAGS)' >> rocksdb.pc
 	-echo 'Cflags: -I$${includedir} $(PLATFORM_CXXFLAGS)' >> rocksdb.pc
 	-echo 'Requires: $(subst ",,$(ROCKSDB_PLUGIN_PKGCONFIG_REQUIRES))' >> rocksdb.pc
 
@@ -3050,14 +3044,14 @@ ifeq ($(JAVA_HOME),)
 	$(error JAVA_HOME is not set)
 endif
 	$(AM_V_at)rm -f ./java/target/$(ROCKSDBJNILIB)
-	$(AM_V_CCLD) $(CXX) $(CXXFLAGS) -shared -fPIC -o java/target/$(ROCKSDBJNILIB) \
+	$(AM_V_CCLD) $(CXX) -shared -fPIC -o java/target/$(ROCKSDBJNILIB) \
 			  $(ALL_JNI_NATIVE_OBJECTS) $(LIB_OBJECTS) \
-			  $(addprefix ${TOPLING_CORE_DIR}/, $(TOPLING_LIB_OBJ_LIST_VAR)) \
+			  $(TOPLING_LIB_OBJECTS) \
 			  -Wl,--whole-archive \
 				${BUNDLED_COMPRESSION_LIBS} \
 			  -Wl,--no-whole-archive \
 			  $(JAVA_LDFLAGS) \
-			  $(filter-out -L${TOPLING_CORE_DIR}% -lterark-%, $(LDFLAGS))
+			  $(LDFLAGS)
 	$(AM_V_at)cp -a sideplugin/rockside/src/topling/web/{style.css,index.html}      java/target
 ifeq ($(STRIP_DEBUG_INFO),1)
 	$(AM_V_at)${STRIP_CMD} java/target/*.so
