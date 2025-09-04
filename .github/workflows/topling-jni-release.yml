@@ -66,9 +66,19 @@ jobs:
           echo JAVA_HOME = $JAVA_HOME
           set -xe
           env USE_LTO=1 \
-          make rocksdbjava -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0 \
+          make rocksdbjava install-dcompact -j`nproc` \
+               DEBUG_LEVEL=0 UPDATE_REPO=0 PREFIX=install-here \
                DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1 \
                STRIP_DEBUG_INFO=1 ROCKSDB_JAR_WITH_DYNAMIC_LIBS=1
+
+      - name: Strip and Change dcompact_worker
+        run: |
+          MAJOR_DOT_MINOR=`build_tools/version.sh major`.`build_tools/version.sh minor`
+          exebin=install-here/bin/dcompact_worker.exe
+          strip ${exebin}
+          patchelf --replace-needed librocksdb.so.${MAJOR_DOT_MINOR} librocksdbjni-linux64.so ${exebin}
+          gzip  ${exebin}
+          mv ${exebin}.gz java/target/dcompact_worker.gz
 
       - name: Prerelease and Generate Checksums
         env:
@@ -85,4 +95,4 @@ jobs:
           mv rocksdbjni-${ROCKSDB_VERSION}-linux64.jar ${TARGET_JAR}
           shasum -a 1 ${TARGET_JAR} > ${TARGET_JAR}.sha1
           md5sum      ${TARGET_JAR} > ${TARGET_JAR}.md5
-          gh release upload --clobber ${{github.ref_name}} ${TARGET_JAR}*
+          gh release upload --clobber ${{github.ref_name}} ${TARGET_JAR}* index.html style.css dcompact_worker.gz
