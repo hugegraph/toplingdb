@@ -377,6 +377,7 @@ endif
 TOPLING_LIB_OBJ_LIST_FILE := ${OBJ_DIR}/shared_lib_obj_list.mk
 ROCKS_DEP_RULES:=$(filter-out clean format check-format check-buck-targets check-headers check-sources jclean package analyze tags unity.% checkout_folly, $(MAKECMDGOALS))
 ROCKS_DEP_RULES:=$(filter-out rust-support, $(ROCKS_DEP_RULES))
+ROCKS_DEP_RULES:=$(filter-out watch-log, $(ROCKS_DEP_RULES))
 ifneq ("$(ROCKS_DEP_RULES)", "")
 -include ${TOPLING_CORE_DIR}/${TOPLING_LIB_OBJ_LIST_FILE}
   ifneq ($(filter j% rocksdbjava%, $(MAKECMDGOALS)),)
@@ -3355,6 +3356,7 @@ rust-support: $(filter-out util/build_version.cc, ${LIB_SOURCES}) $(OBJ_DIR)/uti
 #If so, include the dependencies; if not, do not include the dependency files
 ROCKS_DEP_RULES:=$(filter-out clean format check-format check-buck-targets check-headers check-sources jclean package analyze tags unity.% checkout_folly, $(MAKECMDGOALS))
 ROCKS_DEP_RULES:=$(filter-out rust-support, $(ROCKS_DEP_RULES))
+ROCKS_DEP_RULES:=$(filter-out watch-log, $(ROCKS_DEP_RULES))
 ifneq ("$(ROCKS_DEP_RULES)", "")
 -include $(DEPFILES)
 endif
