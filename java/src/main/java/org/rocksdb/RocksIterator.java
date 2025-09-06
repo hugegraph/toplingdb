@@ -400,6 +400,14 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
     prev0(nativeHandle_ | eagerFetchValue_);
   }
 
+  public long countKeysInRange(byte[] beg, byte[] end) {
+    return countKeysInRange0(nativeHandle_, beg, end, 0);
+  }
+  public long countKeysInRange(byte[] beg, byte[] end, int fixedUserKeyLen) {
+    return countKeysInRange0(nativeHandle_, beg, end, fixedUserKeyLen);
+  }
+  private native long countKeysInRange0(long handle, byte[] beg, byte[] end, int fixedUserKeyLen);
+
   // iter position is kept and native key/value ptr may be updated
   public final void refreshForDatabaseGC() throws RocksDBException {
     nativeRefreshForDatabaseGC(nativeHandle_);

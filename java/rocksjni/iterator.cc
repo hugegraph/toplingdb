@@ -435,3 +435,25 @@ JNIEXPORT void JNICALL Java_org_rocksdb_RocksIterator_nativeRefreshForDatabaseGC
   }
   ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
 }
+
+#define AllocaSliceFromJByteArray(slice, jbytearr) \
+  ROCKSDB_NAMESPACE::Slice slice;                  \
+  slice.size_ = env->GetArrayLength(jbytearr);     \
+  slice.data_ = (const char*)alloca(slice.size_);  \
+  env->GetByteArrayRegion(jbytearr, 0, slice.size_, (jbyte*)slice.data_); \
+  if (env->ExceptionCheck()) { return -1; }
+
+/*
+ * Class:     org_rocksdb_RocksIterator
+ * Method:    countKeysInRange0
+ * Signature: (J[B[BI)J
+ */
+JNIEXPORT jlong JNICALL Java_org_rocksdb_RocksIterator_countKeysInRange0
+(JNIEnv* env, jobject, jlong jiter, jbyteArray jbeg_key, jbyteArray jend_key, jint fixed_user_key_len)
+{
+  auto zc_it = reinterpret_cast<JZeroCopyIter*>(jiter);
+  auto iter = zc_it->iter;
+  AllocaSliceFromJByteArray(beg_key, jbeg_key);
+  AllocaSliceFromJByteArray(end_key, jend_key);
+  return iter->CountKeysInRange(beg_key, end_key, fixed_user_key_len);
+}
