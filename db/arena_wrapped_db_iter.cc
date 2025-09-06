@@ -65,6 +65,16 @@ Slice Iterator::SeekForPrevWithKey(const Slice& target) {
     return Slice(nullptr, 0);
 }
 
+size_t Iterator::CountKeysInRange(const Slice& beg, const Slice& end, size_t) {
+  size_t count = 0;
+  Seek(beg);
+  while (Valid()) {
+    ++count;
+    Next();
+  }
+  return count;
+}
+
 ArenaWrappedDBIter::ArenaWrappedDBIter() {
   // do nothing
 }

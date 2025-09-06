@@ -2094,6 +2094,32 @@ void DBIter::SeekToLast() {
   }
 }
 
+size_t DBIter::CountKeysInRange(const Slice& beg, const Slice& end,
+                                size_t fixed_user_key_len) {
+  if (fixed_user_key_len > 255) {
+    fixed_user_key_len = 0; // ignore invalid arg to disable optimization
+  }
+  if (beg.size() != fixed_user_key_len ||
+      end.size() != fixed_user_key_len) {
+    fixed_user_key_len = 0; // ignore invalid arg to disable optimization
+  }
+  auto old_fixed_user_key_len = this->fixed_user_key_len_;
+  const Slice* old_upper_bound = this->iterate_upper_bound_;
+  this->fixed_user_key_len_ = fixed_user_key_len;
+  this->iterate_upper_bound_ = &end;
+  this->SetFuncPtr();
+  Slice cur_key = this->SeekWithKey(beg);
+  size_t count = 0;
+  while (cur_key.data() != nullptr) {
+    ++count;
+    cur_key = this->NextWithKey();
+  }
+  this->fixed_user_key_len_ = old_fixed_user_key_len;
+  this->iterate_upper_bound_ = old_upper_bound;
+  this->SetFuncPtr();
+  return count;
+}
+
 Iterator* NewDBIterator(Env* env, const ReadOptions& read_options,
                         const ImmutableOptions& ioptions,
                         const MutableCFOptions& mutable_cf_options,

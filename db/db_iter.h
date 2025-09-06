@@ -235,6 +235,7 @@ class DBIter final : public Iterator {
   void Prev() final override;
   Slice NextWithKey() final override;
   Slice PrevWithKey() final override;
+  size_t CountKeysInRange(const Slice& beg, const Slice& end, size_t fixed_user_key_len) final override;
   // 'target' does not contain timestamp, even if user timestamp feature is
   // enabled.
   void Seek(const Slice& target) final override;
