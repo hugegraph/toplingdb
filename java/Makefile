@@ -271,6 +271,15 @@ JAVA_CMD := $(JAVA_HOME)/bin/java
 else
 JAVA_CMD := java
 endif
+ifneq (${DISABLE_JEMALLOC},1)
+LD_PRELOAD := libjemalloc.so
+endif
+ifeq ($(TOPLING_USE_DYNAMIC_TLS),1)
+LD_PRELOAD := ${LD_PRELOAD}:${ROCKSDBJNILIB}
+endif
+ifneq ($(LD_PRELOAD),)
+JAVA_CMD := LD_PRELOAD=${LD_PRELOAD} ${JAVA_CMD}
+endif
 JAVA_CMD := env LD_LIBRARY_PATH=target:${LD_LIBRARY_PATH} ${JAVA_CMD}
 endif
 
