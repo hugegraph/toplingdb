@@ -384,6 +384,7 @@ ifneq ("$(ROCKS_DEP_RULES)", "")
   endif
 endif
 TOPLING_LIB_OBJECTS = $(addprefix ${TOPLING_CORE_DIR}/, ${TOPLING_LIB_OBJ_LIST_VAR})
+LDFLAGS += ${TOPLING_CORE_LD_LIBS_EXTRA}
 
 ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test %_test2 jtest, $(MAKECMDGOALS)),)
   MAKE_UNIT_TEST ?= 1
