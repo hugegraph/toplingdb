@@ -235,7 +235,8 @@ EOF
         PLATFORM_LDFLAGS="$PLATFORM_LDFLAGS -lpthread"
         # PORT_FILES=port/dragonfly/dragonfly_specific.cc
         ;;
-    Cygwin)
+    Cygwin*)
+    CYGWIN*)
         PLATFORM=CYGWIN
         PLATFORM_SHARED_CFLAGS=""
         PLATFORM_CXXFLAGS="-std=gnu++17"
