@@ -2734,28 +2734,24 @@ ZSTD_DOWNLOAD_BASE ?= https://github.com/facebook/zstd/archive
 CURL_SSL_OPTS ?= --tlsv1
 
 ifneq ($(wildcard libz.a),)
-    BUNDLED_COMPRESSION_LIBS += libz.a
     CXXFLAGS += -DZLIB -I./zlib-$(ZLIB_VER)
-    PLATFORM_LDFLAGS:=$(filter-out -lz,$(PLATFORM_LDFLAGS))
-    JAVA_LDFLAGS:=$(filter-out -lz,$(JAVA_LDFLAGS))
+    PLATFORM_LDFLAGS:=$(filter-out -lz,$(PLATFORM_LDFLAGS)) libz.a
+    JAVA_LDFLAGS:=$(filter-out -lz,$(JAVA_LDFLAGS)) libz.a
 endif
 ifneq ($(wildcard libbz2.a),)
-    BUNDLED_COMPRESSION_LIBS += libbz2.a
     CXXFLAGS += -DBZIP2 -I./bzip2-$(BZIP2_VER)
-    PLATFORM_LDFLAGS:=$(filter-out -lbz2,$(PLATFORM_LDFLAGS))
-    JAVA_LDFLAGS:=$(filter-out -lbz2,$(JAVA_LDFLAGS))
+    PLATFORM_LDFLAGS:=$(filter-out -lbz2,$(PLATFORM_LDFLAGS)) libbz2.a
+    JAVA_LDFLAGS:=$(filter-out -lbz2,$(JAVA_LDFLAGS)) libbz2.a
 endif
 ifneq ($(wildcard libsnappy.a),)
-    BUNDLED_COMPRESSION_LIBS += libsnappy.a
     CXXFLAGS += -DSNAPPY -I./snappy-$(SNAPPY_VER) -I./snappy-$(SNAPPY_VER)/build
-    PLATFORM_LDFLAGS:=$(filter-out -lsnappy,$(PLATFORM_LDFLAGS))
-    JAVA_LDFLAGS:=$(filter-out -lsnappy,$(JAVA_LDFLAGS))
+    PLATFORM_LDFLAGS:=$(filter-out -lsnappy,$(PLATFORM_LDFLAGS)) libsnappy.a
+    JAVA_LDFLAGS:=$(filter-out -lsnappy,$(JAVA_LDFLAGS)) libsnappy.a
 endif
 ifneq ($(wildcard liblz4.a),)
-    BUNDLED_COMPRESSION_LIBS += liblz4.a
     CXXFLAGS += -DLZ4 -I./lz4-$(LZ4_VER)/lib
-    PLATFORM_LDFLAGS:=$(filter-out -llz4,$(PLATFORM_LDFLAGS))
-    JAVA_LDFLAGS:=$(filter-out -llz4,$(JAVA_LDFLAGS))
+    PLATFORM_LDFLAGS:=$(filter-out -llz4,$(PLATFORM_LDFLAGS)) liblz4.a
+    JAVA_LDFLAGS:=$(filter-out -llz4,$(JAVA_LDFLAGS)) liblz4.a
 endif
 
 ifeq ($(PLATFORM), OS_MACOSX)
@@ -3058,9 +3054,6 @@ endif
 	$(AM_V_CCLD) $(CXX) -shared -fPIC -o java/target/$(ROCKSDBJNILIB) \
 			  $(ALL_JNI_NATIVE_OBJECTS) $(LIB_OBJECTS) \
 			  $(TOPLING_LIB_OBJECTS) \
-			  -Wl,--whole-archive \
-				${BUNDLED_COMPRESSION_LIBS} \
-			  -Wl,--no-whole-archive \
 			  $(JAVA_LDFLAGS) \
 			  $(LDFLAGS)
 	$(AM_V_at)cp -a sideplugin/rockside/src/topling/web/{style.css,index.html}      java/target
