@@ -31,9 +31,7 @@ jobs:
          set -xe
          cat $GITHUB_WORKSPACE/settings.xml
          sudo apt-get update -y && sudo apt-get install -y \
-         libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
-         libbz2-dev libcurl4-gnutls-dev liburing-dev \
-         libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
+         libaio-dev zlib1g-dev libcurl4-gnutls-dev liburing-dev
 
       - name: Init submodule & Setup ssh
         run: |
@@ -49,13 +47,22 @@ jobs:
           # there is no dedicated target for this purpose, so we use `clean`
           # as the target, it need not any `clean` at this point.
           # `clean` is just used for triggers auto git clone
+          env USE_LTO=1 \
+              ROCKSDB_DISABLE_GFLAGS=1 \
           make clean
+
+      - name: make bundled compression libs
+        run: |
+          env USE_LTO=1 \
+              ROCKSDB_DISABLE_GFLAGS=1 \
+          make UPDATE_REPO=0 DEBUG_LEVEL=0 DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1 -j60 libsnappy.a liblz4.a libbz2.a
 
       - name: make depend for Compile RocksDBJava Release
         run: |
           echo JAVA_HOME = $JAVA_HOME
           set -xe
           env USE_LTO=1 \
+              ROCKSDB_DISABLE_GFLAGS=1 \
           make depend java/include/java_header_list.mk \
                -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0 \
                DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1 \
@@ -66,6 +73,7 @@ jobs:
           echo JAVA_HOME = $JAVA_HOME
           set -xe
           env USE_LTO=1 \
+              ROCKSDB_DISABLE_GFLAGS=1 \
           make rocksdbjava install-dcompact -j`nproc` \
                DEBUG_LEVEL=0 UPDATE_REPO=0 PREFIX=install-here \
                DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1 \
