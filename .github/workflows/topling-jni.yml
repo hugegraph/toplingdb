@@ -59,7 +59,7 @@ jobs:
          cat $GITHUB_WORKSPACE/settings.xml
          sudo apt-get update -y && sudo apt-get install -y \
          libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
-         libbz2-dev libcurl4-gnutls-dev liburing-dev \
+         libbz2-dev libcurl4-openssl-dev liburing-dev \
          libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
 
       - name: Init submodule & Setup ssh
@@ -123,6 +123,9 @@ jobs:
           cd java
           # F\?ROCKSDB_JAVA_VERSION for both flink and normal rocksdbjni
           sed 's/\${F\?ROCKSDB_JAVA_VERSION}/'"${ROCKSDB_JAVA_VERSION}/" pom.xml.template > pom.xml
+
+      - name: Show librocksdbjni dependency
+        run: ldd java/target/*.so
 
       - name: Move to Local & Publish rocksjni to GitHub Packages
         run: |

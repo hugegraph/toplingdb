@@ -31,7 +31,7 @@ jobs:
          set -xe
          cat $GITHUB_WORKSPACE/settings.xml
          sudo apt-get update -y && sudo apt-get install -y \
-         libaio-dev zlib1g-dev libcurl4-gnutls-dev liburing-dev
+         libaio-dev zlib1g-dev libcurl4-openssl-dev liburing-dev
 
       - name: Init submodule & Setup ssh
         run: |
