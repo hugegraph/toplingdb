@@ -74,6 +74,10 @@
 #include <terark/smartmap.hpp>
 #include <terark/fstring.hpp>
 
+#if defined(__clang__)
+#pragma clang diagnostic ignored "-Wshorten-64-to-32"
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 // anon namespace for file-local types

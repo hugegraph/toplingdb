@@ -96,7 +96,7 @@ class MockMemTableRepFactory : public MemTableRepFactory {
       const MutableCFOptions& mcfo,
       const MemTableRep::KeyComparator& cmp, Allocator* allocator,
       const SliceTransform* transform, Logger* logger,
-      uint32_t column_family_id) {
+      uint32_t column_family_id) override {
     last_column_family_id_ = column_family_id;
     if (g_cspp_fac) {
       auto ucmp = cmp.icomparator()->user_comparator();

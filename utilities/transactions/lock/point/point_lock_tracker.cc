@@ -62,8 +62,8 @@ struct PointLockTrackerDelta : public LockTracker {
   using CFMap = terark::VectorIndexMap<ColumnFamilyId, OneCF>;
   CFMap cf_delta_vec_;
   const PointLockTracker* base_tracker_;
-  class CF_Iter;
-  class Key_Iter;
+  struct CF_Iter;
+  struct Key_Iter;
   PointLockTrackerDelta(const PointLockTracker*);
   PointLockTrackerDelta(const PointLockTrackerDelta&) = delete;
   PointLockTrackerDelta& operator=(const PointLockTrackerDelta&) = delete;
@@ -357,7 +357,7 @@ PointLockStatus PointLockTracker::GetPointLockStatus(
       status.locked = true;
       status.exclusive = key_info.exclusive;
       status.seq = key_info.seq;
-      status.iter = idx;
+      status.iter = uint32_t(idx);
     }
     status.hint = hint;
   }

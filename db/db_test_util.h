@@ -275,7 +275,7 @@ class SpecialEnv : public EnvWrapper {
       }
 
       intptr_t FileDescriptor() const final { return base_->FileDescriptor(); }
-      void SetFileSize(uint64_t fsize) { base_->SetFileSize(fsize); }
+      void SetFileSize(uint64_t fsize) final { base_->SetFileSize(fsize); }
 
      private:
       SpecialEnv* env_;
@@ -353,7 +353,7 @@ class SpecialEnv : public EnvWrapper {
       }
       uint64_t GetFileSize() final { return base_->GetFileSize(); }
       intptr_t FileDescriptor() const final { return base_->FileDescriptor(); }
-      void SetFileSize(uint64_t fsize) { base_->SetFileSize(fsize); }
+      void SetFileSize(uint64_t fsize) final { base_->SetFileSize(fsize); }
 
      private:
       SpecialEnv* env_;
@@ -384,7 +384,7 @@ class SpecialEnv : public EnvWrapper {
         return base_->Allocate(offset, len);
       }
       intptr_t FileDescriptor() const final { return base_->FileDescriptor(); }
-      void SetFileSize(uint64_t fsize) { base_->SetFileSize(fsize); }
+      void SetFileSize(uint64_t fsize) final { base_->SetFileSize(fsize); }
 
      private:
       SpecialEnv* env_;

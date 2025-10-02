@@ -1224,7 +1224,7 @@ static uint32_t gf_multiply_crc32c_hw(uint64_t crc1, uint64_t crc2) {
 
   // Use hardware crc32c to do reduction from 64 -> 32 bytes
   const auto res2 = _mm_cvtsi128_si64(res1);
-  const auto res3 = _mm_crc32_u32(0, res2);
+  const auto res3 = _mm_crc32_u32(0, uint32_t(res2));
   const auto res4 = _mm_extract_epi32(res1, 1);
   return res3 ^ res4;
 #else

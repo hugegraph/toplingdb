@@ -1951,7 +1951,7 @@ public:
     IOStatus ios;
     return {New(&ios, fs, fileno, fname, mmap_size), ios};
   }
-  uint32_t fileno;
+  uint64_t fileno;
   std::shared_ptr<uint64_t> tail_pos;
 };
 
