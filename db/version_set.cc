@@ -237,17 +237,16 @@ Status OverlapWithIterator(const Comparator* ucmp,
 // in a smaller level, later levels are irrelevant (unless we
 // are MergeInProgress).
 class FilePicker {
-#if defined(_MSC_VER) || defined(__clang__)
+#if !TOPLING_USE_BOUND_PMF
   typedef FdWithKeyRange* (FilePicker::*GetNextFileFN)();
   #define Set_m_get_next_file(Cmp) \
     m_get_next_file = &FilePicker::GetNextFileTmpl<Cmp>
 #else
   typedef FdWithKeyRange* (*GetNextFileFN)(FilePicker*);
-  #pragma GCC diagnostic ignored "-Wpmf-conversions"
   #define Set_m_get_next_file(Cmp) \
     do { \
       auto func = &FilePicker::GetNextFileTmpl<Cmp>;  \
-      m_get_next_file = (GetNextFileFN)(this->*func); \
+      m_get_next_file = ExtractFuncPtr<GetNextFileFN>(this, func); \
     } while (0)
 #endif
   GetNextFileFN m_get_next_file;
@@ -309,7 +308,7 @@ class FilePicker {
 
   __always_inline
   FdWithKeyRange* GetNextFile() {
-  #if defined(_MSC_VER) || defined(__clang__)
+  #if !TOPLING_USE_BOUND_PMF
     return (this->*m_get_next_file)();
   #else
     return m_get_next_file(this);

@@ -426,7 +426,7 @@ class DBIter final : public Iterator {
   template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS>
   bool FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix);
   void SetFuncPtr();
-#if defined(_MSC_VER) || defined(__clang__)
+#if !TOPLING_USE_BOUND_PMF
   typedef bool (DBIter::*FindNextUserEntryFN)(bool, const Slice*);
 #else
   typedef bool (*FindNextUserEntryFN)(DBIter*, bool, const Slice*);

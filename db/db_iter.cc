@@ -112,10 +112,6 @@ DBIter::DBIter(Env* _env, const ReadOptions& read_options,
          user_comparator_.user_comparator()->timestamp_size());
   enable_perf_timer_ = perf_level >= PerfLevel::kEnableTimeExceptForMutex;
   fixed_user_key_len_ = read_options.fixed_user_key_len;
-#if defined(_MSC_VER) || defined(__clang__)
-#else
-  #pragma GCC diagnostic ignored "-Wpmf-conversions"
-#endif
   SetFuncPtr();
 }
 
@@ -418,7 +414,7 @@ bool DBIter::SetValueAndColumnsFromMergeResult(const Status& merge_status,
 // more entry for the prefix can be found.
 __always_inline
 bool DBIter::FindNextUserEntry(bool skipping_saved_key, const Slice* prefix) {
-#if defined(_MSC_VER) || defined(__clang__)
+#if !TOPLING_USE_BOUND_PMF
   return (this->*m_find_next_entry)(skipping_saved_key, prefix);
 #else
   return m_find_next_entry(this, skipping_saved_key, prefix);
@@ -578,10 +574,10 @@ bool DBIter::FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix)
           (skipping_saved_key, prefix);
 }
 void DBIter::SetFuncPtr() {
-#if defined(_MSC_VER) || defined(__clang__)
+#if !TOPLING_USE_BOUND_PMF
   #define BOUND_PMF(func) func
 #else
-  #define BOUND_PMF(func) (FindNextUserEntryFN)(this->*func)
+  #define BOUND_PMF(func) ExtractFuncPtr<FindNextUserEntryFN>(this, func)
 #endif
   #define SetFindNext(FuncName, CmpNoTS) \
     if (false) {} \

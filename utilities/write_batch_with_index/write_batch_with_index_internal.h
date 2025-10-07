@@ -127,8 +127,7 @@ class BaseDeltaIterator final : public Iterator {
   std::unique_ptr<Iterator> base_iterator_;
   std::unique_ptr<WBWIIterator> delta_iterator_;
   Slice delta_key;
- #if defined(_MSC_VER) || defined(__clang__)
- #else
+ #if TOPLING_USE_BOUND_PMF
   typedef bool  (*BaseIterValidFN)(const Iterator*);
   typedef void  (*BaseIterScanFN)(Iterator*); // Prev/Next
   typedef Slice (*BaseIterGetSliceFN)(const Iterator*); // key/value

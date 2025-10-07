@@ -47,21 +47,19 @@ BaseDeltaIterator::BaseDeltaIterator(ColumnFamilyHandle* column_family,
   delta_valid_ = false;
   delta_status_code_ = Status::kOk;
   opt_cmp_type_ = comparator->opt_cmp_type();
- #if defined(_MSC_VER) || defined(__clang__)
- #else
-  #pragma GCC diagnostic ignored "-Wpmf-conversions"
-  base_iter_valid_     = (BaseIterValidFN   )(base_iterator->*(&Iterator::Valid));
-  base_iter_next_      = (BaseIterScanFN    )(base_iterator->*(&Iterator::Next));
-  base_iter_get_key_   = (BaseIterGetSliceFN)(base_iterator->*(&Iterator::key));
-  base_iter_get_value_ = (BaseIterGetSliceFN)(base_iterator->*(&Iterator::value));
-  delta_iter_next_key_ = (DeltaIterScanKeyFN)(delta_iterator->*(&WBWIIterator::NextKey));
-  delta_iter_user_key_ = (DeltaIterUserKeyFN)(delta_iterator->*(&InternalIterator::user_key));
+ #if TOPLING_USE_BOUND_PMF
+  base_iter_valid_     = ExtractFuncPtr<BaseIterValidFN   >( base_iterator, &Iterator::Valid);
+  base_iter_next_      = ExtractFuncPtr<BaseIterScanFN    >( base_iterator, &Iterator::Next);
+  base_iter_get_key_   = ExtractFuncPtr<BaseIterGetSliceFN>( base_iterator, &Iterator::key);
+  base_iter_get_value_ = ExtractFuncPtr<BaseIterGetSliceFN>( base_iterator, &Iterator::value);
+  delta_iter_next_key_ = ExtractFuncPtr<DeltaIterScanKeyFN>(delta_iterator, &WBWIIterator::NextKey);
+  delta_iter_user_key_ = ExtractFuncPtr<DeltaIterUserKeyFN, InternalIterator>(delta_iterator, &InternalIterator::user_key);
  #endif
 }
 
 __always_inline bool BaseDeltaIterator::UpdateDeltaKey(bool is_valid) {
   if (LIKELY(is_valid)) {
-    #if defined(_MSC_VER) || defined(__clang__)
+    #if !TOPLING_USE_BOUND_PMF
       this->delta_key = delta_iterator_->user_key();
     #else
       this->delta_key = delta_iter_user_key_(delta_iterator_.get());
@@ -153,7 +151,7 @@ void BaseDeltaIterator::Next() {
     }
     if (DeltaValid() && BaseValid()) {
       if (0 == comparator_->CompareWithoutTimestamp(
-                #if defined(_MSC_VER) || defined(__clang__)
+                #if !TOPLING_USE_BOUND_PMF
                    delta_key, /*a_has_ts=*/false,
                    base_iterator_->key(),
                 #else
@@ -215,7 +213,7 @@ void BaseDeltaIterator::Prev() {
 }
 
 Slice BaseDeltaIterator::key() const {
- #if defined(_MSC_VER) || defined(__clang__)
+ #if !TOPLING_USE_BOUND_PMF
   return current_at_base_ ? base_iterator_->key()
                           : delta_key;
  #else
@@ -326,22 +324,14 @@ inline bool BaseDeltaIterator::AdvanceIter(WBWIIterator* i, bool forward) {
 }
 inline bool BaseDeltaIterator::AdvanceIterImpl(WBWIIterator* i, bool forward) {
   if (forward) {
-   #if defined(_MSC_VER) || defined(__clang__)
-    return i->NextKey();
-   #else
-    return delta_iter_next_key_(i);
-   #endif
+    return TOPLING_IF_BOUND_PMF_CALL(delta_iter_next_key_, NextKey, i);
   } else {
     return i->PrevKey();
   }
 }
 inline void BaseDeltaIterator::AdvanceIter(Iterator* i, bool forward) {
   if (forward) {
-   #if defined(_MSC_VER) || defined(__clang__)
-    i->Next();
-   #else
-    base_iter_next_(i);
-   #endif
+    TOPLING_IF_BOUND_PMF(base_iter_next_(i), i->Next());
   } else {
     i->Prev();
   }
@@ -350,7 +340,7 @@ inline void BaseDeltaIterator::AdvanceIter(Iterator* i, bool forward) {
 inline void BaseDeltaIterator::AdvanceDelta(bool const_forward) {
   assert(const_forward == forward_);
   if (const_forward) {
-   #if defined(_MSC_VER) || defined(__clang__)
+   #if !TOPLING_USE_BOUND_PMF
     delta_valid_ = delta_iterator_->NextKey();
    #else
     delta_valid_ = delta_iter_next_key_(delta_iterator_.get());
@@ -364,7 +354,7 @@ inline void BaseDeltaIterator::AdvanceDelta(bool const_forward) {
 inline void BaseDeltaIterator::AdvanceBase(bool const_forward) {
   assert(const_forward == forward_);
   if (const_forward) {
-   #if defined(_MSC_VER) || defined(__clang__)
+   #if !TOPLING_USE_BOUND_PMF
     base_iterator_->Next();
    #else
     base_iter_next_(base_iterator_.get());
@@ -492,7 +482,7 @@ void BaseDeltaIterator::SetValueAndColumnsFromDelta() {
 }
 
 inline bool BaseDeltaIterator::BaseValid() const {
- #if defined(_MSC_VER) || defined(__clang__)
+ #if !TOPLING_USE_BOUND_PMF
   return base_iterator_->Valid();
  #else
   return base_iter_valid_(base_iterator_.get());
@@ -547,7 +537,7 @@ void BaseDeltaIterator::UpdateCurrentTpl(bool const_forward, CmpNoTS cmp) {
       return;
     }
     equal_keys_ = false;
-   #if defined(_MSC_VER) || defined(__clang__)
+   #if !TOPLING_USE_BOUND_PMF
     if (UNLIKELY(!base_iterator_->Valid()))
    #else
     if (UNLIKELY(!base_iter_valid_(base_iterator_)))
@@ -580,7 +570,7 @@ void BaseDeltaIterator::UpdateCurrentTpl(bool const_forward, CmpNoTS cmp) {
       SetValueAndColumnsFromBase();
       return;
     } else {
-     #if defined(_MSC_VER) || defined(__clang__)
+     #if !TOPLING_USE_BOUND_PMF
       int compare = const_forward
                   ? cmp.compare(delta_key, base_iterator_->key())
                   : cmp.compare(base_iterator_->key(), delta_key)
