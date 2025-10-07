@@ -1181,6 +1181,33 @@ DEFINE_bool(io_uring_enabled, true,
             "If true, enable the use of IO uring if the platform supports it");
 extern "C" bool RocksDbIOUringEnable() { return FLAGS_io_uring_enabled; }
 DEFINE_string(json, "", "json config file.");
+DEFINE_string(wkey_file, "", "read text key file instead of generating for write.");
+DEFINE_string(rkey_file, "", "read text key file instead of generating for read.");
+struct TextInputFile : std::ifstream {
+  const std::string m_fname;
+  std::string m_line;
+  TextInputFile(const std::string& fname) : m_fname(fname) {
+    if (!fname.empty()) {
+      this->open(fname.c_str());
+      if (!this->is_open()) {
+        fprintf(stderr, "Could not open keyfile %s\n", fname.c_str());
+        exit(1);
+      }
+    }
+  }
+  const std::string& ReadLine() {
+    if (!std::getline(*this, m_line)) {
+      this->clear();
+      this->seekg(0, std::ios::beg); // Rewind and start over.
+      if (!std::getline(*this, m_line)) {
+        fprintf(stderr, "Could not read from file %s\n",
+                m_fname.c_str());
+        exit(1);
+      }
+    }
+    return m_line;
+  }
+};
 
 DEFINE_bool(adaptive_readahead, false,
             "carry forward internal auto readahead size from one file to next "
@@ -5163,6 +5190,7 @@ class Benchmark {
   void DoWrite(ThreadState* thread, WriteMode write_mode) {
     const int test_duration = write_mode == RANDOM ? FLAGS_duration : 0;
     const int64_t num_ops = writes_ == 0 ? num_ : writes_;
+    TextInputFile key_file(FLAGS_wkey_file);
 
     size_t num_key_gens = 1;
     if (db_.db == nullptr) {
@@ -5432,7 +5460,11 @@ class Benchmark {
         } else {
           rand_num = key_gens[id]->Next();
         }
+      if (key_file.is_open()) {
+        key = Slice(key_file.ReadLine());
+      } else {
         GenerateKeyFromInt(rand_num, FLAGS_num, &key);
+      }
         Slice val;
         if (kNumDispAndPersEntries > 0) {
           random_value = rnd_disposable_entry.RandomString(
@@ -6176,6 +6208,7 @@ class Benchmark {
   }
 
   void ReadRandom(ThreadState* thread) {
+    TextInputFile key_file(FLAGS_rkey_file.c_str());
     int64_t read = 0;
     int64_t found = 0;
     int64_t bytes = 0;
@@ -6206,6 +6239,9 @@ class Benchmark {
       // We use same key_rand as seed for key and column family so that we can
       // deterministically find the cfh corresponding to a particular key, as it
       // is done in DoWrite method.
+    if (key_file.is_open()) {
+      key = Slice(key_file.ReadLine());
+    } else {
       if (entries_per_batch_ > 1 && FLAGS_multiread_stride) {
         if (++num_keys == entries_per_batch_) {
           num_keys = 0;
@@ -6221,6 +6257,7 @@ class Benchmark {
         key_rand = GetRandomKey(&thread->rand);
       }
       GenerateKeyFromInt(key_rand, FLAGS_num, &key);
+    }
       read++;
       std::string* ts_ptr = nullptr;
      #if defined(TOPLINGDB_WITH_TIMESTAMP)
@@ -6275,6 +6312,12 @@ class Benchmark {
       } else if (!s.IsNotFound()) {
         fprintf(stderr, "Get returned an error: %s\n", s.ToString().c_str());
         abort();
+      }
+      else if (key_file.is_open()) {
+        static bool print_not_found = terark::getEnvBool("PRINT_NOT_FOUND");
+        if (print_not_found) {
+          fprintf(stderr, "NotFound: key = %s\n", key.ToString().c_str());
+        }
       }
 
       if (limiter != nullptr && read % 256 == 255) {
