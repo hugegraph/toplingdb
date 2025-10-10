@@ -1344,7 +1344,7 @@ IOStatus PosixWritableFile::Appendv(const Slice* parts, size_t num,
   static_assert(offsetof(struct iovec, iov_len) == offsetof(Slice, size_));
   ssize_t done;
   while (true) {
-    done = writev(fd_, pvec, num);
+    done = writev(fd_, pvec, int(num));
     if (done < 0) {
       if (errno == EINTR) {
         continue;
