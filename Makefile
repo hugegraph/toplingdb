@@ -606,7 +606,6 @@ else
 endif
 endif # WITH_TOPLING_DCOMPACT
 
-export LD_LIBRARY_PATH:=${TOPLING_CORE_DIR}/${BUILD_ROOT}/lib_shared:${LD_LIBRARY_PATH}
 ifeq (${WITH_TOPLING_ROCKS},1)
 ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   +=  -Isideplugin/topling-rocks/src
@@ -1746,14 +1745,14 @@ clean-not-downloaded: clean-ext-libraries-bin clean-rocks clean-not-downloaded-r
 
 clean-rocks:
 # Not practical to exactly match all versions/variants in naming (e.g. debug or not)
-	rm -f ${LIBNAME}*.so* ${LIBNAME}*.a
-	rm -f $(BENCHMARKS) $(TOOLS) $(TESTS) $(PARALLEL_TEST) $(MICROBENCHS)
-	rm -rf $(CLEAN_FILES) ios-x86 ios-arm scan_build_report
+	$(AM_V_at)rm -f ${LIBNAME}*.so* ${LIBNAME}*.a
+	$(AM_V_at)rm -f $(BENCHMARKS) $(TOOLS) $(TESTS) $(PARALLEL_TEST) $(MICROBENCHS)
+	$(AM_V_at)rm -rf $(CLEAN_FILES) ios-x86 ios-arm scan_build_report
 	rm -rf ${OBJ_DIR}
 	rm -rf sideplugin/topling-dcompact/tools/dcompact/build
 	+$(MAKE) -C ${TOPLING_CORE_DIR} clean
-	$(FIND) . -name "*.[oda]" -exec rm -f {} \;
-	$(FIND) . -type f \( -name "*.gcda" -o -name "*.gcno" \) -exec rm -f {} \;
+	$(AM_V_at)$(FIND) . -name "*.[oda]" -exec rm -f {} \;
+	$(AM_V_at)$(FIND) . -type f \( -name "*.gcda" -o -name "*.gcno" \) -exec rm -f {} \;
 
 clean-rocksjava: clean-rocks
 	rm -rf jl jls
