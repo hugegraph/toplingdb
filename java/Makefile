@@ -274,7 +274,7 @@ endif
 ifneq (${DISABLE_JEMALLOC},1)
 LD_PRELOAD := libjemalloc.so
 endif
-ifeq ($(TOPLING_USE_DYNAMIC_TLS),1)
+ifneq ($(TOPLING_USE_DYNAMIC_TLS),1)
 LD_PRELOAD := ${LD_PRELOAD}:${ROCKSDBJNILIB}
 endif
 ifneq ($(LD_PRELOAD),)
