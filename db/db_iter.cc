@@ -157,7 +157,7 @@ bool DBIter::ParseKey(ParsedInternalKey* ikey) {
 #endif
 }
 
-#if defined(__GLIBCXX__)
+#if defined(__GLIBCXX__) && (!defined(_GLIBCXX_USE_CXX11_ABI) || _GLIBCXX_USE_CXX11_ABI)
 void string_clear_no_touch_memory(std::string*);
 template <typename Money_t, Money_t std::string::* p>
 struct string_clear_thief {
