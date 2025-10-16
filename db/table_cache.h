@@ -112,6 +112,7 @@ class TableCache {
   //                       recorded
   // @param skip_filters Disables loading/accessing the filter block
   // @param level The level this table is at, -1 for "not set / don't know"
+  inline
   Status Get(
       const ReadOptions& options,
       const InternalKeyComparator& internal_comparator,
@@ -119,8 +120,40 @@ class TableCache {
       uint8_t block_protection_bytes_per_key,
       const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
       HistogramImpl* file_read_hist = nullptr, bool skip_filters = false,
-      int level = -1, size_t max_file_size_for_l0_meta_pin = 0);
+      int level = -1, size_t max_file_size_for_l0_meta_pin = 0) {
+    return m_get(this, options, internal_comparator, file_meta, k, get_context,
+         block_protection_bytes_per_key, prefix_extractor, file_read_hist,
+        skip_filters, level, max_file_size_for_l0_meta_pin);
+  }
 
+private:
+  Status GetWithRowCache(
+      const ReadOptions& options,
+      const InternalKeyComparator& internal_comparator,
+      const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
+      uint8_t block_protection_bytes_per_key,
+      const std::shared_ptr<const SliceTransform>& prefix_extractor,
+      HistogramImpl* file_read_hist, bool skip_filters,
+      int level, size_t max_file_size_for_l0_meta_pin);
+  Status GetNoneRowCache(
+      const ReadOptions& options,
+      const InternalKeyComparator& internal_comparator,
+      const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
+      uint8_t block_protection_bytes_per_key,
+      const std::shared_ptr<const SliceTransform>& prefix_extractor,
+      HistogramImpl* file_read_hist, bool skip_filters,
+      int level, size_t max_file_size_for_l0_meta_pin);
+
+  Status (*m_get)(TableCache*,
+      const ReadOptions& options,
+      const InternalKeyComparator& internal_comparator,
+      const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
+      uint8_t block_protection_bytes_per_key,
+      const std::shared_ptr<const SliceTransform>& prefix_extractor,
+      HistogramImpl* file_read_hist, bool skip_filters,
+      int level, size_t max_file_size_for_l0_meta_pin);
+
+public:
   // Return the range delete tombstone iterator of the file specified by
   // `file_meta`.
   Status GetRangeTombstoneIterator(

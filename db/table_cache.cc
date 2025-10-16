@@ -84,6 +84,10 @@ TableCache::TableCache(const ImmutableOptions& ioptions,
     // If the same cache is shared by multiple instances, we need to
     // disambiguate its entries.
     PutVarint64(&row_cache_id_, ioptions_.row_cache->NewId());
+    m_get = terark::ExtractFuncPtr<decltype(m_get)>(this, &TableCache::GetWithRowCache);
+  }
+  else {
+    m_get = terark::ExtractFuncPtr<decltype(m_get)>(this, &TableCache::GetNoneRowCache);
   }
 }
 
@@ -436,7 +440,7 @@ bool TableCache::GetFromRowCache(const Slice& user_key, IterKey& row_cache_key,
   return found;
 }
 
-Status TableCache::Get(
+Status TableCache::GetWithRowCache(
     const ReadOptions& options,
     const InternalKeyComparator& internal_comparator,
     const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
@@ -525,6 +529,52 @@ Status TableCache::Get(
     cache_.Release(handle);
   }
   return s;
+}
+
+Status TableCache::GetNoneRowCache(
+    const ReadOptions& options,
+    const InternalKeyComparator& internal_comparator,
+    const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
+    uint8_t block_protection_bytes_per_key,
+    const std::shared_ptr<const SliceTransform>& prefix_extractor,
+    HistogramImpl* file_read_hist, bool skip_filters, int level,
+    size_t max_file_size_for_l0_meta_pin) {
+  TableReader* t = file_meta.fd.table_reader;
+  TypedHandle* handle = nullptr;
+  if (UNLIKELY(t == nullptr)) {
+    Status s = FindTable(options, file_options_, internal_comparator, file_meta,
+                  &handle, block_protection_bytes_per_key, prefix_extractor,
+                  options.read_tier == kBlockCacheTier /* no_io */,
+                  file_read_hist, skip_filters, level,
+                  true /* prefetch_index_and_filter_in_cache */,
+                  max_file_size_for_l0_meta_pin, file_meta.temperature);
+    if (s.ok()) {
+      t = cache_.Value(handle);
+    } else {
+      return s;
+    }
+  }
+  auto* max_covering_tombstone_seq = get_context->max_covering_tombstone_seq();
+  if (UNLIKELY(max_covering_tombstone_seq && !options.ignore_range_deletions)) {
+    std::unique_ptr<FragmentedRangeTombstoneIterator> range_del_iter(
+        t->NewRangeTombstoneIterator(options));
+    if (range_del_iter != nullptr) {
+      auto seq = range_del_iter->MaxCoveringTombstoneSeqnum(ExtractUserKey(k));
+      if (seq > *max_covering_tombstone_seq) {
+        *max_covering_tombstone_seq = seq;
+        if (get_context->NeedTimestamp()) {
+          get_context->SetTimestampFromRangeTombstone(range_del_iter->timestamp());
+        }
+      }
+    }
+  }
+  if (LIKELY(handle == nullptr)) { // optimize for compiler tail call
+    return t->Get(options, k, get_context, prefix_extractor.get(), skip_filters);
+  } else {
+    Status s = t->Get(options, k, get_context, prefix_extractor.get(), skip_filters);
+    cache_.Release(handle);
+    return s;
+  }
 }
 
 void TableCache::UpdateRangeTombstoneSeqnums(
