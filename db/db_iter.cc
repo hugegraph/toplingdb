@@ -526,6 +526,22 @@ struct BytewiseCmpNoTS {
     else
       return SliceBytewiseLess(x, y);
   }
+ #if defined(__AVX512VL__) && defined(__AVX512BW__)
+  __always_inline
+  bool operator()(const Slice& x, const Slice& y, Const<64>) const {
+    // return x < y;
+    ROCKSDB_ASSERT_EQ(x.size(), y.size());
+    ROCKSDB_ASSERT_LE(x.size(), 64);
+    __mmask64 msk = _bzhi_u64(-1, x.size());
+    __m512i   xxx = _mm512_maskz_loadu_epi8(msk, x.data());
+    __m512i   yyy = _mm512_maskz_loadu_epi8(msk, y.data());
+    __mmask64 cmp = _mm512_cmpneq_epi8_mask(xxx, yyy);
+    if (cmp == 0) // all zero means all eq, any one means not eq
+      return false;
+    auto pos = _tzcnt_u64(cmp);
+    return (uint8_t)x[pos] < (uint8_t)y[pos];
+  }
+ #endif
   int compare(const Slice& x, const Slice& y) const { return x.compare(y); }
 };
 
@@ -547,6 +563,22 @@ struct RevBytewiseCmpNoTS {
     else
       return SliceBytewiseLess(y, x);
   }
+ #if defined(__AVX512VL__) && defined(__AVX512BW__)
+  __always_inline
+  bool operator()(const Slice& x, const Slice& y, Const<64>) const {
+    // return y < x;
+    ROCKSDB_ASSERT_EQ(x.size(), y.size());
+    ROCKSDB_ASSERT_LE(x.size(), 64);
+    __mmask64 msk = _bzhi_u64(-1, x.size());
+    __m512i   xxx = _mm512_maskz_loadu_epi8(msk, x.data());
+    __m512i   yyy = _mm512_maskz_loadu_epi8(msk, y.data());
+    __mmask64 cmp = _mm512_cmpneq_epi8_mask(xxx, yyy);
+    if (cmp == 0) // all zero means all eq, any one means not eq
+      return false;
+    auto pos = _tzcnt_u64(cmp);
+    return (uint8_t)y[pos] < (uint8_t)y[pos];
+  }
+ #endif
   int compare(const Slice& x, const Slice& y) const { return y.compare(x); }
 };
 
@@ -579,6 +611,12 @@ void DBIter::SetFuncPtr() {
 #else
   #define BOUND_PMF(func) ExtractFuncPtr<FindNextUserEntryFN>(this, func)
 #endif
+ #if defined(__AVX512VL__) && defined(__AVX512BW__)
+  #define SetFindNext(FuncName, CmpNoTS) \
+    if (fixed_user_key_len_ != 0 && fixed_user_key_len_ <= 64) \
+         SetFindNext3(FuncName, 64, CmpNoTS); \
+    else SetFindNext3(FuncName,  0, CmpNoTS)
+ #else
   #define SetFindNext(FuncName, CmpNoTS) \
     if (false) {} \
     else if ( 8 == fixed_user_key_len_) SetFindNext3(FuncName,  8, CmpNoTS); \
@@ -589,6 +627,7 @@ void DBIter::SetFuncPtr() {
     else if (28 == fixed_user_key_len_) SetFindNext3(FuncName, 28, CmpNoTS); \
     else if (32 == fixed_user_key_len_) SetFindNext3(FuncName, 32, CmpNoTS); \
     else                                SetFindNext3(FuncName,  0, CmpNoTS)
+  #endif
   #define SetFindNext3(FuncName, FixLen, CmpNoTS) \
     if (read_callback_) \
          SetFindNext4(FuncName, kTrue , FixLen, CmpNoTS); \
