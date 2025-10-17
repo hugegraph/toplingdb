@@ -2118,13 +2118,6 @@ Status DBImpl::Get(const ReadOptions& read_options,
   return Get(read_options, column_family, key, value, /*timestamp=*/nullptr);
 }
 
-Status DBImpl::GetImpl(const ReadOptions& read_options,
-                       ColumnFamilyHandle* column_family, const Slice& key,
-                       PinnableSlice* value) {
-  return GetImpl(read_options, column_family, key, value,
-                 /*timestamp=*/nullptr);
-}
-
 Status DBImpl::Get(const ReadOptions& _read_options,
                    ColumnFamilyHandle* column_family, const Slice& key,
                    PinnableSlice* value, std::string* timestamp) {
@@ -2148,22 +2141,13 @@ Status DBImpl::Get(const ReadOptions& _read_options,
   const ReadOptions& read_options(_read_options);
 #endif
 
-  Status s = GetImpl(read_options, column_family, key, value, timestamp);
-  return s;
-}
-
-Status DBImpl::GetImpl(const ReadOptions& read_options,
-                       ColumnFamilyHandle* column_family, const Slice& key,
-                       PinnableSlice* value, std::string* timestamp) {
   GetImplOptions get_impl_options;
   get_impl_options.column_family = column_family;
   get_impl_options.value = value;
  #if defined(TOPLINGDB_WITH_TIMESTAMP)
   get_impl_options.timestamp = timestamp;
  #endif
-
-  Status s = GetImpl(read_options, key, get_impl_options);
-  return s;
+  return GetImpl(read_options, key, get_impl_options);
 }
 
 Status DBImpl::GetEntity(const ReadOptions& _read_options,

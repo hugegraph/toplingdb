@@ -642,13 +642,18 @@ class DBImpl : public DB {
     int* number_of_operands = nullptr;
   };
 
+  __always_inline
   Status GetImpl(const ReadOptions& read_options,
                  ColumnFamilyHandle* column_family, const Slice& key,
-                 PinnableSlice* value);
-
-  Status GetImpl(const ReadOptions& read_options,
-                 ColumnFamilyHandle* column_family, const Slice& key,
-                 PinnableSlice* value, std::string* timestamp);
+                 PinnableSlice* value, std::string* timestamp = nullptr) {
+    GetImplOptions get_impl_options;
+    get_impl_options.column_family = column_family;
+    get_impl_options.value = value;
+  #if defined(TOPLINGDB_WITH_TIMESTAMP)
+    get_impl_options.timestamp = timestamp;
+  #endif
+    return GetImpl(read_options, key, get_impl_options);
+  }
 
   // Function that Get and KeyMayExist call with no_io true or false
   // Note: 'value_found' from KeyMayExist propagates here
