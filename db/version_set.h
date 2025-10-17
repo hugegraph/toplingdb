@@ -894,14 +894,42 @@ class Version {
   //    merge_context.operands_list and don't merge the operands
   // REQUIRES: lock is not held
   // REQUIRES: pinned_iters_mgr != nullptr
-  void Get(const ReadOptions&, const LookupKey& key, PinnableSlice* value,
+  void Get(const ReadOptions& ro, const LookupKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* status,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
            PinnedIteratorsManager* pinned_iters_mgr,
            bool* value_found = nullptr, bool* key_exists = nullptr,
            SequenceNumber* seq = nullptr, ReadCallback* callback = nullptr,
-           bool* is_blob = nullptr, bool do_merge = true);
+           bool* is_blob = nullptr, bool do_merge = true)
+  {
+    return m_get(this, ro, key, value, columns, timestamp, status,
+                 merge_context, max_covering_tombstone_seq, pinned_iters_mgr,
+                 value_found, key_exists, seq, callback, is_blob, do_merge);
+  }
+
+private:
+  template<class UKCmp, class IKCmp>
+  void GetInst(const ReadOptions&, const LookupKey& key, PinnableSlice* value,
+           PinnableWideColumns* columns, std::string* timestamp, Status* status,
+           MergeContext* merge_context,
+           SequenceNumber* max_covering_tombstone_seq,
+           PinnedIteratorsManager* pinned_iters_mgr,
+           bool* value_found, bool* key_exists,
+           SequenceNumber* seq, ReadCallback* callback,
+           bool* is_blob, bool do_merge);
+
+  void (*m_get)(Version*,
+           const ReadOptions&, const LookupKey& key, PinnableSlice* value,
+           PinnableWideColumns* columns, std::string* timestamp, Status* status,
+           MergeContext* merge_context,
+           SequenceNumber* max_covering_tombstone_seq,
+           PinnedIteratorsManager* pinned_iters_mgr,
+           bool* value_found, bool* key_exists,
+           SequenceNumber* seq, ReadCallback* callback,
+           bool* is_blob, bool do_merge);
+
+public:
 
   void MultiGet(const ReadOptions&, MultiGetRange* range,
                 ReadCallback* callback = nullptr);
