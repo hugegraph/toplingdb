@@ -612,6 +612,37 @@ struct VirtualCmpNoTS {
   const Comparator* cmp;
 };
 
+template<size_t UserKeyLen>
+__always_inline
+void DBIter::FastIterKey::SetUK(const Slice& uk_slice) {
+  auto uk_ptr = uk_slice.data();
+  auto uk_len = uk_slice.size();
+  if constexpr (UserKeyLen == 0) {
+    key.risk_assign_local(uk_len + 8, [=](char* buf, size_t) {
+      memcpy(buf, uk_ptr, uk_len); // runtime memcpy
+      // do not write last 8 bytes(seq + value_type)
+    });
+  } else if constexpr (UserKeyLen == 64) {
+   #if defined(__AVX512VL__) && defined(__AVX512BW__)
+    ROCKSDB_ASSERT_LE(uk_len, UserKeyLen);
+    key.risk_assign_local(uk_len + 8, [=](char* buf, size_t) {
+      __mmask64 mask = _bzhi_u64(-1, uk_len);
+      __m512i   r512 = _mm512_maskz_loadu_epi8(mask, uk_ptr);
+      _mm512_mask_storeu_epi8(buf, mask, r512);
+      // do not write last 8 bytes(seq + value_type)
+    });
+   #else
+    static_assert(false, "UserKeyLen == 64 should not on non-avx512");
+   #endif
+  } else {
+    ROCKSDB_ASSERT_EQ(uk_len, UserKeyLen);
+    key.risk_assign_local(UserKeyLen + 8, [=](char* buf, size_t) {
+      memcpy(buf, uk_ptr, UserKeyLen); // fixed copy
+      // do not write last 8 bytes(seq + value_type)
+    });
+  }
+}
+
 using TriBool = DBIter::TriBool;
 
 template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS>
@@ -787,8 +818,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
               return true;
             } else {
               FixLen != 0 ? // to propagate const FixLen
-            //saved_key_.SetUserKey(ikey_.user_key.data_, FixLen) :
-              saved_key_.SetUserKey<FixLen>(ikey_.user_key.data_) : // for flame
+              saved_key_.SetUK<FixLen>(ikey_.user_key) :
               saved_key_.SetUserKey(
                   ikey_.user_key, !pin_thru_lifetime_ ||
                                       !iter_.iter()->IsKeyPinned() /* copy */);
@@ -801,8 +831,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
             if (timestamp_lb_) {
               saved_key_.SetInternalKey(ikey_);
             } else if (FixLen != 0) { // to propagate const FixLen
-            //saved_key_.SetUserKey(ikey_.user_key.data_, FixLen);
-              saved_key_.SetUserKey<FixLen>(ikey_.user_key.data_); // for flame
+              saved_key_.SetUK<FixLen>(ikey_.user_key);
             } else {
               saved_key_.SetUserKey(
                   ikey_.user_key, !pin_thru_lifetime_ ||
@@ -851,8 +880,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
               return false;
             }
             FixLen != 0 ? // to propagate const FixLen
-          //saved_key_.SetUserKey(ikey_.user_key.data_, FixLen) :
-            saved_key_.SetUserKey<FixLen>(ikey_.user_key.data_) : // for flame
+            saved_key_.SetUK<FixLen>(ikey_.user_key) :
             saved_key_.SetUserKey(
                 ikey_.user_key,
                 !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);

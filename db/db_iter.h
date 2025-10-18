@@ -448,18 +448,7 @@ class DBIter final : public Iterator {
       });
     }
     template<size_t UserKeyLen>
-    void SetUserKey(const char* uk) {
-      key.risk_assign_local(UserKeyLen + 8, [=](char* buf, size_t) {
-        memcpy(buf, uk, UserKeyLen);
-        // do not write last 8 bytes(seq + value_type)
-      });
-    }
-    void SetUserKey(const char* uk, size_t uk_len) {
-      key.risk_assign_local(uk_len + 8, [=](char* buf, size_t) {
-        memcpy(buf, uk, uk_len);
-        // do not write last 8 bytes(seq + value_type)
-      });
-    }
+    void SetUK(const Slice& uk);
     void SetInternalKey(const ParsedInternalKey& ikey) {
       SetInternalKey(ikey.user_key, ikey.sequence, ikey.type);
     }
