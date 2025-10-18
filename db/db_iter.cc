@@ -787,7 +787,8 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
               return true;
             } else {
               FixLen != 0 ? // to propagate const FixLen
-              saved_key_.SetUserKey(ikey_.user_key.data_, FixLen) :
+            //saved_key_.SetUserKey(ikey_.user_key.data_, FixLen) :
+              saved_key_.SetUserKey<FixLen>(ikey_.user_key.data_) : // for flame
               saved_key_.SetUserKey(
                   ikey_.user_key, !pin_thru_lifetime_ ||
                                       !iter_.iter()->IsKeyPinned() /* copy */);
@@ -800,7 +801,8 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
             if (timestamp_lb_) {
               saved_key_.SetInternalKey(ikey_);
             } else if (FixLen != 0) { // to propagate const FixLen
-              saved_key_.SetUserKey(ikey_.user_key.data_, FixLen);
+            //saved_key_.SetUserKey(ikey_.user_key.data_, FixLen);
+              saved_key_.SetUserKey<FixLen>(ikey_.user_key.data_); // for flame
             } else {
               saved_key_.SetUserKey(
                   ikey_.user_key, !pin_thru_lifetime_ ||
@@ -849,7 +851,8 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
               return false;
             }
             FixLen != 0 ? // to propagate const FixLen
-            saved_key_.SetUserKey(ikey_.user_key.data_, FixLen) :
+          //saved_key_.SetUserKey(ikey_.user_key.data_, FixLen) :
+            saved_key_.SetUserKey<FixLen>(ikey_.user_key.data_) : // for flame
             saved_key_.SetUserKey(
                 ikey_.user_key,
                 !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
