@@ -5970,7 +5970,12 @@ class Benchmark {
     int64_t bytes = 0;
     const auto limiter = thread->shared->read_rate_limiter.get();
     const bool omit_value = FLAGS_scan_omit_value;
-    for (iter->SeekToFirst(); i < reads_ && iter->Valid(); iter->Next()) {
+    for (iter->SeekToFirst(); i < reads_; iter->Next()) {
+      if (UNLIKELY(!iter->Valid())) { // wrap if does not reach reads_
+        iter->SeekToFirst();
+        if (!iter->Valid())
+          continue; // safe keep loop even on empty db
+      }
       if (omit_value) {
         bytes += omit_key ? key_size : iter->key().size();
       } else {
@@ -6018,7 +6023,12 @@ class Benchmark {
     int64_t i = 0, bytes = 0;
     const auto limiter = thread->shared->read_rate_limiter.get();
     const bool omit_value = FLAGS_scan_omit_value;
-    for (Slice key = iter->SeekToFirstWithKey(); i < reads_ && key.data(); ) {
+    for (Slice key = iter->SeekToFirstWithKey(); i < reads_; ) {
+      if (UNLIKELY(!key.data())) { // end of iter, wrap if does not reach reads_
+        key = iter->SeekToFirstWithKey();
+        if (!key.data())
+          continue; // safe keep loop even on empty db
+      }
       bytes += key.size();
       if (!omit_value) {
         bytes += iter->value().size();
