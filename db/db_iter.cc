@@ -526,6 +526,38 @@ struct BytewiseCmpNoTS {
     else
       return SliceBytewiseLess(x, y);
   }
+  // compiler(gcc) loop unroll is not graceful, newer gcc even has regressions,
+  // do it manully
+  __always_inline
+  bool operator()(const Slice& x, const Slice& y, Const<4>) const {
+    // return x < y;
+    return NativeOfBigEndian32(unaligned_load<uint32_t>(x.data_))
+         < NativeOfBigEndian32(unaligned_load<uint32_t>(y.data_));
+  }
+  __always_inline
+  bool operator()(const Slice& x, const Slice& y, Const<8>) const {
+    // return x < y;
+    return NativeOfBigEndian64(unaligned_load<uint64_t>(x.data_))
+         < NativeOfBigEndian64(unaligned_load<uint64_t>(y.data_));
+  }
+ #if defined(__GNUC__) && __GNUC__ >= 11
+  __always_inline
+  bool operator()(const Slice& x, const Slice& y, Const<12>) const {
+    // return x < y;
+    uint64_t x0 = NativeOfBigEndian64(unaligned_load<uint64_t>(x.data_));
+    uint64_t y0 = NativeOfBigEndian64(unaligned_load<uint64_t>(y.data_));
+    uint32_t x1 = NativeOfBigEndian32(unaligned_load<uint32_t>(x.data_ + 8));
+    uint32_t y1 = NativeOfBigEndian32(unaligned_load<uint32_t>(y.data_ + 8));
+    return ((unsigned __int128)x0 << 64 | x1)
+         < ((unsigned __int128)y0 << 64 | y1);
+  }
+  __always_inline
+  bool operator()(const Slice& x, const Slice& y, Const<16>) const {
+    // return x < y;
+    return __builtin_bswap128(unaligned_load<unsigned __int128>(x.data_))
+         < __builtin_bswap128(unaligned_load<unsigned __int128>(y.data_));
+  }
+ #endif
  #if defined(__AVX512VL__) && defined(__AVX512BW__)
   __always_inline
   bool operator()(const Slice& x, const Slice& y, Const<64>) const {
