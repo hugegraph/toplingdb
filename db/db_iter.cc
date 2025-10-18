@@ -558,27 +558,8 @@ struct RevBytewiseCmpNoTS {
   __always_inline
   bool operator()(const Slice& x, const Slice& y, Const<FixLen>) const {
     // return y < x;
-    if constexpr (FixLen)
-      return RawBytewiseLess<FixLen>(y.data_, x.data_);
-    else
-      return SliceBytewiseLess(y, x);
+    return BytewiseCmpNoTS(nullptr)(y, x, Const<FixLen>());
   }
- #if defined(__AVX512VL__) && defined(__AVX512BW__)
-  __always_inline
-  bool operator()(const Slice& x, const Slice& y, Const<64>) const {
-    // return y < x;
-    ROCKSDB_ASSERT_EQ(x.size(), y.size());
-    ROCKSDB_ASSERT_LE(x.size(), 64);
-    __mmask64 msk = _bzhi_u64(-1, x.size());
-    __m512i   xxx = _mm512_maskz_loadu_epi8(msk, x.data());
-    __m512i   yyy = _mm512_maskz_loadu_epi8(msk, y.data());
-    __mmask64 cmp = _mm512_cmpneq_epi8_mask(xxx, yyy);
-    if (cmp == 0) // all zero means all eq, any one means not eq
-      return false;
-    auto pos = _tzcnt_u64(cmp);
-    return (uint8_t)y[pos] < (uint8_t)y[pos];
-  }
- #endif
   int compare(const Slice& x, const Slice& y) const { return y.compare(x); }
 };
 
