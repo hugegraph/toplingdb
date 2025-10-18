@@ -1113,7 +1113,12 @@ __always_inline uint64_t GetUnalignedU64(const void* ptr) noexcept {
   return x;
 }
 
+#if !defined(TOPLINGDB_USE_MANUAL_MEMCMP)
+     #define TOPLINGDB_USE_MANUAL_MEMCMP 1
+#endif
+
 __always_inline bool SliceBytewiseLess(const Slice& x, const Slice& y) {
+#if TOPLINGDB_USE_MANUAL_MEMCMP
   auto px = (const unsigned char*)x.data(); size_t nx = x.size();
   auto py = (const unsigned char*)y.data(); size_t ny = y.size();
   size_t i = 0, n = std::min(nx, ny);
@@ -1137,11 +1142,14 @@ __always_inline bool SliceBytewiseLess(const Slice& x, const Slice& y) {
       return ux < uy;
   }
   return nx < ny;
+#else
+  return x < y;
+#endif
 }
 
 struct BytewiseCompareInternalKey {
   __always_inline bool operator()(Slice x, Slice y) const noexcept {
-  #if 0 // when unaligned load is slow
+  #if !TOPLINGDB_USE_MANUAL_MEMCMP
     size_t n = std::min(x.size_, y.size_) - 8;
     int cmp = memcmp(x.data_, y.data_, n);
     if (0 != cmp) return cmp < 0;
@@ -1220,7 +1228,7 @@ struct VirtualFunctionLessUserKey {
   const Comparator* cmp;
 };
 
-#if 0
+#if !TOPLINGDB_USE_MANUAL_MEMCMP
 __always_inline int BytewiseCompare(Slice x, Slice y) noexcept {
   size_t n = std::min(x.size_, y.size_);
   int cmp = memcmp(x.data_, y.data_, n);
