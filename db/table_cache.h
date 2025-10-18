@@ -112,7 +112,7 @@ class TableCache {
   //                       recorded
   // @param skip_filters Disables loading/accessing the filter block
   // @param level The level this table is at, -1 for "not set / don't know"
-  inline
+  __always_inline
   Status Get(
       const ReadOptions& options,
       const InternalKeyComparator& internal_comparator,
@@ -121,7 +121,13 @@ class TableCache {
       const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
       HistogramImpl* file_read_hist = nullptr, bool skip_filters = false,
       int level = -1, size_t max_file_size_for_l0_meta_pin = 0) {
-    return m_get(this, options, internal_comparator, file_meta, k, get_context,
+    if (LIKELY(!ioptions_.row_cache)) {
+      // important: inline expantion at calling place(Version::Get)
+      return GetNoneRowCache(options, internal_comparator, file_meta, k, get_context,
+          block_protection_bytes_per_key, prefix_extractor, file_read_hist,
+          skip_filters, level, max_file_size_for_l0_meta_pin);
+    }
+    return GetWithRowCache(options, internal_comparator, file_meta, k, get_context,
          block_protection_bytes_per_key, prefix_extractor, file_read_hist,
         skip_filters, level, max_file_size_for_l0_meta_pin);
   }
@@ -136,15 +142,6 @@ private:
       HistogramImpl* file_read_hist, bool skip_filters,
       int level, size_t max_file_size_for_l0_meta_pin);
   Status GetNoneRowCache(
-      const ReadOptions& options,
-      const InternalKeyComparator& internal_comparator,
-      const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
-      uint8_t block_protection_bytes_per_key,
-      const std::shared_ptr<const SliceTransform>& prefix_extractor,
-      HistogramImpl* file_read_hist, bool skip_filters,
-      int level, size_t max_file_size_for_l0_meta_pin);
-
-  Status (*m_get)(TableCache*,
       const ReadOptions& options,
       const InternalKeyComparator& internal_comparator,
       const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
@@ -326,5 +323,54 @@ public:
   std::shared_ptr<IOTracer> io_tracer_;
   std::string db_session_id_;
 };
+
+// important: inline expantion at calling place(Version::Get)
+__always_inline
+Status TableCache::GetNoneRowCache(
+    const ReadOptions& options,
+    const InternalKeyComparator& internal_comparator,
+    const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
+    uint8_t block_protection_bytes_per_key,
+    const std::shared_ptr<const SliceTransform>& prefix_extractor,
+    HistogramImpl* file_read_hist, bool skip_filters, int level,
+    size_t max_file_size_for_l0_meta_pin)
+{
+  TableReader* t = file_meta.fd.table_reader;
+  TypedHandle* handle = nullptr;
+  if (UNLIKELY(t == nullptr)) {
+    Status s = FindTable(options, file_options_, internal_comparator, file_meta,
+                  &handle, block_protection_bytes_per_key, prefix_extractor,
+                  options.read_tier == kBlockCacheTier /* no_io */,
+                  file_read_hist, skip_filters, level,
+                  true /* prefetch_index_and_filter_in_cache */,
+                  max_file_size_for_l0_meta_pin, file_meta.temperature);
+    if (s.ok()) {
+      t = cache_.Value(handle);
+    } else {
+      return s;
+    }
+  }
+  auto* max_covering_tombstone_seq = get_context->max_covering_tombstone_seq();
+  if (UNLIKELY(max_covering_tombstone_seq && !options.ignore_range_deletions)) {
+    std::unique_ptr<FragmentedRangeTombstoneIterator> range_del_iter(
+        t->NewRangeTombstoneIterator(options));
+    if (range_del_iter != nullptr) {
+      auto seq = range_del_iter->MaxCoveringTombstoneSeqnum(ExtractUserKey(k));
+      if (seq > *max_covering_tombstone_seq) {
+        *max_covering_tombstone_seq = seq;
+        if (get_context->NeedTimestamp()) {
+          get_context->SetTimestampFromRangeTombstone(range_del_iter->timestamp());
+        }
+      }
+    }
+  }
+  if (LIKELY(handle == nullptr)) { // optimize for compiler tail call
+    return t->Get(options, k, get_context, prefix_extractor.get(), skip_filters);
+  } else {
+    Status s = t->Get(options, k, get_context, prefix_extractor.get(), skip_filters);
+    cache_.Release(handle);
+    return s;
+  }
+}
 
 }  // namespace ROCKSDB_NAMESPACE
