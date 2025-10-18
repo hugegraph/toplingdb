@@ -535,11 +535,13 @@ struct BytewiseCmpNoTS {
     __mmask64 msk = _bzhi_u64(-1, x.size());
     __m512i   xxx = _mm512_maskz_loadu_epi8(msk, x.data());
     __m512i   yyy = _mm512_maskz_loadu_epi8(msk, y.data());
-    __mmask64 cmp = _mm512_cmpneq_epi8_mask(xxx, yyy);
-    if (cmp == 0) // all zero means all eq, any one means not eq
-      return false;
-    auto pos = _tzcnt_u64(cmp);
-    return (uint8_t)x[pos] < (uint8_t)y[pos];
+    __mmask64 neq = _mm512_cmpneq_epi8_mask(xxx, yyy);
+    __mmask64 lt  = _mm512_cmplt_epi8_mask (xxx, yyy);
+    auto pos = _tzcnt_u64(neq); // pos = 64 when neq is 0(should return false)
+    ROCKSDB_ASSUME(pos <= 64);  // gcc does not know this, tell it(clang knows)
+  //return (lt >> pos & 1) != 0; // maybe pos == 64 so this is wrong
+    return (_bextr_u64(-1, pos, 1) & lt) != 0;
+    //      _bextr_u64(-1, pos, 1) == 0 when pos is 64
   }
  #endif
   int compare(const Slice& x, const Slice& y) const { return x.compare(y); }
