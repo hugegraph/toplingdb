@@ -483,7 +483,11 @@
 #elif defined(__clang__)
 #define ROCKSDB_ASSUME(cond) __builtin_assume(cond)
 #elif defined(__GNUC__)
+#if __GNUC__ >= 13
+#define ROCKSDB_ASSUME(cond) [[assume(cond)]]
+#else
 #define ROCKSDB_ASSUME(cond) ((cond) ? static_cast<void>(0) : __builtin_unreachable())
+#endif
 #else
 #define ROCKSDB_ASSUME(cond) static_cast<void>(!!(cond))
 #endif
