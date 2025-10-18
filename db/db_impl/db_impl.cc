@@ -2118,6 +2118,7 @@ Status DBImpl::Get(const ReadOptions& read_options,
   return Get(read_options, column_family, key, value, /*timestamp=*/nullptr);
 }
 
+ROCKSDB_FLATTEN
 Status DBImpl::Get(const ReadOptions& _read_options,
                    ColumnFamilyHandle* column_family, const Slice& key,
                    PinnableSlice* value, std::string* timestamp) {
