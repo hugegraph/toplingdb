@@ -619,10 +619,11 @@ struct VirtualCmpNoTS {
 template<size_t UserKeyLen>
 __always_inline
 void DBIter::FastIterKey::SetUK(const Slice& uk_slice) {
+  static_assert(UserKeyLen < sizeof(key));
   auto uk_ptr = uk_slice.data();
   auto uk_len = uk_slice.size();
   if constexpr (UserKeyLen == 0) {
-    key.risk_assign_local(uk_len + 8, [=](char* buf, size_t) {
+    key.assign(uk_len + 8, [=](char* buf, size_t) {
       memcpy(buf, uk_ptr, uk_len); // runtime memcpy
       // do not write last 8 bytes(seq + value_type)
     });
