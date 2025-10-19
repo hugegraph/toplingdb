@@ -6018,7 +6018,7 @@ class Benchmark {
     options.adaptive_readahead = FLAGS_adaptive_readahead;
     options.async_io = FLAGS_async_io;
     options.auto_readahead_size = FLAGS_auto_readahead_size;
-    options.fixed_user_key_len = FLAGS_scan_omit_key ? FLAGS_scan_omit_key : 0;
+    options.fixed_user_key_len = FLAGS_scan_omit_key ? FLAGS_key_size : 0;
     Iterator* iter = db->NewIterator(options);
     int64_t i = 0, bytes = 0;
     const auto limiter = thread->shared->read_rate_limiter.get();
