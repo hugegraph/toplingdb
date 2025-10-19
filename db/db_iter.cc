@@ -228,7 +228,9 @@ void DBIter::Next() {
 
   local_stats_.next_count_++;
   if (ok) {
-    ClearSavedValue();
+    // see: https://github.com/facebook/rocksdb/pull/10934
+    // I think this ClearSavedValue() is not needed, remove it passes UT
+    // ClearSavedValue();
 
     if (prefix_same_as_start_) {
       assert(prefix_extractor_ != nullptr);
@@ -288,7 +290,9 @@ Slice DBIter::NextWithKey() {
 
   local_stats_.next_count_++;
   if (LIKELY(ok)) {
-    ClearSavedValue();
+    // see: https://github.com/facebook/rocksdb/pull/10934
+    // I think this ClearSavedValue() is not needed, remove it passes UT
+    // ClearSavedValue();
 
     if (prefix_same_as_start_) {
       assert(prefix_extractor_ != nullptr);
