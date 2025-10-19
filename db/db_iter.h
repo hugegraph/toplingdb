@@ -373,7 +373,7 @@ class DBIter final : public Iterator {
                                          ValueType result_type);
 
   void ResetValueAndColumns() {
-    value_.clear();
+    value_.size_ = 0; // clear without reset .data_ = ""
 #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
     wide_columns_.clear();
 #endif

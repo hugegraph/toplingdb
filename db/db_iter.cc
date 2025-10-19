@@ -202,8 +202,8 @@ void DBIter::Next() {
   ReleaseTempPinnedData();
   ResetBlobValue();
   ResetValueAndColumns();
-  local_stats_.skip_count_ += num_internal_keys_skipped_;
-  local_stats_.skip_count_--;
+  local_stats_.next_count_++;
+  local_stats_.skip_count_ += num_internal_keys_skipped_ - 1;
   num_internal_keys_skipped_ = 0;
   bool ok = true;
   if (UNLIKELY(direction_ == kReverse)) {
@@ -226,7 +226,6 @@ void DBIter::Next() {
     ok = iter_.Valid();
   }
 
-  local_stats_.next_count_++;
   if (ok) {
     // see: https://github.com/facebook/rocksdb/pull/10934
     // I think this ClearSavedValue() is not needed, remove it passes UT
@@ -264,8 +263,8 @@ Slice DBIter::NextWithKey() {
   ReleaseTempPinnedData();
   ResetBlobValue();
   ResetValueAndColumns();
-  local_stats_.skip_count_ += num_internal_keys_skipped_;
-  local_stats_.skip_count_--;
+  local_stats_.next_count_++;
+  local_stats_.skip_count_ += num_internal_keys_skipped_ - 1;
   num_internal_keys_skipped_ = 0;
   bool ok = true;
   if (UNLIKELY(direction_ == kReverse)) {
@@ -288,7 +287,6 @@ Slice DBIter::NextWithKey() {
     ok = iter_.Valid();
   }
 
-  local_stats_.next_count_++;
   if (LIKELY(ok)) {
     // see: https://github.com/facebook/rocksdb/pull/10934
     // I think this ClearSavedValue() is not needed, remove it passes UT
