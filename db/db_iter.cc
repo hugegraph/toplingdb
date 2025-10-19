@@ -300,11 +300,15 @@ Slice DBIter::NextWithKey() {
       FindNextUserEntry(true /* skipping the current user key */, nullptr);
     }
     if (LIKELY(valid_)) {
+      Slice ukey_and_ts = saved_key_.GetUserKey();
       local_stats_.next_found_count_++;
-      local_stats_.bytes_read_ += saved_key_.Size();
+      local_stats_.bytes_read_ += ukey_and_ts.size();
       if (is_value_prepared_)
         local_stats_.bytes_read_ += value_.size_;
-      return this->key();
+      if (timestamp_lb_)
+        return saved_key_.GetInternalKey();
+      else
+        return Slice(ukey_and_ts.data(), ukey_and_ts.size() - timestamp_size_);
     }
   } else {
     is_key_seqnum_zero_ = false;
