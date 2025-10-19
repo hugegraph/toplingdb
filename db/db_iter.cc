@@ -201,7 +201,7 @@ void DBIter::Next() {
   // Release temporarily pinned blocks from last operation
   ReleaseTempPinnedData();
   ResetBlobValue();
-  ResetValueAndColumns();
+//ResetValueAndColumns();
   local_stats_.next_count_++;
   local_stats_.skip_count_ += num_internal_keys_skipped_ - 1;
   num_internal_keys_skipped_ = 0;
@@ -262,7 +262,7 @@ Slice DBIter::NextWithKey() {
   // Release temporarily pinned blocks from last operation
   ReleaseTempPinnedData();
   ResetBlobValue();
-  ResetValueAndColumns();
+//ResetValueAndColumns();
   local_stats_.next_count_++;
   local_stats_.skip_count_ += num_internal_keys_skipped_ - 1;
   num_internal_keys_skipped_ = 0;
@@ -357,8 +357,10 @@ bool DBIter::SetBlobValueIfNeeded(const Slice& user_key,
 
 bool DBIter::SetValueAndColumnsFromEntity(Slice slice) {
 #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
-  assert(value_.empty());
-  assert(wide_columns_.empty());
+  //assert(value_.empty());
+  //assert(wide_columns_.empty());
+  value_.clear();
+  wide_columns_.clear();
 
   const Status s = WideColumnSerialization::Deserialize(slice, wide_columns_);
 

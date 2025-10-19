@@ -358,11 +358,12 @@ class DBIter final : public Iterator {
   }
 
   void SetValueAndColumnsFromPlain(const Slice& slice) {
-    assert(value_.empty());
+    //assert(value_.empty());
     value_ = slice;
 
 #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
-    assert(wide_columns_.empty());
+    //assert(wide_columns_.empty());
+    wide_columns_.clear();
     wide_columns_.emplace_back(kDefaultWideColumnName, slice);
 #endif
   }
