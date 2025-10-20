@@ -661,6 +661,7 @@ bool DBIter::FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix)
           (skipping_saved_key, prefix);
 }
 void DBIter::SetFuncPtr() {
+  saved_key_.key.destroy(); // == faster clear + shrink_to_fit
 #if !TOPLING_USE_BOUND_PMF
   #define BOUND_PMF(func) func
 #else
