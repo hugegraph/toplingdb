@@ -219,9 +219,9 @@ void DBIter::Next() {
     // Next() without checking the current key.
     // If the current key is a merge, very likely iter already points
     // to the next internal position.
+    PERF_COUNTER_ADD(internal_key_skipped_count, 1);
     assert(iter_.Valid());
     ok = iter_.Next();
-    PERF_COUNTER_ADD(internal_key_skipped_count, 1);
   } else {
     ok = iter_.Valid();
   }
@@ -281,9 +281,9 @@ Slice DBIter::NextWithKey() {
     // Next() without checking the current key.
     // If the current key is a merge, very likely iter already points
     // to the next internal position.
+    PERF_COUNTER_ADD(internal_key_skipped_count, 1);
     assert(iter_.Valid());
     ok = iter_.Next();
-    PERF_COUNTER_ADD(internal_key_skipped_count, 1);
   } else {
     ok = iter_.Valid();
   }
