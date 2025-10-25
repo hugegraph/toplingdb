@@ -213,7 +213,7 @@ void DBIter::Next() {
     } else {
       ok = iter_.Valid();
     }
-  } else if (!current_entry_is_merged_) {
+  } else if (LIKELY(!current_entry_is_merged_)) {
     // If the current value is not a merge, the iter position is the
     // current key, which is already returned. We can safely issue a
     // Next() without checking the current key.
@@ -226,7 +226,7 @@ void DBIter::Next() {
     ok = iter_.Valid();
   }
 
-  if (ok) {
+  if (LIKELY(ok)) {
     // see: https://github.com/facebook/rocksdb/pull/10934
     // I think this ClearSavedValue() is not needed, remove it passes UT
     // ClearSavedValue();
