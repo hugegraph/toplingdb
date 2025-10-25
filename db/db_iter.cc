@@ -200,7 +200,7 @@ void DBIter::Next() {
 
   // Release temporarily pinned blocks from last operation
   ReleaseTempPinnedData();
-  ResetBlobValue();
+//ResetBlobValue(); // Moved to FindNextUserEntryInternalTmpl
 //ResetValueAndColumns();
   local_stats_.next_count_++;
   local_stats_.skip_count_ += num_internal_keys_skipped_ - 1;
@@ -245,6 +245,7 @@ void DBIter::Next() {
         local_stats_.bytes_read_ += value_.size_;
     }
   } else {
+    ResetBlobValue(); // unlikely path
     is_key_seqnum_zero_ = false;
     valid_ = false;
   }
@@ -261,7 +262,7 @@ Slice DBIter::NextWithKey() {
 
   // Release temporarily pinned blocks from last operation
   ReleaseTempPinnedData();
-  ResetBlobValue();
+//ResetBlobValue(); // Moved to FindNextUserEntryInternalTmpl
 //ResetValueAndColumns();
   local_stats_.next_count_++;
   local_stats_.skip_count_ += num_internal_keys_skipped_ - 1;
@@ -314,6 +315,7 @@ Slice DBIter::NextWithKey() {
     is_key_seqnum_zero_ = false;
     valid_ = false;
   }
+  ResetBlobValue(); // unlikely path
   return Slice(nullptr, 0);
 }
 
@@ -693,6 +695,10 @@ void DBIter::SetFuncPtr() {
           SetFindNext4(FuncName, kTrue         , FixLen, CmpNoTS);\
      else SetFindNext4(FuncName, kFalse        , FixLen, CmpNoTS)
   #define SetFindNext4(FuncName, MayHasCallback, FixLen, CmpNoTS) \
+     if (expose_blob_index_)                                      \
+          SetFindNext5(FuncName, MayHasCallback,      0, CmpNoTS);\
+     else SetFindNext5(FuncName, MayHasCallback, FixLen, CmpNoTS)
+  #define SetFindNext5(FuncName, MayHasCallback, FixLen, CmpNoTS) \
     do { \
       auto func = prefix_same_as_start_ \
               ? iterate_upper_bound_ \
@@ -733,6 +739,14 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
   assert(status_.ok());
   assert(direction_ == kForward);
   current_entry_is_merged_ = false;
+
+  if (FixLen == 0) {
+    ResetBlobValue();
+  } else {
+    // This is assert, not verify, just for debug build
+    ROCKSDB_ASSERT_F(!expose_blob_index_,
+        "FixLen optimization does not support legacy Stacked BlobDB");
+  }
 
   // How many times in a row we have skipped an entry with user key less than
   // or equal to saved_key_. We could skip these entries either because
