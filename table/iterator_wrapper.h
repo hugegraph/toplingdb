@@ -17,6 +17,7 @@
 #include <terark/util/function.hpp>
 #if TOPLING_USE_BOUND_PMF
 using terark::ExtractFuncPtr;
+using terark::ForgeFuncPtr;
 #endif
 
 namespace ROCKSDB_NAMESPACE {
@@ -25,7 +26,7 @@ namespace ROCKSDB_NAMESPACE {
 // the valid() and key() results for an underlying iterator.
 // This can help avoid virtual function calls and also gives better
 // cache locality.
-template <class TValue = Slice>
+template <class TValue>
 class IteratorWrapperBase {
  public:
   IteratorWrapperBase() : iter_(nullptr) {}
@@ -47,6 +48,9 @@ class IteratorWrapperBase {
     InternalIteratorBase<TValue>* old_iter = iter_;
 
     iter_ = _iter;
+   #if TOPLING_USE_BOUND_PMF
+    work_iter_ = _iter;
+   #endif
     if (iter_ == nullptr) {
       result_.is_valid = false;
     } else {
@@ -150,7 +154,11 @@ class IteratorWrapperBase {
 #if !TOPLING_USE_BOUND_PMF
     const bool is_valid = iter_->NextAndGetResult(&result_);
 #else
-    const bool is_valid = next_and_get_result_(iter_, &result_);
+    bool is_valid = next_and_get_result_(work_iter_, &result_);
+    if (UNLIKELY(!is_valid)) {
+      // maybe update work_iter_ and next_and_get_result_
+      is_valid = iter_->RetryNextAndGetResult(&result_);
+    }
 #endif
     assert(is_valid == result_.is_valid);
     assert(!result_.is_valid || iter_->status().ok());
@@ -238,6 +246,7 @@ class IteratorWrapperBase {
 
  protected:
   void Update() {
+    iter_->PrepareScan(this);
     UpdateImpl(iter_->Valid());
   }
   void UpdateImpl(bool is_valid) {
@@ -257,6 +266,8 @@ class IteratorWrapperBase {
   mutable bool status_checked_after_invalid_ = true;
 #endif
 #if TOPLING_USE_BOUND_PMF
+ public:
+  InternalIteratorBase<TValue>* work_iter_ = nullptr;
   typedef bool (*NextAndGetResultFN)(InternalIteratorBase<TValue>*, IterateResult*);
   typedef bool (*PrepareAndGetValueFN)(InternalIteratorBase<TValue>*, TValue*);
   NextAndGetResultFN next_and_get_result_ = nullptr;

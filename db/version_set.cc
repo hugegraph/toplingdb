@@ -1194,6 +1194,25 @@ class LevelIterator final : public InternalIterator {
   void SkipEmptyFileBackward();
   void SetFileIterator(InternalIterator* iter);
   void InitFileIterator(size_t new_file_index);
+  bool RetryNextAndGetResult(IterateResult*) override;
+  void PrepareScan(IteratorWrapper* iw) override {
+    assert(iw != nullptr);
+    my_wrapper_ = iw;
+    UpdateScanFunc(iw);
+  }
+  void UpdateScanFunc(IteratorWrapper* iw) {
+    if (to_return_sentinel_ || file_iter_.iter() == nullptr) {
+      iw->work_iter_ = this;
+      iw->next_and_get_result_ = ForgeFuncPtr(this,
+                                     &LevelIterator::NextAndGetResult);
+    } else {
+      iw->work_iter_ = file_iter_.iter();
+      iw->next_and_get_result_ = ForgeFuncPtr(file_iter_.iter(),
+                                  &InternalIterator::NextAndGetResult);
+    }
+    retry_already_goes_invalid_ = false;
+  }
+  IteratorWrapper* my_wrapper_ = nullptr;
 
   const Slice& file_smallest_key(size_t file_index) const {
     assert(file_index < flevel_->num_files);
@@ -1355,6 +1374,7 @@ class LevelIterator final : public InternalIterator {
   bool prefix_exhausted_ = false;
   // Whether next/prev key is a sentinel key.
   bool to_return_sentinel_ = false;
+  bool retry_already_goes_invalid_ = false;
 
   // Sets flags for if we should return the sentinel key next.
   // The condition for returning sentinel is reaching the end of current
@@ -1572,6 +1592,17 @@ bool LevelIterator::NextAndGetResult(IterateResult* result) {
   bool is_valid = !to_return_sentinel_ && file_iter_.NextAndGetResult(result);
   result->is_valid = is_valid;
   if (UNLIKELY(!is_valid)) {
+    retry_already_goes_invalid_ = false;
+    return RetryNextAndGetResult(result);
+  } else {
+    return true;
+  }
+}
+
+bool LevelIterator::RetryNextAndGetResult(IterateResult* result) {
+  ROCKSDB_ASSERT_EQ(result->is_valid, false);
+  bool is_valid = false;
+  if (!retry_already_goes_invalid_) {
     if (to_return_sentinel_) {
       ClearSentinel();
     } else if (range_tombstone_iter_) {
@@ -1582,6 +1613,9 @@ bool LevelIterator::NextAndGetResult(IterateResult* result) {
     is_next_read_sequential_ = false;
     is_valid = Valid();
     result->is_valid = is_valid;
+    if (my_wrapper_) {
+      UpdateScanFunc(my_wrapper_);
+    }
     if (is_valid) {
       // This could be set in TrySetDeleteRangeSentinel() or
       // SkipEmptyFileForward() above.
@@ -1597,6 +1631,9 @@ bool LevelIterator::NextAndGetResult(IterateResult* result) {
         // for the first key of a file.
         result->value_prepared = !allow_unprepared_value_;
       }
+    }
+    else {
+      retry_already_goes_invalid_ = true;
     }
   }
   return is_valid;

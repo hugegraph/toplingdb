@@ -68,6 +68,8 @@ public:
 };
 static_assert(sizeof(IterateResult) == 16);
 
+template <class TValue = Slice> class IteratorWrapperBase;
+
 template <class TValue>
 class InternalIteratorBase : public Cleanable {
  public:
@@ -153,6 +155,11 @@ class InternalIteratorBase : public Cleanable {
     }
     return is_valid;
   }
+  virtual bool RetryNextAndGetResult(IterateResult* result) {
+    ROCKSDB_ASSERT_EQ(result->is_valid, false);
+    return false;
+  }
+  virtual void PrepareScan(IteratorWrapperBase<TValue>*) {}
 
   // Moves to the previous entry in the source.  After this call, Valid() is
   // true iff the iterator was not positioned at the first entry in source.
