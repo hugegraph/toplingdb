@@ -689,9 +689,9 @@ void DBIter::SetFuncPtr() {
     else                                SetFindNext3(FuncName,  0, CmpNoTS)
   #endif
   #define SetFindNext3(FuncName, FixLen, CmpNoTS) \
-    if (read_callback_) \
-         SetFindNext4(FuncName, kTrue , FixLen, CmpNoTS); \
-    else SetFindNext4(FuncName, kFalse, FixLen, CmpNoTS)
+     if (read_callback_) \
+          SetFindNext4(FuncName, kTrue         , FixLen, CmpNoTS);\
+     else SetFindNext4(FuncName, kFalse        , FixLen, CmpNoTS)
   #define SetFindNext4(FuncName, MayHasCallback, FixLen, CmpNoTS) \
     do { \
       auto func = prefix_same_as_start_ \
