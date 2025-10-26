@@ -961,7 +961,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
     // TODO(lth): If we reseek to sequence number greater than ikey_.sequence,
     // then it does not make sense to reseek as we would actually land further
     // away from the desired key. There is opportunity for optimization here.
-    if (num_skipped > max_skip_ && !reseek_done) {
+    if (UNLIKELY(!reseek_done && num_skipped > max_skip_)) {
       is_key_seqnum_zero_ = false;
       num_skipped = 0;
       reseek_done = true;
