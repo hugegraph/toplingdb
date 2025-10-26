@@ -231,13 +231,7 @@ void DBIter::Next() {
     // I think this ClearSavedValue() is not needed, remove it passes UT
     // ClearSavedValue();
 
-    if (prefix_same_as_start_) {
-      assert(prefix_extractor_ != nullptr);
-      const Slice prefix = prefix_.GetUserKey();
-      FindNextUserEntry(true /* skipping the current user key */, &prefix);
-    } else {
-      FindNextUserEntry(true /* skipping the current user key */, nullptr);
-    }
+    FindNextUserEntry(true /* skipping the current user key */, nullptr);
     if (LIKELY(valid_)) {
       local_stats_.next_found_count_++;
       local_stats_.bytes_read_ += saved_key_.Size();
@@ -293,13 +287,7 @@ Slice DBIter::NextWithKey() {
     // I think this ClearSavedValue() is not needed, remove it passes UT
     // ClearSavedValue();
 
-    if (prefix_same_as_start_) {
-      assert(prefix_extractor_ != nullptr);
-      const Slice prefix = prefix_.GetUserKey();
-      FindNextUserEntry(true /* skipping the current user key */, &prefix);
-    } else {
-      FindNextUserEntry(true /* skipping the current user key */, nullptr);
-    }
+    FindNextUserEntry(true /* skipping the current user key */, nullptr);
     if (LIKELY(valid_)) {
       Slice ukey_and_ts = saved_key_.GetUserKey();
       local_stats_.next_found_count_++;
@@ -750,6 +738,16 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
     // This is assert, not verify, just for debug build
     ROCKSDB_ASSERT_F(!expose_blob_index_,
         "FixLen optimization does not support legacy Stacked BlobDB");
+  }
+
+  assert(HasPrefix == prefix_same_as_start_);
+  Slice tmp_prefix;
+  if constexpr (HasPrefix) {
+    if (skipping_saved_key) {
+      assert(nullptr == prefix); // called by Next & NextWithKey
+      tmp_prefix = prefix_.GetUserKey();
+      prefix = &tmp_prefix;
+    }
   }
 
   // How many times in a row we have skipped an entry with user key less than
