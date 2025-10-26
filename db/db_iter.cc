@@ -656,10 +656,10 @@ void DBIter::FastIterKey::SetUK(const Slice& uk_slice) {
 
 using TriBool = DBIter::TriBool;
 
-template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS>
+template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS, bool CheckMaxSkip>
 bool DBIter::FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix) {
   PERF_TIMER_GUARD(find_next_user_entry_time);
-  return FindNextUserEntryInternalTmpl<HasPrefix, HasUpperBound, MayHasCallback, FixLen, CmpNoTS>
+  return FindNextUserEntryInternalTmpl<HasPrefix, HasUpperBound, MayHasCallback, FixLen, CmpNoTS, CheckMaxSkip>
           (skipping_saved_key, prefix);
 }
 void DBIter::SetFuncPtr() {
@@ -699,14 +699,18 @@ void DBIter::SetFuncPtr() {
           SetFindNext5(FuncName, MayHasCallback,      0, CmpNoTS);\
      else SetFindNext5(FuncName, MayHasCallback, FixLen, CmpNoTS)
   #define SetFindNext5(FuncName, MayHasCallback, FixLen, CmpNoTS) \
+     if (max_skippable_internal_keys_ >= UINT_MAX) \
+          SetFindNext6(FuncName, MayHasCallback, FixLen, CmpNoTS, false       ); \
+     else SetFindNext6(FuncName, MayHasCallback, FixLen, CmpNoTS, true        )
+  #define SetFindNext6(FuncName, MayHasCallback, FixLen, CmpNoTS, CheckMaxSkip) \
     do { \
       auto func = prefix_same_as_start_ \
               ? iterate_upper_bound_ \
-                ? &DBIter::template FuncName<true , true , MayHasCallback, FixLen, CmpNoTS>  \
-                : &DBIter::template FuncName<true , false, MayHasCallback, FixLen, CmpNoTS>  \
+                ? &DBIter::template FuncName<true , true , MayHasCallback, FixLen, CmpNoTS, CheckMaxSkip>  \
+                : &DBIter::template FuncName<true , false, MayHasCallback, FixLen, CmpNoTS, CheckMaxSkip>  \
               : iterate_upper_bound_ \
-                ? &DBIter::template FuncName<false, true , MayHasCallback, FixLen, CmpNoTS>  \
-                : &DBIter::template FuncName<false, false, MayHasCallback, FixLen, CmpNoTS>; \
+                ? &DBIter::template FuncName<false, true , MayHasCallback, FixLen, CmpNoTS, CheckMaxSkip>  \
+                : &DBIter::template FuncName<false, false, MayHasCallback, FixLen, CmpNoTS, CheckMaxSkip>; \
       m_find_next_entry = BOUND_PMF(func); \
     } while (0)
   if (enable_perf_timer_) {
@@ -730,7 +734,7 @@ void DBIter::SetFuncPtr() {
   }
 }
 
-template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS>
+template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS, bool CheckMaxSkip>
 bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                            const Slice* prefix) {
   CmpNoTS cmpNoTS{user_comparator_.user_comparator()};
@@ -803,8 +807,13 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
       break;
     }
 
-    if (TooManyInternalKeysSkipped()) {
-      return false;
+    if constexpr (CheckMaxSkip) {
+      if (TooManyInternalKeysSkipped()) {
+        return false;
+      }
+    }
+    else {
+      num_internal_keys_skipped_++;
     }
 
     assert(ikey_.user_key.size() >= timestamp_size_);
