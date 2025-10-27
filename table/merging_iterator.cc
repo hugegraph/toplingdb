@@ -199,6 +199,9 @@ __always_inline UintPrefix LoadPrefixZeroSuffix(const void* src) {
     un.u64[1] = ((const uint32_t*)src)[2]; // zero extend uint32 to uint64
     return un.u128;
   }
+  if (PrefixLen == 8) { // help gcc optimize better
+    return UintPrefix(*(const uint64_t*)src);
+  }
  #endif
   UintPrefix dst;
   memcpy(&dst, src, PrefixLen);
