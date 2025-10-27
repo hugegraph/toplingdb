@@ -1033,7 +1033,7 @@ endif
 # topling specific WARNING_FLAGS
 WARNING_FLAGS := -Wall -Wno-shadow
 ifeq "$(shell a=${COMPILER};echo $${a:0:5})" "clang"
-  #LDFLAGS += -latomic
+  LDFLAGS += -latomic
   #$(error LDFLAGS = ${LDFLAGS})
   WARNING_FLAGS += -Wno-deprecated-builtins
 endif
