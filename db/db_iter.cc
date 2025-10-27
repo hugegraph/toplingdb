@@ -630,7 +630,7 @@ void DBIter::FastIterKey::SetUK(const Slice& uk_slice) {
       _mm512_mask_storeu_epi8(buf, mask, r512);
       // do not write last 8 bytes(seq + value_type)
     });
-   #else
+   #elif defined(__clang__) || !defined(__GNUC__) || __GNUC__ >= 13
     static_assert(false, "UserKeyLen == 64 should not on non-avx512");
    #endif
   } else {
