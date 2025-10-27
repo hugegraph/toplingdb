@@ -231,8 +231,8 @@ void DBIter::Next() {
     // I think this ClearSavedValue() is not needed, remove it passes UT
     // ClearSavedValue();
 
-    FindNextUserEntry(true /* skipping the current user key */, nullptr);
-    if (LIKELY(valid_)) {
+    bool skipping_saved_key_true = true;
+    if (LIKELY(FindNextUserEntry(skipping_saved_key_true, nullptr))) {
       local_stats_.next_found_count_++;
       local_stats_.bytes_read_ += saved_key_.Size();
       if (is_value_prepared_)
@@ -287,8 +287,8 @@ Slice DBIter::NextWithKey() {
     // I think this ClearSavedValue() is not needed, remove it passes UT
     // ClearSavedValue();
 
-    FindNextUserEntry(true /* skipping the current user key */, nullptr);
-    if (LIKELY(valid_)) {
+    bool skipping_saved_key_true = true;
+    if (LIKELY(FindNextUserEntry(skipping_saved_key_true, nullptr))) {
       Slice ukey_and_ts = saved_key_.GetUserKey();
       local_stats_.next_found_count_++;
       local_stats_.bytes_read_ += ukey_and_ts.size();
@@ -1009,7 +1009,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
   } while (iter_.Valid());
 
   valid_ = false;
-  return iter_.status().ok();
+  return false;
 }
 
 // Merge values of the same user key starting from the current iter_ position
