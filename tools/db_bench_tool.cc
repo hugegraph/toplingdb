@@ -2477,7 +2477,7 @@ class Stats {
     double throughput = (double)done_ / elapsed;
 
     fprintf(stdout,
-            "%-12s : %11.3f micros/op %ld ops/sec %.3f seconds %" PRIu64
+            "%-12s : %11.6f micros/op %ld ops/sec %.3f seconds %" PRIu64
             " operations;%s%s\n",
             name.ToString().c_str(), seconds_ * 1e6 / done_, (long)throughput,
             elapsed, done_, (extra.empty() ? "" : " "), extra.c_str());
