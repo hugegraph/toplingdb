@@ -199,7 +199,7 @@ void DBIter::Next() {
 #endif
 
   // Release temporarily pinned blocks from last operation
-  ReleaseTempPinnedData();
+//ReleaseTempPinnedData(); // Moved to MergeValuesNewToOld
 //ResetBlobValue(); // Moved to FindNextUserEntryInternalTmpl
 //ResetValueAndColumns();
   local_stats_.next_count_++;
@@ -255,7 +255,7 @@ Slice DBIter::NextWithKey() {
 #endif
 
   // Release temporarily pinned blocks from last operation
-  ReleaseTempPinnedData();
+//ReleaseTempPinnedData(); // Moved to MergeValuesNewToOld
 //ResetBlobValue(); // Moved to FindNextUserEntryInternalTmpl
 //ResetValueAndColumns();
   local_stats_.next_count_++;
@@ -1028,6 +1028,7 @@ bool DBIter::MergeValuesNewToOld() {
   }
 
   // Temporarily pin the blocks that hold merge operands
+  ReleaseTempPinnedData();
   TempPinData();
   merge_context_.Clear();
   // Start the merge process by pushing the first operand
