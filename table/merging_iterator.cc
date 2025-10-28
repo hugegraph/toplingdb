@@ -264,8 +264,8 @@ struct HeapItemAndPrefix {
     UpdatePrefixCache(*this, &item->iter);
   }
   UintPrefix key_prefix = 0;
-  HeapItem* item_ptr;
   HeapItem::Type iter_type;
+  HeapItem* item_ptr;
 
   HeapItem* operator->() const noexcept { return item_ptr; }
 
