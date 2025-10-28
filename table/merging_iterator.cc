@@ -424,8 +424,11 @@ class MinHeapBytewiseComp {
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
 #if MERGE_ITER_PREFIX_LEN == 16
-    if (LIKELY(a.key_prefix != b.key_prefix))
-      return a.key_prefix > b.key_prefix;
+  #define MERGE_ITER_CMP_gt >
+  #define MERGE_ITER_CMP_lt <
+  #define MERGE_ITER_CMP_PREFIX(cmp)          \
+    if (LIKELY(a.key_prefix != b.key_prefix)) \
+      return a.key_prefix MERGE_ITER_CMP_##cmp b.key_prefix;
 #else
 //-------------------------------------------------------------------
   #define MERGE_ITER_CMP_PREFIX(cmp)                               \
@@ -440,8 +443,8 @@ class MinHeapBytewiseComp {
       return (cmp & (1u << pos)) != 0;                             \
     }
 //-------------------------------------------------------------------
-    MERGE_ITER_CMP_PREFIX(gt) // must has no semicolon ';'
 #endif
+    MERGE_ITER_CMP_PREFIX(gt) // must has no semicolon ';'
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(b->iter.key(), a->iter.key());
@@ -460,12 +463,7 @@ class MinHeapBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
-#if MERGE_ITER_PREFIX_LEN == 16
-      if (LIKELY(a.key_prefix != b.key_prefix))
-        return a.key_prefix > b.key_prefix;
-#else
       MERGE_ITER_CMP_PREFIX(gt) // must has no semicolon ';'
-#endif
       else
         return BytewiseCompareInternalKey(b->iter.key(), a->iter.key());
     }
@@ -477,12 +475,7 @@ class MaxHeapBytewiseComp {
   MaxHeapBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-#if MERGE_ITER_PREFIX_LEN == 16
-    if (LIKELY(a.key_prefix != b.key_prefix))
-      return a.key_prefix < b.key_prefix;
-#else
     MERGE_ITER_CMP_PREFIX(lt) // must has no semicolon ';'
-#endif
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(a->iter.key(), b->iter.key());
@@ -501,12 +494,7 @@ class MaxHeapBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
-#if MERGE_ITER_PREFIX_LEN == 16
-      if (LIKELY(a.key_prefix != b.key_prefix))
-        return a.key_prefix < b.key_prefix;
-#else
       MERGE_ITER_CMP_PREFIX(lt) // must has no semicolon ';'
-#endif
       else
         return BytewiseCompareInternalKey(a->iter.key(), b->iter.key());
     }
@@ -518,12 +506,7 @@ class MinHeapRevBytewiseComp {
   MinHeapRevBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-#if MERGE_ITER_PREFIX_LEN == 16
-    if (LIKELY(a.key_prefix != b.key_prefix))
-      return a.key_prefix < b.key_prefix;
-#else
     MERGE_ITER_CMP_PREFIX(lt) // must has no semicolon ';'
-#endif
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(b->iter.key(), a->iter.key());
@@ -542,12 +525,7 @@ class MinHeapRevBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
-#if MERGE_ITER_PREFIX_LEN == 16
-      if (LIKELY(a.key_prefix != b.key_prefix))
-        return a.key_prefix < b.key_prefix;
-#else
       MERGE_ITER_CMP_PREFIX(lt) // must has no semicolon ';'
-#endif
       else
         return RevBytewiseCompareInternalKey(b->iter.key(), a->iter.key());
     }
@@ -559,12 +537,7 @@ class MaxHeapRevBytewiseComp {
   MaxHeapRevBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-#if MERGE_ITER_PREFIX_LEN == 16
-    if (LIKELY(a.key_prefix != b.key_prefix))
-      return a.key_prefix > b.key_prefix;
-#else
     MERGE_ITER_CMP_PREFIX(gt) // must has no semicolon ';'
-#endif
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(a->iter.key(), b->iter.key());
@@ -583,12 +556,7 @@ class MaxHeapRevBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
-#if MERGE_ITER_PREFIX_LEN == 16
-      if (LIKELY(a.key_prefix != b.key_prefix))
-        return a.key_prefix > b.key_prefix;
-#else
       MERGE_ITER_CMP_PREFIX(gt) // must has no semicolon ';'
-#endif
       else
         return RevBytewiseCompareInternalKey(a->iter.key(), b->iter.key());
     }
