@@ -159,6 +159,15 @@ private:
 #define FORCE_INLINE inline
 #endif
 
+#if defined(__AVX512VL__) && defined(__AVX512BW__)
+  // can be defined as 23 or 16
+  #define MERGE_ITER_PREFIX_LEN 23
+#else
+  #define MERGE_ITER_PREFIX_LEN 16
+#endif
+
+#if MERGE_ITER_PREFIX_LEN == 16
+
 #if 0
   #define bswap_prefix __bswap_64
   using UintPrefix = uint64_t;
@@ -256,6 +265,15 @@ FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
   #error "HostPrefixCacheIK: Not support bigendian yet"
 #endif
 }
+#else // MERGE_ITER_PREFIX_LEN
+
+struct UintPrefix {
+  static_assert(MERGE_ITER_PREFIX_LEN == 23);
+  unsigned char data[MERGE_ITER_PREFIX_LEN] = {0};
+  UintPrefix(int=0) {}
+};
+
+#endif // MERGE_ITER_PREFIX_LEN
 
 struct HeapItemAndPrefix {
   FORCE_INLINE HeapItemAndPrefix() = default;
@@ -271,12 +289,29 @@ struct HeapItemAndPrefix {
 
   FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefix& x, IteratorWrapper* iter) {
     ROCKSDB_ASSERT_EQ(&x.item_ptr->iter, iter);
+#if MERGE_ITER_PREFIX_LEN == 16
     if (LIKELY(HeapItem::ITERATOR == x.iter_type))
       x.key_prefix = HostPrefixCacheIK(iter->key());
     else
       x.key_prefix = HostPrefixCacheUK(x.item_ptr->tombstone_pik.user_key);
+#else
+    static_assert(sizeof(HeapItemAndPrefix) == 32);
+    static_assert(MERGE_ITER_PREFIX_LEN == 23);
+    const Slice uk = x.GetUserKey(iter);
+    __mmask32 mskl = _bzhi_u32(-1, std::min<size_t>(uk.size(), sizeof(x.key_prefix)));
+    __mmask32 msks = _bzhi_u32(-1, sizeof(x.key_prefix));
+    __m256i   r256 = _mm256_maskz_loadu_epi8(mskl, uk.data());
+    _mm256_mask_storeu_epi8(&x.key_prefix, msks, r256); // do not byte swap
+#endif
+  }
+  FORCE_INLINE Slice GetUserKey(const IteratorWrapper* iter) const {
+    if (LIKELY(HeapItem::ITERATOR == iter_type))
+      return iter->user_key();
+    else
+      return item_ptr->tombstone_pik.user_key;
   }
 };
+#if MERGE_ITER_PREFIX_LEN == 16
 struct HeapItemAndPrefixFast : HeapItemAndPrefix {
   using HeapItemAndPrefix::HeapItemAndPrefix;
   FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefixFast& x, IteratorWrapper* iter) {
@@ -285,6 +320,26 @@ struct HeapItemAndPrefixFast : HeapItemAndPrefix {
     x.key_prefix = HostPrefixCacheIK(iter->key());
   }
 };
+#else
+struct HeapItemAndPrefixFast {
+  FORCE_INLINE HeapItemAndPrefixFast() = default;
+  FORCE_INLINE HeapItemAndPrefixFast(HeapItem* item) : item_ptr(item) {
+    UpdatePrefixCache(*this, &item->iter);
+  }
+  static_assert(MERGE_ITER_PREFIX_LEN == 23);
+  unsigned char key_prefix[24];
+  HeapItem* item_ptr;
+  HeapItem* operator->() const noexcept { return item_ptr; }
+  FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefixFast& x, IteratorWrapper* iter) {
+    ROCKSDB_ASSERT_EQ(HeapItem::ITERATOR, x.item_ptr->type);
+    const Slice uk = iter->user_key();
+    __mmask32 mskl = _bzhi_u32(-1, std::min<size_t>(uk.size(), sizeof(x.key_prefix)));
+    __mmask32 msks = _bzhi_u32(-1, sizeof(x.key_prefix));
+    __m256i   r256 = _mm256_maskz_loadu_epi8(mskl, uk.data());
+    _mm256_mask_storeu_epi8(&x.key_prefix, msks, r256); // do not byte swap
+  }
+};
+#endif
 static_assert(sizeof(HeapItemAndPrefixFast) == sizeof(HeapItemAndPrefix));
 inline static void UpdatePrefixCache(HeapItem*, IteratorWrapper*) {}
 
@@ -368,8 +423,25 @@ class MinHeapBytewiseComp {
   MinHeapBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
+#if MERGE_ITER_PREFIX_LEN == 16
     if (LIKELY(a.key_prefix != b.key_prefix))
       return a.key_prefix > b.key_prefix;
+#else
+//-------------------------------------------------------------------
+  #define MERGE_ITER_CMP_PREFIX(cmp)                               \
+    __mmask32 mask = _bzhi_u32(-1, sizeof(a.key_prefix));          \
+    __m256i   a256 = _mm256_maskz_loadu_epi8(mask, &a.key_prefix); \
+    __m256i   b256 = _mm256_maskz_loadu_epi8(mask, &b.key_prefix); \
+    __mmask32 cneq = _mm256_cmpneq_epi8_mask(a256, b256);          \
+    if (LIKELY(cneq != 0)) {                                       \
+      __mmask32 cmp = _mm256_cmp##cmp##_epi8_mask(a256, b256);     \
+      auto pos = _tzcnt_u32(cneq);                                 \
+      ROCKSDB_ASSUME(pos < sizeof(a.key_prefix));                  \
+      return (cmp & (1u << pos)) != 0;                             \
+    }
+//-------------------------------------------------------------------
+    MERGE_ITER_CMP_PREFIX(gt) // must has no semicolon ';'
+#endif
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(b->iter.key(), a->iter.key());
@@ -388,8 +460,12 @@ class MinHeapBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
+#if MERGE_ITER_PREFIX_LEN == 16
       if (LIKELY(a.key_prefix != b.key_prefix))
         return a.key_prefix > b.key_prefix;
+#else
+      MERGE_ITER_CMP_PREFIX(gt) // must has no semicolon ';'
+#endif
       else
         return BytewiseCompareInternalKey(b->iter.key(), a->iter.key());
     }
@@ -401,8 +477,12 @@ class MaxHeapBytewiseComp {
   MaxHeapBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
+#if MERGE_ITER_PREFIX_LEN == 16
     if (LIKELY(a.key_prefix != b.key_prefix))
       return a.key_prefix < b.key_prefix;
+#else
+    MERGE_ITER_CMP_PREFIX(lt) // must has no semicolon ';'
+#endif
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(a->iter.key(), b->iter.key());
@@ -421,8 +501,12 @@ class MaxHeapBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
+#if MERGE_ITER_PREFIX_LEN == 16
       if (LIKELY(a.key_prefix != b.key_prefix))
         return a.key_prefix < b.key_prefix;
+#else
+      MERGE_ITER_CMP_PREFIX(lt) // must has no semicolon ';'
+#endif
       else
         return BytewiseCompareInternalKey(a->iter.key(), b->iter.key());
     }
@@ -434,8 +518,12 @@ class MinHeapRevBytewiseComp {
   MinHeapRevBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
+#if MERGE_ITER_PREFIX_LEN == 16
     if (LIKELY(a.key_prefix != b.key_prefix))
       return a.key_prefix < b.key_prefix;
+#else
+    MERGE_ITER_CMP_PREFIX(lt) // must has no semicolon ';'
+#endif
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(b->iter.key(), a->iter.key());
@@ -454,8 +542,12 @@ class MinHeapRevBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
+#if MERGE_ITER_PREFIX_LEN == 16
       if (LIKELY(a.key_prefix != b.key_prefix))
         return a.key_prefix < b.key_prefix;
+#else
+      MERGE_ITER_CMP_PREFIX(lt) // must has no semicolon ';'
+#endif
       else
         return RevBytewiseCompareInternalKey(b->iter.key(), a->iter.key());
     }
@@ -467,8 +559,12 @@ class MaxHeapRevBytewiseComp {
   MaxHeapRevBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
+#if MERGE_ITER_PREFIX_LEN == 16
     if (LIKELY(a.key_prefix != b.key_prefix))
       return a.key_prefix > b.key_prefix;
+#else
+    MERGE_ITER_CMP_PREFIX(gt) // must has no semicolon ';'
+#endif
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(a->iter.key(), b->iter.key());
@@ -487,8 +583,12 @@ class MaxHeapRevBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
+#if MERGE_ITER_PREFIX_LEN == 16
       if (LIKELY(a.key_prefix != b.key_prefix))
         return a.key_prefix > b.key_prefix;
+#else
+      MERGE_ITER_CMP_PREFIX(gt) // must has no semicolon ';'
+#endif
       else
         return RevBytewiseCompareInternalKey(a->iter.key(), b->iter.key());
     }
