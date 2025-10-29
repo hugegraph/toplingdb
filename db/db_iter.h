@@ -331,13 +331,6 @@ class DBIter final : public Iterator {
                : user_comparator_.CompareWithoutTimestamp(a, b);
   }
 
-  template<class CmpNoTS>
-  inline bool CmpKeyForSkip(const Slice& a, const Slice& b, const CmpNoTS& c) {
-    return timestamp_lb_ != nullptr
-               ? user_comparator_.Compare(a, b) < 0
-               : c(a, b);
-  }
-
   template<size_t FixLen, class CmpNoTS>
   inline bool EqKeyForSkip(const Slice& a, const Slice& b, const CmpNoTS& c) {
     return timestamp_lb_ != nullptr // semantic exactly same with origin code

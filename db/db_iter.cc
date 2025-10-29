@@ -419,56 +419,6 @@ bool DBIter::FindNextUserEntry(bool skipping_saved_key, const Slice* prefix) {
 #endif
 }
 
-template<size_t KeyLen>
-struct FixedLenCmpNoTS {
-  static_assert(KeyLen % 4 == 0);
-  __always_inline bool equal(const Slice& x, const Slice& y) const {
-    const char* px = x.data();
-    const char* py = y.data();
-    for (size_t i = 0; i < KeyLen / 8; i++) {
-      if (((const uint64_t*)(px))[i] != ((const uint64_t*)(py))[i])
-        return false;
-    }
-    if (KeyLen % 8)
-      return ((const uint32_t*)(px))[KeyLen/4 - 1] == ((const uint32_t*)(py))[KeyLen/4 - 1];
-    else
-      return true;
-  }
-  __always_inline bool operator()(const Slice& x, const Slice& y) const {
-    const char* px = x.data();
-    const char* py = y.data();
-    for (size_t i = 0; i < KeyLen / 8; i++) {
-      auto ux = NATIVE_OF_BIG_ENDIAN(((const uint64_t*)(px))[i]);
-      auto uy = NATIVE_OF_BIG_ENDIAN(((const uint64_t*)(py))[i]);
-      if (ux != uy)
-        return ux < uy;
-    }
-    if (KeyLen % 8) {
-      auto ux = NATIVE_OF_BIG_ENDIAN(((const uint32_t*)(px))[KeyLen/4 - 1]);
-      auto uy = NATIVE_OF_BIG_ENDIAN(((const uint32_t*)(py))[KeyLen/4 - 1]);
-      return ux < uy;
-    } else
-      return false; // equal
-  }
-  __always_inline int compare(const Slice& x, const Slice& y) const {
-    const char* px = x.data();
-    const char* py = y.data();
-    for (size_t i = 0; i < KeyLen / 8; i++) {
-      auto ux = NATIVE_OF_BIG_ENDIAN(((const uint64_t*)(px))[i]);
-      auto uy = NATIVE_OF_BIG_ENDIAN(((const uint64_t*)(py))[i]);
-      if (ux != uy)
-        return ux < uy ? -1 : +1;
-    }
-    if (KeyLen % 8) {
-      auto ux = NATIVE_OF_BIG_ENDIAN(((const uint32_t*)(px))[KeyLen/4 - 1]);
-      auto uy = NATIVE_OF_BIG_ENDIAN(((const uint32_t*)(py))[KeyLen/4 - 1]);
-      if (ux != uy)
-        return ux < uy ? -1 : +1;
-    }
-    return 0;
-  }
-};
-
 template<size_t FixLen>
 __always_inline // const propagate param FixLen
 bool RawBytewiseLess(const void* x, const void* y) {
@@ -553,10 +503,6 @@ struct BytewiseCmpNoTS {
     // FixLen == 0 means general compare
     return SliceEqual(x, y);
   }
-  __always_inline bool operator()(const Slice& x, const Slice& y) const {
-    // return x < y;
-    return SliceBytewiseLess(x, y);
-  }
   template<size_t FixLen>
   __always_inline
   bool operator()(const Slice& x, const Slice& y, Const<FixLen>) const {
@@ -620,10 +566,6 @@ struct RevBytewiseCmpNoTS {
   template<size_t FixLen>
   __always_inline bool equal(const Slice& x, const Slice& y) const {
     return BytewiseCmpNoTS(nullptr).equal<FixLen>(y, x);
-  }
-  __always_inline bool operator()(const Slice& x, const Slice& y) const {
-    // return y < x;
-    return SliceBytewiseLess(y, x);
   }
   template<size_t FixLen>
   __always_inline
