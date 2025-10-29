@@ -508,7 +508,49 @@ using Const = std::integral_constant<size_t, Len>;
 
 struct BytewiseCmpNoTS {
   BytewiseCmpNoTS(const Comparator*) {}
+  template<size_t FixLen>
   __always_inline bool equal(const Slice& x, const Slice& y) const {
+    if constexpr (FixLen != 0) {
+      ROCKSDB_ASSERT_EQ(x.size(), y.size());
+      ROCKSDB_ASSERT_EQ(x.size(), FixLen);
+    }
+    if constexpr (FixLen == 4) {
+      return unaligned_load<uint32_t>(x.data())
+          == unaligned_load<uint32_t>(y.data());
+    }
+    if constexpr (FixLen == 8) {
+      return unaligned_load<uint64_t>(x.data())
+          == unaligned_load<uint64_t>(y.data());
+    }
+ #if defined(__GNUC__) && __GNUC__ >= 11
+    if constexpr (FixLen == 12) {
+      uint64_t x0 = unaligned_load<uint64_t>(x.data());
+      uint64_t y0 = unaligned_load<uint64_t>(y.data());
+      uint32_t x1 = unaligned_load<uint32_t>(x.data() + 8);
+      uint32_t y1 = unaligned_load<uint32_t>(y.data() + 8);
+      return x0 == y0 && x1 == y1;
+    }
+    if constexpr (FixLen == 16) {
+      return unaligned_load<unsigned __int128>(x.data())
+          == unaligned_load<unsigned __int128>(y.data());
+    }
+ #endif
+ #if defined(__AVX512VL__) && defined(__AVX512BW__)
+    if constexpr (FixLen == 64) {
+      ROCKSDB_ASSERT_EQ(x.size(), y.size());
+      ROCKSDB_ASSERT_LE(x.size(), 64);
+      ROCKSDB_ASSERT_GT(x.size(), 0);
+      __mmask64 msk = _bzhi_u64(-1, x.size());
+      __m512i   xxx = _mm512_maskz_loadu_epi8(msk, x.data());
+      __m512i   yyy = _mm512_maskz_loadu_epi8(msk, y.data());
+      __mmask64 neq = _mm512_cmpneq_epi8_mask(xxx, yyy);
+      return 0 == neq;
+    }
+ #endif
+    if constexpr (FixLen != 0) { // constant propagate FixLen
+      return MemoryEqual(x.data(), y.data(), FixLen);
+    }
+    // FixLen == 0 means general compare
     return SliceEqual(x, y);
   }
   __always_inline bool operator()(const Slice& x, const Slice& y) const {
@@ -575,8 +617,9 @@ struct BytewiseCmpNoTS {
 
 struct RevBytewiseCmpNoTS {
   RevBytewiseCmpNoTS(const Comparator*) {}
+  template<size_t FixLen>
   __always_inline bool equal(const Slice& x, const Slice& y) const {
-    return SliceEqual(x, y);
+    return BytewiseCmpNoTS(nullptr).equal<FixLen>(y, x);
   }
   __always_inline bool operator()(const Slice& x, const Slice& y) const {
     // return y < x;
@@ -592,6 +635,7 @@ struct RevBytewiseCmpNoTS {
 };
 
 struct VirtualCmpNoTS {
+  template<size_t FixLen>
   bool equal(const Slice& x, const Slice& y) const {
     return cmp->CompareWithoutTimestamp(x, y) == 0;
   }
@@ -825,7 +869,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
       // level. This may change in the future.
       if ((!is_prev_key_seqnum_zero || timestamp_size_ > 0) &&
           skipping_saved_key &&
-          EqKeyForSkip(saved_key_.GetUserKey(), ikey_.user_key, cmpNoTS)) {
+          EqKeyForSkip<FixLen>(saved_key_.GetUserKey(), ikey_.user_key, cmpNoTS)) {
         num_skipped++;  // skip this entry
         PERF_COUNTER_ADD(internal_key_skipped_count, 1);
       } else {

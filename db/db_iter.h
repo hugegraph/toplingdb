@@ -338,11 +338,11 @@ class DBIter final : public Iterator {
                : c(a, b);
   }
 
-  template<class CmpNoTS>
+  template<size_t FixLen, class CmpNoTS>
   inline bool EqKeyForSkip(const Slice& a, const Slice& b, const CmpNoTS& c) {
     return timestamp_lb_ != nullptr // semantic exactly same with origin code
                ? user_comparator_.Compare(a, b) >= 0 // ^^^^^^^^^^^^^^^^^^^^^
-               : c.equal(a, b);
+               : c.template equal<FixLen>(a, b);
   }
 
   // Retrieves the blob value for the specified user key using the given blob
