@@ -690,7 +690,7 @@ void DBIter::SetFuncPtr() {
     else if (user_comparator_.IsReverseBytewise()) {
       SetFindNext(FindNextUserEntryPerf, RevBytewiseCmpNoTS);
     } else {
-      SetFindNext(FindNextUserEntryPerf, VirtualCmpNoTS);
+      SetFindNext6(FindNextUserEntryPerf, kUnknown, 0, VirtualCmpNoTS, true);
     }
   }
   else {
@@ -699,7 +699,8 @@ void DBIter::SetFuncPtr() {
     } else if (user_comparator_.IsReverseBytewise()) {
       SetFindNext(FindNextUserEntryInternalTmpl, RevBytewiseCmpNoTS);
     } else {
-      SetFindNext(FindNextUserEntryInternalTmpl, VirtualCmpNoTS);
+      // intentional use FindNextUserEntryPerf, to reduce template instant
+      SetFindNext6(FindNextUserEntryPerf, kUnknown, 0, VirtualCmpNoTS, true);
     }
   }
 }
