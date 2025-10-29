@@ -567,7 +567,7 @@ struct BytewiseCmpNoTS {
     __m512i   yyy = _mm512_maskz_loadu_epi8(msk, y.data());
     __mmask64 neq = _mm512_cmpneq_epi8_mask(xxx, yyy);
     __mmask64 lt  = _mm512_cmplt_epi8_mask (xxx, yyy);
-    return (lt & _blsi_u64(neq)) != 0;
+    return (lt & -neq) != 0;
   }
  #endif
   int compare(const Slice& x, const Slice& y) const { return x.compare(y); }
