@@ -433,7 +433,7 @@ class DBIter final : public Iterator {
 #else
   #define ROCKSDB_TEST_PinnedDataIterator 0
   struct FastIterKey {
-    terark::minimal_sso<72, false> key; // avx512 max is 64, 72 > 64
+    terark::minimal_sso<80, false> key; // avx512 max is 64, 80 > 64+(seqvt 8)
     void Clear() { key.clear(); }
     void SetUserKey(const Slice& uk, bool copy = true) {
       key.assign(uk.size_ + 8, [=](char* buf, size_t len) {
