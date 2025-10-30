@@ -143,7 +143,7 @@ class IteratorWrapperBase {
    #if !TOPLING_USE_BOUND_PMF
     return iter_->PrepareAndGetValue(v); // do minimal work
    #else
-    return prepare_and_get_value_(iter_, v);
+    return prepare_and_get_value_(work_iter_, v);
    #endif
   }
 #ifdef __GNUC__
