@@ -802,7 +802,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
                                          ikey_.user_key, timestamp_size_)
                                    : Slice();
     bool more_recent = false;
-    if (IsVisible<MayHasCallback>(ikey_.sequence, ts, &more_recent)) {
+    if (LIKELY(IsVisible<MayHasCallback>(ikey_.sequence, ts, &more_recent))) {
       // If the previous entry is of seqnum 0, the current entry will not
       // possibly be skipped. This condition can potentially be relaxed to
       // prev_key.seq <= ikey_.sequence. We are cautious because it will be more
@@ -810,9 +810,9 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
       // Note that with current timestamp implementation, the same user key can
       // have different timestamps and zero sequence number on the bottommost
       // level. This may change in the future.
-      if ((!is_prev_key_seqnum_zero || timestamp_size_ > 0) &&
+      if (UNLIKELY((!is_prev_key_seqnum_zero || timestamp_size_ > 0) &&
           skipping_saved_key &&
-          EqKeyForSkip<FixLen>(saved_key_.GetUK<FixLen>(), ikey_.user_key, cmpNoTS)) {
+          EqKeyForSkip<FixLen>(saved_key_.GetUK<FixLen>(), ikey_.user_key, cmpNoTS))) {
         num_skipped++;  // skip this entry
         PERF_COUNTER_ADD(internal_key_skipped_count, 1);
       } else {
