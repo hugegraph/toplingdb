@@ -473,6 +473,16 @@ class DBIter final : public Iterator {
       }
       rocksdb::EncodeFixed64(end - 8, PackSequenceAndType(seq, vt));
     }
+    template<size_t FixLen>
+    Slice GetUK() const {
+      if constexpr (FixLen == 64)
+        // avx512 FixLen==64 means max is 64(without seqvt 8)
+        return key.risk_to_str_local<Slice>().notail(8);
+      if constexpr (FixLen != 0)
+        return key.risk_to_str_local_known_len<Slice, FixLen + 8>().notail(8);
+      else
+        return GetUserKey();
+    }
     Slice GetUserKey() const { return key.notail<Slice>(8); }
     Slice GetInternalKey() const { return key.to<Slice>(); }
     size_t Size() const { return key.size() - 8; }

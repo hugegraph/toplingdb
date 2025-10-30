@@ -105,6 +105,11 @@ class Slice {
     size_ -= n;
   }
 
+  Slice notail(size_t n) const {
+    ROCKSDB_ASSERT_LE(n, size_);
+    return Slice(data_, size_ - n);
+  }
+
   // Return a string that contains the copy of the referenced data.
   // when hex is true, returns a string of twice the length hex encoded (0-9A-F)
   std::string ToString(bool hex) const;
