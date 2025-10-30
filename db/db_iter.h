@@ -172,9 +172,11 @@ class DBIter final : public Iterator {
       if (LIKELY(mut->iter_.PrepareAndGetValue(&mut->value_))) {
         mut->is_value_prepared_ = true;
         mut->local_stats_.bytes_read_ += value_.size_;
-      } else { // Can not go on, die with message
-        ROCKSDB_DIE("PrepareAndGetValue() failed, status = %s",
-                    iter_.status().ToString().c_str());
+      } else {
+        // form an invalid value for caller to check, avoid first call
+        // PrepareValue() then call value(). this should be very rare
+        mut->value_.data_ = nullptr;
+        mut->value_.size_ = size_t(-1);
       }
     }
     return value_;
