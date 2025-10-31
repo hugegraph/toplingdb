@@ -20,7 +20,8 @@
 
 namespace ROCKSDB_NAMESPACE {
   JZeroCopyIter::~JZeroCopyIter() {
-    delete iter;
+    delete own_iter;
+    own_iter = nullptr;
     iter = nullptr;
   }
 
@@ -170,7 +171,7 @@ void Java_org_rocksdb_RocksIterator_prev0(JNIEnv* /*env*/, jobject /*jobj*/,
 void Java_org_rocksdb_RocksIterator_refresh0(JNIEnv* env, jobject /*jobj*/,
                                              jlong handle) {
   auto zc_it = reinterpret_cast<JZeroCopyIter*>(handle);
-  auto it = zc_it->iter;
+  auto it = zc_it->own_iter;
   ROCKSDB_NAMESPACE::Status s = it->Refresh();
   if (it->Valid()) {
     zc_it->key = it->key();
@@ -426,7 +427,7 @@ JNIEXPORT void JNICALL Java_org_rocksdb_RocksIterator_nativeRefreshForDatabaseGC
 (JNIEnv* env, jobject, jlong jiter)
 {
   auto zc_it = reinterpret_cast<JZeroCopyIter*>(jiter);
-  auto iter = zc_it->iter;
+  auto iter = zc_it->own_iter;
   bool is_valid = iter->Valid();
   ROCKSDB_NAMESPACE::Status s = iter->RefreshKeepSnapshot(true);
   if (is_valid) {

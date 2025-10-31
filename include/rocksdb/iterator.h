@@ -164,6 +164,7 @@ class Iterator : public Cleanable {
   //  - if fixed_user_key_len is not equal to beg/end user key length, it is ignored
   // if fixed_user_key_len == 0, user keys are of variable length, no optimizations
   virtual size_t CountKeysInRange(const Slice& beg, const Slice& end, size_t fixed_user_key_len = 0);
+  virtual Iterator* GetUnwrapped() { return this; }
 };
 
 // Return an empty iterator (yields nothing).

@@ -6020,6 +6020,8 @@ class Benchmark {
     options.auto_readahead_size = FLAGS_auto_readahead_size;
     options.fixed_user_key_len = FLAGS_scan_omit_key ? FLAGS_key_size : 0;
     Iterator* iter = db->NewIterator(options);
+    std::unique_ptr<Iterator> iter_auto_del(iter);
+    iter = iter->GetUnwrapped();
     int64_t i = 0, bytes = 0;
     const auto limiter = thread->shared->read_rate_limiter.get();
     const bool omit_value = FLAGS_scan_omit_value;
@@ -6040,7 +6042,6 @@ class Benchmark {
       }
       key = iter->NextWithKey();
     }
-    delete iter;
     thread->stats.AddBytes(bytes);
   }
 

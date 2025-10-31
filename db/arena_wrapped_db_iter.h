@@ -92,6 +92,7 @@ class ArenaWrappedDBIter final : public Iterator {
 
   Status Refresh() override;
   Status Refresh(const Snapshot*, bool keep_iter_pos) override;
+  Iterator* GetUnwrapped() override { return db_iter_; }
 
   void Init(Env* env, const ReadOptions& read_options,
             const ImmutableOptions& ioptions,
