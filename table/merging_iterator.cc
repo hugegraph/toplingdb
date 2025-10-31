@@ -945,9 +945,11 @@ public:
       // iterator yields a sequence of keys, this is cheap.
       assert(current_->status().ok());
       UpdatePrefixCache(minHeap_.top(), current_);
-      minHeap_.update_top();
+      bool top_changed = minHeap_.update_top();
       if (LIKELY(RangeTombstoneStaticEmpty || range_tombstone_iters_.empty())) {
-        current_ = &minHeap_.top()->iter; // current_ = CurrentForward();
+        if (UNLIKELY(top_changed)) {
+          current_ = &minHeap_.top()->iter; // current_ = CurrentForward();
+        }
         return true;
       }
     } else {
