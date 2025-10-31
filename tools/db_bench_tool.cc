@@ -5966,6 +5966,8 @@ class Benchmark {
     options.fixed_user_key_len = omit_key ? key_size : 0;
 
     Iterator* iter = db->NewIterator(options);
+    std::unique_ptr<Iterator> iter_auto_del(iter);
+    iter = iter->GetUnwrapped();
     int64_t i = 0;
     int64_t bytes = 0;
     const auto limiter = thread->shared->read_rate_limiter.get();
@@ -5974,7 +5976,7 @@ class Benchmark {
       if (UNLIKELY(!iter->Valid())) { // wrap if does not reach reads_
         iter->SeekToFirst();
         if (!iter->Valid())
-          continue; // safe keep loop even on empty db
+          break; // empty db
       }
       if (omit_value) {
         bytes += omit_key ? key_size : iter->key().size();
@@ -5991,7 +5993,6 @@ class Benchmark {
       }
     }
 
-    delete iter;
     thread->stats.AddBytes(bytes);
   }
 
@@ -6029,7 +6030,7 @@ class Benchmark {
       if (UNLIKELY(!key.data())) { // end of iter, wrap if does not reach reads_
         key = iter->SeekToFirstWithKey();
         if (!key.data())
-          continue; // safe keep loop even on empty db
+          break; // empty db
       }
       bytes += key.size();
       if (!omit_value) {
