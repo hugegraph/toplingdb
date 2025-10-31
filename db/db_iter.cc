@@ -925,7 +925,7 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
         num_skipped++;
       } else {
         FixLen != 0 ? // to propagate const FixLen
-        saved_key_.SetUserKey(ikey_.user_key.data_, FixLen) :
+        saved_key_.SetUK<FixLen>(ikey_.user_key) :
         saved_key_.SetUserKey(
             ikey_.user_key,
             !pin_thru_lifetime_ || !iter_.iter()->IsKeyPinned() /* copy */);
