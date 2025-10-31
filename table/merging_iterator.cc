@@ -918,6 +918,34 @@ public:
     }
   }
 
+  void PrepareScan(IteratorWrapper* iw) override {
+    assert(iw != nullptr);
+    ROCKSDB_ASSUME(iw != nullptr);
+    my_wrapper_ = iw;
+    UpdateScanFunc(iw);
+  }
+  void UpdateScanFunc(IteratorWrapper* iw) {
+    if (iw) {
+      if (UNLIKELY(direction_ != kForward || nullptr == current_))
+        ResetValueFunc(iw);
+      else
+        CopyValueFunc(iw, current_);
+    }
+  }
+  void ResetValueFunc(IteratorWrapper* iw) {
+    if (iw) {
+      iw->value_iter_ = this;
+      iw->prepare_and_get_value_ =
+            ForgeFuncPtr(this, &MergingIterTmpl::PrepareAndGetValue);
+    }
+  }
+  void CopyValueFunc(IteratorWrapper* dst, const IteratorWrapper* src) {
+    if (dst && src) {
+      dst->value_iter_ = src->value_iter_;
+      dst->prepare_and_get_value_ = src->prepare_and_get_value_;
+    }
+  }
+
   void Next() override {
     DoNext(); // ignore return value
   }
@@ -931,6 +959,7 @@ public:
       // The loop advanced all non-current children to be > key() so current_
       // should still be strictly the smallest key.
       SwitchToForward();
+      UpdateScanFunc(my_wrapper_);
       if (UNLIKELY(!status_.ok()))
         return false;
     }
@@ -949,6 +978,7 @@ public:
       if (LIKELY(RangeTombstoneStaticEmpty || range_tombstone_iters_.empty())) {
         if (UNLIKELY(top_changed)) {
           current_ = &minHeap_.top()->iter; // current_ = CurrentForward();
+          CopyValueFunc(my_wrapper_, current_);
         }
         return true;
       }
@@ -966,8 +996,10 @@ public:
     FindNextVisibleKey();
     if (LIKELY(!minHeap_.empty())) {
       current_ = &minHeap_.top()->iter;
+      CopyValueFunc(my_wrapper_, current_);
       return status_.ok();
     } else {
+      ResetValueFunc(my_wrapper_);
       current_ = nullptr;
       return false;
     }
@@ -994,6 +1026,7 @@ public:
       // Otherwise, retreat the non-current children.  We retreat current_
       // just after the if-block.
       SwitchToBackward();
+      ResetValueFunc(my_wrapper_);
     }
 
     // For the heap modifications below to be correct, current_ must be the
@@ -1129,6 +1162,9 @@ public:
   };
 
   const InternalKeyComparator* comparator_;
+
+  IteratorWrapper* my_wrapper_ = nullptr;
+
   // HeapItem for range tombstone start and end keys. Each range tombstone
   // iterator will have at most one side (start key or end key) in a heap
   // at the same time, so this vector will be of size children_.size();
