@@ -50,6 +50,7 @@ class IteratorWrapperBase {
     iter_ = _iter;
    #if TOPLING_USE_BOUND_PMF
     work_iter_ = _iter;
+    value_iter_ = _iter;
    #endif
     if (iter_ == nullptr) {
       result_.is_valid = false;
@@ -143,7 +144,7 @@ class IteratorWrapperBase {
    #if !TOPLING_USE_BOUND_PMF
     return iter_->PrepareAndGetValue(v); // do minimal work
    #else
-    return prepare_and_get_value_(work_iter_, v);
+    return prepare_and_get_value_(value_iter_, v);
    #endif
   }
 #ifdef __GNUC__
@@ -268,6 +269,7 @@ class IteratorWrapperBase {
 #if TOPLING_USE_BOUND_PMF
  public:
   InternalIteratorBase<TValue>* work_iter_ = nullptr;
+  InternalIteratorBase<TValue>* value_iter_ = nullptr;
   typedef bool (*NextAndGetResultFN)(InternalIteratorBase<TValue>*, IterateResult*);
   typedef bool (*PrepareAndGetValueFN)(InternalIteratorBase<TValue>*, TValue*);
   NextAndGetResultFN next_and_get_result_ = nullptr;

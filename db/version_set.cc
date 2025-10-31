@@ -1203,12 +1203,14 @@ class LevelIterator final : public InternalIterator {
   void UpdateScanFunc(IteratorWrapper* iw) {
     if (to_return_sentinel_ || file_iter_.iter() == nullptr) {
       iw->work_iter_ = this;
+      iw->value_iter_ = this;
       iw->next_and_get_result_ = ForgeFuncPtr(this,
                                      &LevelIterator::NextAndGetResult);
       iw->prepare_and_get_value_ = ForgeFuncPtr(this,
                                      &LevelIterator::PrepareAndGetValue);
     } else {
       iw->work_iter_ = file_iter_.iter();
+      iw->value_iter_ = file_iter_.iter();
       iw->next_and_get_result_ = ForgeFuncPtr(file_iter_.iter(),
                                   &InternalIterator::NextAndGetResult);
       iw->prepare_and_get_value_ = ForgeFuncPtr(file_iter_.iter(),
@@ -1647,6 +1649,7 @@ void LevelIterator::Prev() {
   assert(Valid());
   if (auto iw = my_wrapper_; UNLIKELY(iw && iw->work_iter_ != this)) {
     iw->work_iter_ = this;
+    iw->value_iter_ = this;
     iw->next_and_get_result_ = ForgeFuncPtr(this,
                                     &LevelIterator::NextAndGetResult);
     iw->prepare_and_get_value_ = ForgeFuncPtr(this,
