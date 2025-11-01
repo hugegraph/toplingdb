@@ -183,24 +183,6 @@ class DBIter final : public Iterator {
     return value_;
   }
 
-  // without PrepareValue, user can not check iter_.PrepareAndGetValue(),
-  // thus must die in DBIter::value() if iter_.PrepareAndGetValue() fails.
-  bool PrepareValue() override { // enable error check for lazy load
-    assert(valid_);
-    if (!is_value_prepared_) {
-      if (LIKELY(iter_.PrepareAndGetValue(&value_))) {
-        is_value_prepared_ = true;
-        local_stats_.bytes_read_ += value_.size_;
-      } else {
-        valid_ = false;
-        status_ = iter_.status();
-        ROCKSDB_VERIFY(!status_.ok());
-        return false;
-      }
-    }
-    return true;
-  }
-
 #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
   const WideColumns& columns() const override {
     assert(valid_);

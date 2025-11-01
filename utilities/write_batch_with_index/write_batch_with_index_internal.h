@@ -96,7 +96,6 @@ class BaseDeltaIterator final : public Iterator {
   Status Refresh(const Snapshot*, bool keep_iter_pos) override;
   using Iterator::Refresh;
   void Invalidate(Status s);
-  bool PrepareValue() override;
   std::unique_ptr<Iterator>& GetBaseIter() { return base_iterator_; }
   std::unique_ptr<WBWIIterator>& GetDeltaIter() { return delta_iterator_; }
   const Comparator* GetComparator() const { return comparator_; }

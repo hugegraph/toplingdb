@@ -150,8 +150,6 @@ class Iterator : public Cleanable {
     return Slice();
   }
 
-  virtual bool PrepareValue() { return true; }
-
   virtual Slice NextWithKey();
   virtual Slice PrevWithKey();
   Slice SeekToFirstWithKey();

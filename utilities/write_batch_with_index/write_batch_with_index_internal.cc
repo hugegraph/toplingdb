@@ -226,14 +226,6 @@ Slice BaseDeltaIterator::timestamp() const {
   return current_at_base_ ? base_iterator_->timestamp() : Slice();
 }
 
-bool BaseDeltaIterator::PrepareValue() {
-  if (current_at_base_) {
-    return base_iterator_->PrepareValue();
-  } else {
-    return true;
-  }
-}
-
 Status BaseDeltaIterator::status() const {
   if (!status_.ok()) {
     return status_;
