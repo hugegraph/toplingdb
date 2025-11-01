@@ -177,6 +177,7 @@ class DBIter final : public Iterator {
         // PrepareValue() then call value(). this should be very rare
         mut->value_.data_ = nullptr;
         mut->value_.size_ = size_t(-1);
+        mut->status_ = mut->iter_.status();
       }
     }
     return value_;
