@@ -25,6 +25,13 @@ namespace ROCKSDB_NAMESPACE {
     iter = nullptr;
   }
 
+#define THROW_ON_INVALID_VALUE(zc_iter, ReturnOnError) \
+  if (UNLIKELY(zc_iter->value.size() == size_t(-1))) { \
+    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew   \
+                       (env, zc_iter->iter->status()); \
+    ReturnOnError; \
+  } else (void)(0)
+
   // ensure that the JZeroCopyIter accessing in java side is correct
   static_assert(offsetof(JZeroCopyIter, key.data_) == 8);
   static_assert(offsetof(JZeroCopyIter, key.size_) == 16);
@@ -34,13 +41,15 @@ namespace ROCKSDB_NAMESPACE {
   // If such callback class is reusable, move it to a common header file.
   struct JCallbackSeek {
     void operator()(Slice target_slice) const;
-    JCallbackSeek(jlong h) : handle(h) {}
+    JCallbackSeek(jlong h, JNIEnv* _env) : handle(h), env(_env) {}
     jlong handle;
+    JNIEnv* env;
   };
   struct JCallbackSeekForPrev {
     void operator()(Slice target_slice) const;
-    JCallbackSeekForPrev(jlong h) : handle(h) {}
+    JCallbackSeekForPrev(jlong h, JNIEnv* _env) : handle(h), env(_env) {}
     jlong handle;
+    JNIEnv* env;
   };
 
   void JCallbackSeek::operator()(Slice target_slice) const {
@@ -49,6 +58,7 @@ namespace ROCKSDB_NAMESPACE {
     bool fetch_value = (handle & 1) != 0;
     if (zc_iter->key.data() != nullptr && fetch_value) {
       zc_iter->value = zc_iter->iter->value();
+      THROW_ON_INVALID_VALUE(zc_iter, return);
     } else {
       zc_iter->value.data_ = nullptr;
     }
@@ -59,6 +69,7 @@ namespace ROCKSDB_NAMESPACE {
     bool fetch_value = (handle & 1) != 0;
     if (zc_iter->key.data() != nullptr && fetch_value) {
       zc_iter->value = zc_iter->iter->value();
+      THROW_ON_INVALID_VALUE(zc_iter, return);
     } else {
       zc_iter->value.data_ = nullptr;
     }
@@ -102,13 +113,14 @@ jboolean Java_org_rocksdb_RocksIterator_isValid0(JNIEnv* /*env*/,
  * Method:    seekToFirst0
  * Signature: (J)V
  */
-void Java_org_rocksdb_RocksIterator_seekToFirst0(JNIEnv* /*env*/,
+void Java_org_rocksdb_RocksIterator_seekToFirst0(JNIEnv* env,
                                                  jobject /*jobj*/,
                                                  jlong handle) {
   auto it = reinterpret_cast<JZeroCopyIter*>(handle & jlong(~1L));
   it->key = it->iter->SeekToFirstWithKey();
   if (it->key.data() != nullptr && (handle & 1)) {
     it->value = it->iter->value();
+    THROW_ON_INVALID_VALUE(it, return);
   } else {
     it->value.data_ = nullptr;
   }
@@ -119,13 +131,14 @@ void Java_org_rocksdb_RocksIterator_seekToFirst0(JNIEnv* /*env*/,
  * Method:    seekToLast0
  * Signature: (J)V
  */
-void Java_org_rocksdb_RocksIterator_seekToLast0(JNIEnv* /*env*/,
+void Java_org_rocksdb_RocksIterator_seekToLast0(JNIEnv* env,
                                                 jobject /*jobj*/,
                                                 jlong handle) {
   auto it = reinterpret_cast<JZeroCopyIter*>(handle & jlong(~1L));
   it->key = it->iter->SeekToLastWithKey();
   if (it->key.data() != nullptr && (handle & 1)) {
     it->value = it->iter->value();
+    THROW_ON_INVALID_VALUE(it, return);
   } else {
     it->value.data_ = nullptr;
   }
@@ -136,12 +149,13 @@ void Java_org_rocksdb_RocksIterator_seekToLast0(JNIEnv* /*env*/,
  * Method:    next0
  * Signature: (J)V
  */
-void Java_org_rocksdb_RocksIterator_next0(JNIEnv* /*env*/, jobject /*jobj*/,
+void Java_org_rocksdb_RocksIterator_next0(JNIEnv* env, jobject /*jobj*/,
                                           jlong handle) {
   auto it = reinterpret_cast<JZeroCopyIter*>(handle & jlong(~1L));
   it->key = it->iter->NextWithKey();
   if (it->key.data() != nullptr && (handle & 1)) {
     it->value = it->iter->value();
+    THROW_ON_INVALID_VALUE(it, return);
   } else {
     it->value.data_ = nullptr;
   }
@@ -152,12 +166,13 @@ void Java_org_rocksdb_RocksIterator_next0(JNIEnv* /*env*/, jobject /*jobj*/,
  * Method:    prev0
  * Signature: (J)V
  */
-void Java_org_rocksdb_RocksIterator_prev0(JNIEnv* /*env*/, jobject /*jobj*/,
+void Java_org_rocksdb_RocksIterator_prev0(JNIEnv* env, jobject /*jobj*/,
                                           jlong handle) {
   auto it = reinterpret_cast<JZeroCopyIter*>(handle & jlong(~1L));
   it->key = it->iter->PrevWithKey();
   if (it->key.data() != nullptr && (handle & 1)) {
     it->value = it->iter->value();
+    THROW_ON_INVALID_VALUE(it, return);
   } else {
     it->value.data_ = nullptr;
   }
@@ -177,6 +192,7 @@ void Java_org_rocksdb_RocksIterator_refresh0(JNIEnv* env, jobject /*jobj*/,
     zc_it->key = it->key();
     if (zc_it->value.data_) {
       zc_it->value = it->value();
+      THROW_ON_INVALID_VALUE(zc_it, return);
     }
   } else {
     zc_it->key = ROCKSDB_NAMESPACE::Slice(nullptr, 0);
@@ -198,7 +214,7 @@ void Java_org_rocksdb_RocksIterator_refresh0(JNIEnv* env, jobject /*jobj*/,
 void Java_org_rocksdb_RocksIterator_seek0(JNIEnv* env, jobject /*jobj*/,
                                           jlong handle, jbyteArray jtarget,
                                           jint jtarget_len) {
-  JCallbackSeek seek(handle);
+  JCallbackSeek seek(handle, env);
   ROCKSDB_NAMESPACE::JniUtil::k_op_region(seek, env, jtarget, 0, jtarget_len);
 }
 
@@ -214,7 +230,7 @@ void Java_org_rocksdb_RocksIterator_seek0(JNIEnv* env, jobject /*jobj*/,
 void Java_org_rocksdb_RocksIterator_seekByteArray0(
     JNIEnv* env, jobject /*jobj*/, jlong handle, jbyteArray jtarget,
     jint jtarget_off, jint jtarget_len) {
-  JCallbackSeek seek(handle);
+  JCallbackSeek seek(handle, env);
   ROCKSDB_NAMESPACE::JniUtil::k_op_region(seek, env, jtarget, jtarget_off,
                                           jtarget_len);
 }
@@ -228,7 +244,7 @@ void Java_org_rocksdb_RocksIterator_seekDirect0(JNIEnv* env, jobject /*jobj*/,
                                                 jlong handle, jobject jtarget,
                                                 jint jtarget_off,
                                                 jint jtarget_len) {
-  JCallbackSeek seek(handle);
+  JCallbackSeek seek(handle, env);
   ROCKSDB_NAMESPACE::JniUtil::k_op_direct(seek, env, jtarget, jtarget_off,
                                           jtarget_len);
 }
@@ -241,7 +257,7 @@ void Java_org_rocksdb_RocksIterator_seekDirect0(JNIEnv* env, jobject /*jobj*/,
 void Java_org_rocksdb_RocksIterator_seekForPrevDirect0(
     JNIEnv* env, jobject /*jobj*/, jlong handle, jobject jtarget,
     jint jtarget_off, jint jtarget_len) {
-  JCallbackSeekForPrev seekPrev(handle);
+  JCallbackSeekForPrev seekPrev(handle, env);
   ROCKSDB_NAMESPACE::JniUtil::k_op_direct(seekPrev, env, jtarget, jtarget_off,
                                           jtarget_len);
 }
@@ -255,7 +271,7 @@ void Java_org_rocksdb_RocksIterator_seekForPrev0(JNIEnv* env, jobject /*jobj*/,
                                                  jlong handle,
                                                  jbyteArray jtarget,
                                                  jint jtarget_len) {
-  JCallbackSeekForPrev seek(handle);
+  JCallbackSeekForPrev seek(handle, env);
   ROCKSDB_NAMESPACE::JniUtil::k_op_region(seek, env, jtarget, 0, jtarget_len);
 }
 
@@ -271,7 +287,7 @@ void Java_org_rocksdb_RocksIterator_seekForPrev0(JNIEnv* env, jobject /*jobj*/,
 void Java_org_rocksdb_RocksIterator_seekForPrevByteArray0(
     JNIEnv* env, jobject /*jobj*/, jlong handle, jbyteArray jtarget,
     jint jtarget_off, jint jtarget_len) {
-  JCallbackSeekForPrev seek(handle);
+  JCallbackSeekForPrev seek(handle, env);
   ROCKSDB_NAMESPACE::JniUtil::k_op_region(seek, env, jtarget, jtarget_off,
                                           jtarget_len);
 }
@@ -369,6 +385,7 @@ void Java_org_rocksdb_RocksIterator_value0(JNIEnv* env, jobject /*jobj*/,
   assert(zc_it->iter->Valid());
   assert(zc_it->key.data() != nullptr);
   zc_it->value = zc_it->iter->value();
+  THROW_ON_INVALID_VALUE(zc_it, return);
 }
 
 /*
@@ -385,6 +402,7 @@ jint Java_org_rocksdb_RocksIterator_valueDirect0(JNIEnv* env, jobject /*jobj*/,
   assert(zc_it->key.data() != nullptr);
   if (zc_it->value.data() == nullptr) {
     zc_it->value = zc_it->iter->value();
+    THROW_ON_INVALID_VALUE(zc_it, return 0);
   }
   ROCKSDB_NAMESPACE::Slice value_slice = zc_it->value;
   return ROCKSDB_NAMESPACE::JniUtil::copyToDirect(env, value_slice, jtarget,
@@ -407,6 +425,7 @@ jint Java_org_rocksdb_RocksIterator_valueByteArray0(
   assert(zc_it->key.data() != nullptr);
   if (zc_it->value.data() == nullptr) {
     zc_it->value = zc_it->iter->value();
+    THROW_ON_INVALID_VALUE(zc_it, return 0);
   }
   ROCKSDB_NAMESPACE::Slice value_slice = zc_it->value;
   jsize copy_size = std::min(static_cast<uint32_t>(value_slice.size()),
@@ -433,6 +452,7 @@ JNIEXPORT void JNICALL Java_org_rocksdb_RocksIterator_nativeRefreshForDatabaseGC
   if (is_valid) {
     zc_it->key = iter->key();
     zc_it->value = iter->value();
+    THROW_ON_INVALID_VALUE(zc_it, return);
   }
   ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
 }
