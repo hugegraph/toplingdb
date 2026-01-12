@@ -159,6 +159,15 @@ private:
 #define FORCE_INLINE inline
 #endif
 
+#if defined(__AVX512VL__) && defined(__AVX512BW__)
+  // can be defined as 23 or 16
+  #define MERGE_ITER_PREFIX_LEN 23
+#else
+  #define MERGE_ITER_PREFIX_LEN 16
+#endif
+
+#if MERGE_ITER_PREFIX_LEN == 16
+
 #if 0
   #define bswap_prefix __bswap_64
   using UintPrefix = uint64_t;
@@ -177,7 +186,7 @@ private:
   #else
     using UintPrefix = unsigned __int128;
     FORCE_INLINE UintPrefix bswap_prefix(UintPrefix x) {
-      return UintPrefix(__bswap_64(uint64_t(x))) << 64 | __bswap_64(uint64_t(x >> 64));
+      return UintPrefix(NativeOfBigEndian64(uint64_t(x))) << 64 | NativeOfBigEndian64(uint64_t(x >> 64));
     }
   #endif
 #endif
@@ -199,6 +208,9 @@ __always_inline UintPrefix LoadPrefixZeroSuffix(const void* src) {
     un.u64[1] = ((const uint32_t*)src)[2]; // zero extend uint32 to uint64
     return un.u128;
   }
+  if (PrefixLen == 8) { // help gcc optimize better
+    return UintPrefix(*(const uint64_t*)src);
+  }
  #endif
   UintPrefix dst;
   memcpy(&dst, src, PrefixLen);
@@ -219,7 +231,7 @@ FORCE_INLINE UintPrefix HostPrefixCacheUK(const Slice& uk) {
   } else {
    #if defined(__AVX512VL__) && defined(__AVX512BW__)
    #pragma message "__AVX512VL__ && __AVX512BW__, use _mm_maskz_loadu_epi8"
-    auto mask = uint16_t(~(-1 << uk.size_));
+    auto mask = _bzhi_u32(-1, uk.size_);
     return bswap_prefix((UintPrefix)_mm_maskz_loadu_epi8(mask, uk.data_));
    #else
     return bswap_prefix(LoadPrefixZeroSuffixDynaLen(uk.data_, uk.size_));
@@ -235,7 +247,7 @@ FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
     return bswap_prefix(unaligned_load<UintPrefix>(ik.data_));
   } else {
    #if defined(__AVX512VL__) && defined(__AVX512BW__)
-    auto mask = uint16_t(~(-1 << (ik.size_ - 8)));
+    auto mask = _bzhi_u32(-1, ik.size_ - 8);
     return bswap_prefix((UintPrefix)_mm_maskz_loadu_epi8(mask, ik.data_));
    #else
     if (LIKELY(8 + 8 == ik.size_)) {
@@ -253,6 +265,15 @@ FORCE_INLINE UintPrefix HostPrefixCacheIK(const Slice& ik) {
   #error "HostPrefixCacheIK: Not support bigendian yet"
 #endif
 }
+#else // MERGE_ITER_PREFIX_LEN
+
+struct UintPrefix {
+  static_assert(MERGE_ITER_PREFIX_LEN == 23);
+  unsigned char data[MERGE_ITER_PREFIX_LEN] = {0};
+  UintPrefix(int=0) {}
+};
+
+#endif // MERGE_ITER_PREFIX_LEN
 
 struct HeapItemAndPrefix {
   FORCE_INLINE HeapItemAndPrefix() = default;
@@ -261,19 +282,36 @@ struct HeapItemAndPrefix {
     UpdatePrefixCache(*this, &item->iter);
   }
   UintPrefix key_prefix = 0;
-  HeapItem* item_ptr;
   HeapItem::Type iter_type;
+  HeapItem* item_ptr;
 
   HeapItem* operator->() const noexcept { return item_ptr; }
 
   FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefix& x, IteratorWrapper* iter) {
     ROCKSDB_ASSERT_EQ(&x.item_ptr->iter, iter);
+#if MERGE_ITER_PREFIX_LEN == 16
     if (LIKELY(HeapItem::ITERATOR == x.iter_type))
       x.key_prefix = HostPrefixCacheIK(iter->key());
     else
       x.key_prefix = HostPrefixCacheUK(x.item_ptr->tombstone_pik.user_key);
+#else
+    static_assert(sizeof(HeapItemAndPrefix) == 32);
+    static_assert(MERGE_ITER_PREFIX_LEN == 23);
+    const Slice uk = x.GetUserKey(iter);
+    __mmask32 mskl = _bzhi_u32(-1, std::min<size_t>(uk.size(), sizeof(x.key_prefix)));
+    __mmask32 msks = _bzhi_u32(-1, sizeof(x.key_prefix));
+    __m256i   r256 = _mm256_maskz_loadu_epi8(mskl, uk.data());
+    _mm256_mask_storeu_epi8(&x.key_prefix, msks, r256); // do not byte swap
+#endif
+  }
+  FORCE_INLINE Slice GetUserKey(const IteratorWrapper* iter) const {
+    if (LIKELY(HeapItem::ITERATOR == iter_type))
+      return iter->user_key();
+    else
+      return item_ptr->tombstone_pik.user_key;
   }
 };
+#if MERGE_ITER_PREFIX_LEN == 16
 struct HeapItemAndPrefixFast : HeapItemAndPrefix {
   using HeapItemAndPrefix::HeapItemAndPrefix;
   FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefixFast& x, IteratorWrapper* iter) {
@@ -282,6 +320,26 @@ struct HeapItemAndPrefixFast : HeapItemAndPrefix {
     x.key_prefix = HostPrefixCacheIK(iter->key());
   }
 };
+#else
+struct HeapItemAndPrefixFast {
+  FORCE_INLINE HeapItemAndPrefixFast() = default;
+  FORCE_INLINE HeapItemAndPrefixFast(HeapItem* item) : item_ptr(item) {
+    UpdatePrefixCache(*this, &item->iter);
+  }
+  static_assert(MERGE_ITER_PREFIX_LEN == 23);
+  unsigned char key_prefix[24];
+  HeapItem* item_ptr;
+  HeapItem* operator->() const noexcept { return item_ptr; }
+  FORCE_INLINE friend void UpdatePrefixCache(HeapItemAndPrefixFast& x, IteratorWrapper* iter) {
+    ROCKSDB_ASSERT_EQ(HeapItem::ITERATOR, x.item_ptr->type);
+    const Slice uk = iter->user_key();
+    __mmask32 mskl = _bzhi_u32(-1, std::min<size_t>(uk.size(), sizeof(x.key_prefix)));
+    __mmask32 msks = _bzhi_u32(-1, sizeof(x.key_prefix));
+    __m256i   r256 = _mm256_maskz_loadu_epi8(mskl, uk.data());
+    _mm256_mask_storeu_epi8(&x.key_prefix, msks, r256); // do not byte swap
+  }
+};
+#endif
 static_assert(sizeof(HeapItemAndPrefixFast) == sizeof(HeapItemAndPrefix));
 inline static void UpdatePrefixCache(HeapItem*, IteratorWrapper*) {}
 
@@ -365,8 +423,26 @@ class MinHeapBytewiseComp {
   MinHeapBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-    if (LIKELY(a.key_prefix != b.key_prefix))
-      return a.key_prefix > b.key_prefix;
+#if MERGE_ITER_PREFIX_LEN == 16
+  #define MERGE_ITER_CMP_gt >
+  #define MERGE_ITER_CMP_lt <
+  #define MERGE_ITER_CMP_PREFIX(cmp)          \
+    if (LIKELY(a.key_prefix != b.key_prefix)) \
+      return a.key_prefix MERGE_ITER_CMP_##cmp b.key_prefix;
+#else
+//-------------------------------------------------------------------
+  #define MERGE_ITER_CMP_PREFIX(cmp)                               \
+    __mmask32 mask = _bzhi_u32(-1, sizeof(a.key_prefix));          \
+    __m256i   a256 = _mm256_maskz_loadu_epi8(mask, &a.key_prefix); \
+    __m256i   b256 = _mm256_maskz_loadu_epi8(mask, &b.key_prefix); \
+    __mmask32 cneq = _mm256_cmpneq_epi8_mask(a256, b256);          \
+    if (LIKELY(cneq != 0)) {                                       \
+      __mmask32 cmp = _mm256_cmp##cmp##_epi8_mask(a256, b256);     \
+      return (cmp & -cneq) != 0;                                   \
+    }
+//-------------------------------------------------------------------
+#endif
+    MERGE_ITER_CMP_PREFIX(gt) // must has no semicolon ';'
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(b->iter.key(), a->iter.key());
@@ -385,8 +461,7 @@ class MinHeapBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
-      if (LIKELY(a.key_prefix != b.key_prefix))
-        return a.key_prefix > b.key_prefix;
+      MERGE_ITER_CMP_PREFIX(gt) // must has no semicolon ';'
       else
         return BytewiseCompareInternalKey(b->iter.key(), a->iter.key());
     }
@@ -398,8 +473,7 @@ class MaxHeapBytewiseComp {
   MaxHeapBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-    if (LIKELY(a.key_prefix != b.key_prefix))
-      return a.key_prefix < b.key_prefix;
+    MERGE_ITER_CMP_PREFIX(lt) // must has no semicolon ';'
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return BytewiseCompareInternalKey(a->iter.key(), b->iter.key());
@@ -418,8 +492,7 @@ class MaxHeapBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
-      if (LIKELY(a.key_prefix != b.key_prefix))
-        return a.key_prefix < b.key_prefix;
+      MERGE_ITER_CMP_PREFIX(lt) // must has no semicolon ';'
       else
         return BytewiseCompareInternalKey(a->iter.key(), b->iter.key());
     }
@@ -431,8 +504,7 @@ class MinHeapRevBytewiseComp {
   MinHeapRevBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-    if (LIKELY(a.key_prefix != b.key_prefix))
-      return a.key_prefix < b.key_prefix;
+    MERGE_ITER_CMP_PREFIX(lt) // must has no semicolon ';'
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(b->iter.key(), a->iter.key());
@@ -451,8 +523,7 @@ class MinHeapRevBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
-      if (LIKELY(a.key_prefix != b.key_prefix))
-        return a.key_prefix < b.key_prefix;
+      MERGE_ITER_CMP_PREFIX(lt) // must has no semicolon ';'
       else
         return RevBytewiseCompareInternalKey(b->iter.key(), a->iter.key());
     }
@@ -464,8 +535,7 @@ class MaxHeapRevBytewiseComp {
   MaxHeapRevBytewiseComp(const InternalKeyComparator*) {}
   FORCE_INLINE
   bool operator()(HeapItemAndPrefix const &a, HeapItemAndPrefix const &b) const {
-    if (LIKELY(a.key_prefix != b.key_prefix))
-      return a.key_prefix > b.key_prefix;
+    MERGE_ITER_CMP_PREFIX(gt) // must has no semicolon ';'
     else if (LIKELY(a.iter_type == HeapItem::ITERATOR)) {
       if (LIKELY(b.iter_type == HeapItem::ITERATOR))
         return RevBytewiseCompareInternalKey(a->iter.key(), b->iter.key());
@@ -484,8 +554,7 @@ class MaxHeapRevBytewiseComp {
     IterOnly(const InternalKeyComparator*) {}
     FORCE_INLINE
     bool operator()(HeapItemAndPrefixFast const &a, HeapItemAndPrefixFast const &b) const {
-      if (LIKELY(a.key_prefix != b.key_prefix))
-        return a.key_prefix > b.key_prefix;
+      MERGE_ITER_CMP_PREFIX(gt) // must has no semicolon ';'
       else
         return RevBytewiseCompareInternalKey(a->iter.key(), b->iter.key());
     }
@@ -849,6 +918,34 @@ public:
     }
   }
 
+  void PrepareScan(IteratorWrapper* iw) override {
+    assert(iw != nullptr);
+    ROCKSDB_ASSUME(iw != nullptr);
+    my_wrapper_ = iw;
+    UpdateScanFunc(iw);
+  }
+  void UpdateScanFunc(IteratorWrapper* iw) {
+    if (iw) {
+      if (UNLIKELY(direction_ != kForward || nullptr == current_))
+        ResetValueFunc(iw);
+      else
+        CopyValueFunc(iw, current_);
+    }
+  }
+  void ResetValueFunc(IteratorWrapper* iw) {
+    if (iw) {
+      iw->value_iter_ = this;
+      iw->prepare_and_get_value_ =
+            ForgeFuncPtr(this, &MergingIterTmpl::PrepareAndGetValue);
+    }
+  }
+  void CopyValueFunc(IteratorWrapper* dst, const IteratorWrapper* src) {
+    if (dst && src) {
+      dst->value_iter_ = src->value_iter_;
+      dst->prepare_and_get_value_ = src->prepare_and_get_value_;
+    }
+  }
+
   void Next() override {
     DoNext(); // ignore return value
   }
@@ -862,6 +959,7 @@ public:
       // The loop advanced all non-current children to be > key() so current_
       // should still be strictly the smallest key.
       SwitchToForward();
+      UpdateScanFunc(my_wrapper_);
       if (UNLIKELY(!status_.ok()))
         return false;
     }
@@ -876,9 +974,12 @@ public:
       // iterator yields a sequence of keys, this is cheap.
       assert(current_->status().ok());
       UpdatePrefixCache(minHeap_.top(), current_);
-      minHeap_.update_top();
+      bool top_changed = minHeap_.update_top();
       if (LIKELY(RangeTombstoneStaticEmpty || range_tombstone_iters_.empty())) {
-        current_ = &minHeap_.top()->iter; // current_ = CurrentForward();
+        if (UNLIKELY(top_changed)) {
+          current_ = &minHeap_.top()->iter; // current_ = CurrentForward();
+          CopyValueFunc(my_wrapper_, current_);
+        }
         return true;
       }
     } else {
@@ -895,8 +996,10 @@ public:
     FindNextVisibleKey();
     if (LIKELY(!minHeap_.empty())) {
       current_ = &minHeap_.top()->iter;
+      CopyValueFunc(my_wrapper_, current_);
       return status_.ok();
     } else {
+      ResetValueFunc(my_wrapper_);
       current_ = nullptr;
       return false;
     }
@@ -923,6 +1026,7 @@ public:
       // Otherwise, retreat the non-current children.  We retreat current_
       // just after the if-block.
       SwitchToBackward();
+      ResetValueFunc(my_wrapper_);
     }
 
     // For the heap modifications below to be correct, current_ must be the
@@ -1058,6 +1162,9 @@ public:
   };
 
   const InternalKeyComparator* comparator_;
+
+  IteratorWrapper* my_wrapper_ = nullptr;
+
   // HeapItem for range tombstone start and end keys. Each range tombstone
   // iterator will have at most one side (start key or end key) in a heap
   // at the same time, so this vector will be of size children_.size();

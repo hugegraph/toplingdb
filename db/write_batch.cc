@@ -74,6 +74,10 @@
 #include <terark/smartmap.hpp>
 #include <terark/fstring.hpp>
 
+#if defined(__clang__)
+#pragma clang diagnostic ignored "-Wshorten-64-to-32"
+#endif
+
 namespace ROCKSDB_NAMESPACE {
 
 // anon namespace for file-local types
@@ -961,6 +965,78 @@ Status WriteBatch::Put(ColumnFamilyHandle* column_family, const Slice& key,
                                  SliceParts(&value, 1));
 }
 
+static void DoRevertWriteBatch(std::string* rep, size_t old_size) {
+  terark::string_resize_no_touch_memory(rep, old_size);
+  char* ptr = rep->data();
+  EncodeFixed32(ptr + 8, DecodeFixed32(ptr + 8) - 1); // Revert Batch Count
+  ptr[old_size] = '\0'; // end of str
+}
+
+// use ptr as a flag to indicate success or failure,
+// if ptr is nullptr, it means the operation succeeded
+static inline
+void CommitOrRevertWriteBatch(std::string* rep, size_t old_size, char* ptr) {
+  if (UNLIKELY(ptr != nullptr)) { // failed, revert the batch
+    DoRevertWriteBatch(rep, old_size);
+  }
+}
+
+Status WriteBatchBase::Put(ColumnFamilyHandle* cf, const KeyValuePopulator& kvp) {
+  std::unique_ptr<char[]> key_buf(new char[kvp.key_len()]);
+  std::unique_ptr<char[]> val_buf(new char[kvp.val_len()]);
+  kvp.PopulateKeyValue(key_buf.get(), val_buf.get());
+  Slice key(key_buf.get(), kvp.key_len());
+  Slice val(val_buf.get(), kvp.val_len());
+  return Put(cf, key, val);
+}
+Status WriteBatch::Put(ColumnFamilyHandle* cf, const KeyValuePopulator& kvp) {
+  const size_t key_len = kvp.key_len();
+  const size_t val_len = kvp.val_len();
+  if (UNLIKELY(key_len > size_t{std::numeric_limits<uint32_t>::max()})) {
+    return Status::InvalidArgument("key is too large");
+  }
+  if (UNLIKELY(val_len > size_t{std::numeric_limits<uint32_t>::max()})) {
+    return Status::InvalidArgument("value is too large");
+  }
+  uint32_t cf_id = nullptr == cf ? 0 : cf->GetID();
+  if (LIKELY(nullptr == prot_info_)) {
+    size_t old_size = rep_.size();
+    size_t inc_size = 1
+           + (cf_id ? VarUint32Length(cf_id) : 0)
+           + VarUint32Length(uint32_t(key_len)) + key_len
+           + VarUint32Length(uint32_t(val_len)) + val_len;
+    if (UNLIKELY(max_bytes_ && old_size + inc_size > max_bytes_)) {
+      return Status::MemoryLimit();
+    }
+    terark::string_resize_no_touch_memory(&rep_, old_size + inc_size);
+    char* ptr = rep_.data();
+    EncodeFixed32(ptr + 8, DecodeFixed32(ptr + 8) + 1); // Update Batch Count
+    ptr += old_size;
+    if (cf_id == 0) {
+      ptr[0] = static_cast<char>(kTypeValue);
+      ptr += 1;
+    } else {
+      ptr[0] = static_cast<char>(kTypeColumnFamilyValue);
+      ptr = EncodeVarint32(ptr + 1, cf_id);
+    }
+    char* key = EncodeVarint32(ptr, key_len);
+    char* val = EncodeVarint32(key+ key_len, val_len);
+    ROCKSDB_SCOPE_EXIT(CommitOrRevertWriteBatch(&rep_, old_size, ptr));
+    kvp.PopulateKeyValue(key, val);
+    val[val_len] = '\0'; // end of str
+    content_flags_.fetch_or(ContentFlags::HAS_PUT, std::memory_order_relaxed);
+    ptr = nullptr; // notify success
+    return Status::OK();
+  }
+  // fallback to the prot_info_ based code path
+  std::unique_ptr<char[]> key_buf(new char[key_len]);
+  std::unique_ptr<char[]> val_buf(new char[val_len]);
+  kvp.PopulateKeyValue(key_buf.get(), val_buf.get());
+  Slice key(key_buf.get(), key_len);
+  Slice val(val_buf.get(), val_len);
+  return WriteBatchInternal::Put(this, cf_id, key, val);
+}
+
 Status WriteBatchInternal::CheckSlicePartsLength(const SliceParts& key,
                                                  const SliceParts& value) {
   size_t total_key_bytes = 0;
@@ -1266,6 +1342,52 @@ Status WriteBatch::Delete(ColumnFamilyHandle* column_family, const Slice& key) {
 #endif
 }
 
+Status WriteBatchBase::Delete(ColumnFamilyHandle* cf, const KeyValuePopulator& kvp) {
+  std::unique_ptr<char[]> key_buf(new char[kvp.key_len()]);
+  kvp.PopulateKeyValue(key_buf.get(), nullptr /* value */);
+  Slice key(key_buf.get(), kvp.key_len());
+  return Delete(cf, key);
+}
+Status WriteBatch::Delete(ColumnFamilyHandle* cf, const KeyValuePopulator& kvp) {
+  const size_t key_len = kvp.key_len();
+  if (UNLIKELY(key_len > size_t{std::numeric_limits<uint32_t>::max()})) {
+    return Status::InvalidArgument("key is too large");
+  }
+  uint32_t cf_id = nullptr == cf ? 0 : cf->GetID();
+  if (LIKELY(nullptr == prot_info_)) {
+    size_t old_size = rep_.size();
+    size_t inc_size = 1
+           + (cf_id ? VarUint32Length(cf_id) : 0)
+           + VarUint32Length(uint32_t(key_len)) + key_len;
+    if (UNLIKELY(max_bytes_ && old_size + inc_size > max_bytes_)) {
+      return Status::MemoryLimit();
+    }
+    terark::string_resize_no_touch_memory(&rep_, old_size + inc_size);
+    char* ptr = rep_.data();
+    EncodeFixed32(ptr + 8, DecodeFixed32(ptr + 8) + 1); // Update Batch Count
+    ptr += old_size;
+    if (cf_id == 0) {
+      ptr[0] = static_cast<char>(kTypeDeletion);
+      ptr += 1;
+    } else {
+      ptr[0] = static_cast<char>(kTypeColumnFamilyDeletion);
+      ptr = EncodeVarint32(ptr + 1, cf_id);
+    }
+    char* key = EncodeVarint32(ptr, key_len);
+    ROCKSDB_SCOPE_EXIT(CommitOrRevertWriteBatch(&rep_, old_size, ptr));
+    kvp.PopulateKeyValue(key, nullptr /* value */);
+    key[key_len] = '\0'; // end of str
+    content_flags_.fetch_or(ContentFlags::HAS_DELETE,
+                            std::memory_order_relaxed);
+    ptr = nullptr; // notify success
+    return Status::OK();
+  }
+  // fallback to the prot_info_ based code path
+  std::unique_ptr<char[]> key_buf(new char[key_len]);
+  kvp.PopulateKeyValue(key_buf.get(), nullptr /* value */);
+  Slice key(key_buf.get(), key_len);
+  return WriteBatchInternal::Delete(this, cf_id, key);
+}
 Status WriteBatch::Delete(ColumnFamilyHandle* column_family, const Slice& key,
                           const Slice& ts) {
   const Status s = CheckColumnFamilyTimestampSize(column_family, ts);
@@ -1405,6 +1527,53 @@ Status WriteBatch::SingleDelete(ColumnFamilyHandle* column_family,
   uint32_t cf_id = column_family ? column_family->GetID() : 0;
   return WriteBatchInternal::SingleDelete(this, cf_id, key);
 #endif
+}
+
+Status WriteBatchBase::SingleDelete(ColumnFamilyHandle* cf, const KeyValuePopulator& kvp) {
+  std::unique_ptr<char[]> key_buf(new char[kvp.key_len()]);
+  kvp.PopulateKeyValue(key_buf.get(), nullptr /* value */);
+  Slice key(key_buf.get(), kvp.key_len());
+  return SingleDelete(cf, key);
+}
+Status WriteBatch::SingleDelete(ColumnFamilyHandle* column_family, const KeyValuePopulator& kvp) {
+  const size_t key_len = kvp.key_len();
+  if (UNLIKELY(key_len > size_t{std::numeric_limits<uint32_t>::max()})) {
+    return Status::InvalidArgument("key is too large");
+  }
+  uint32_t cf_id = nullptr == column_family ? 0 : column_family->GetID();
+  if (LIKELY(nullptr == prot_info_)) {
+    size_t old_size = rep_.size();
+    size_t inc_size = 1
+           + (cf_id ? VarUint32Length(cf_id) : 0)
+           + VarUint32Length(uint32_t(key_len)) + key_len;
+    if (UNLIKELY(max_bytes_ && old_size + inc_size > max_bytes_)) {
+      return Status::MemoryLimit();
+    }
+    terark::string_resize_no_touch_memory(&rep_, old_size + inc_size);
+    char* ptr = rep_.data();
+    EncodeFixed32(ptr + 8, DecodeFixed32(ptr + 8) + 1); // Update Batch Count
+    ptr += old_size;
+    if (cf_id == 0) {
+      ptr[0] = static_cast<char>(kTypeSingleDeletion);
+      ptr += 1;
+    } else {
+      ptr[0] = static_cast<char>(kTypeColumnFamilySingleDeletion);
+      ptr = EncodeVarint32(ptr + 1, cf_id);
+    }
+    char* key = EncodeVarint32(ptr, key_len);
+    ROCKSDB_SCOPE_EXIT(CommitOrRevertWriteBatch(&rep_, old_size, ptr));
+    kvp.PopulateKeyValue(key, nullptr /* value */);
+    key[key_len] = '\0'; // end of str
+    content_flags_.fetch_or(ContentFlags::HAS_SINGLE_DELETE,
+                            std::memory_order_relaxed);
+    ptr = nullptr; // notify success
+    return Status::OK();
+  }
+  // fallback to the prot_info_ based code path
+  std::unique_ptr<char[]> key_buf(new char[key_len]);
+  kvp.PopulateKeyValue(key_buf.get(), nullptr /* value */);
+  Slice key(key_buf.get(), key_len);
+  return WriteBatchInternal::SingleDelete(this, cf_id, key);
 }
 
 Status WriteBatch::SingleDelete(ColumnFamilyHandle* column_family,
@@ -1697,6 +1866,63 @@ Status WriteBatch::Merge(ColumnFamilyHandle* column_family, const Slice& key,
   std::array<Slice, 2> key_with_ts{{key, ts}};
   return WriteBatchInternal::Merge(
       this, cf_id, SliceParts(key_with_ts.data(), 2), SliceParts(&value, 1));
+}
+
+Status WriteBatchBase::Merge(ColumnFamilyHandle* cf, const KeyValuePopulator& kvp) {
+  std::unique_ptr<char[]> key_buf(new char[kvp.key_len()]);
+  std::unique_ptr<char[]> val_buf(new char[kvp.val_len()]);
+  kvp.PopulateKeyValue(key_buf.get(), val_buf.get());
+  Slice key(key_buf.get(), kvp.key_len());
+  Slice val(val_buf.get(), kvp.val_len());
+  return Merge(cf, key, val);
+}
+Status WriteBatch::Merge(ColumnFamilyHandle* cf, const KeyValuePopulator& kvp) {
+  const size_t key_len = kvp.key_len();
+  const size_t val_len = kvp.val_len();
+  if (UNLIKELY(key_len > size_t{std::numeric_limits<uint32_t>::max()})) {
+    return Status::InvalidArgument("key is too large");
+  }
+  if (UNLIKELY(val_len > size_t{std::numeric_limits<uint32_t>::max()})) {
+    return Status::InvalidArgument("value is too large");
+  }
+  uint32_t cf_id = nullptr == cf ? 0 : cf->GetID();
+  if (LIKELY(nullptr == prot_info_)) {
+    size_t old_size = rep_.size();
+    size_t inc_size = 1
+           + (cf_id ? VarUint32Length(cf_id) : 0)
+           + VarUint32Length(uint32_t(key_len)) + key_len
+           + VarUint32Length(uint32_t(val_len)) + val_len;
+    if (UNLIKELY(max_bytes_ && old_size + inc_size > max_bytes_)) {
+      return Status::MemoryLimit();
+    }
+    terark::string_resize_no_touch_memory(&rep_, old_size + inc_size);
+    char* ptr = rep_.data();
+    EncodeFixed32(ptr + 8, DecodeFixed32(ptr + 8) + 1); // Update Batch Count
+    ptr += old_size;
+    if (cf_id == 0) {
+      ptr[0] = static_cast<char>(kTypeMerge);
+      ptr += 1;
+    } else {
+      ptr[0] = static_cast<char>(kTypeColumnFamilyMerge);
+      ptr = EncodeVarint32(ptr + 1, cf_id);
+    }
+    char* key = EncodeVarint32(ptr, key_len);
+    char* val = EncodeVarint32(key+ key_len, val_len);
+    ROCKSDB_SCOPE_EXIT(CommitOrRevertWriteBatch(&rep_, old_size, ptr));
+    kvp.PopulateKeyValue(key, val);
+    val[val_len] = '\0'; // end of str
+    content_flags_.fetch_or(ContentFlags::HAS_MERGE,
+                            std::memory_order_relaxed);
+    ptr = nullptr; // notify success
+    return Status::OK();
+  }
+  // fallback to the prot_info_ based code path
+  std::unique_ptr<char[]> key_buf(new char[key_len]);
+  std::unique_ptr<char[]> val_buf(new char[val_len]);
+  kvp.PopulateKeyValue(key_buf.get(), val_buf.get());
+  Slice key(key_buf.get(), key_len);
+  Slice val(val_buf.get(), val_len);
+  return WriteBatchInternal::Merge(this, cf_id, key, val);
 }
 
 Status WriteBatchInternal::Merge(WriteBatch* b, uint32_t column_family_id,

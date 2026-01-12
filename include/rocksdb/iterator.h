@@ -150,14 +150,19 @@ class Iterator : public Cleanable {
     return Slice();
   }
 
-  virtual bool PrepareValue() { return true; }
-
   virtual Slice NextWithKey();
   virtual Slice PrevWithKey();
   Slice SeekToFirstWithKey();
   Slice SeekToLastWithKey();
   Slice SeekWithKey(const Slice& target);
   Slice SeekForPrevWithKey(const Slice& target);
+
+  // if fixed_user_key_len > 0, user keys are assumed to be of the given length
+  //  - this will trigger aggressive optimization for non-transactional db iter
+  //  - if fixed_user_key_len is not equal to beg/end user key length, it is ignored
+  // if fixed_user_key_len == 0, user keys are of variable length, no optimizations
+  virtual size_t CountKeysInRange(const Slice& beg, const Slice& end, size_t fixed_user_key_len = 0);
+  virtual Iterator* GetUnwrapped() { return this; }
 };
 
 // Return an empty iterator (yields nothing).

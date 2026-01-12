@@ -436,7 +436,7 @@ bool TableCache::GetFromRowCache(const Slice& user_key, IterKey& row_cache_key,
   return found;
 }
 
-Status TableCache::Get(
+Status TableCache::GetWithRowCache(
     const ReadOptions& options,
     const InternalKeyComparator& internal_comparator,
     const FileMetaData& file_meta, const Slice& k, GetContext* get_context,

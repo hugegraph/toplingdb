@@ -373,9 +373,11 @@ bool GetContext::SaveValue(const ParsedInternalKey& parsed_key,
         if (kNotFound == state_) {
           state_ = kFound;
           if (do_merge_) {
+        #if defined(TOPLINGDB_WITH_TIMESTAMP)
             if (type == kTypeBlobIndex && ucmp_->timestamp_size() != 0) {
               ukey_with_ts_found_.PinSelf(parsed_key.user_key);
             }
+        #endif
             if (LIKELY(pinnable_val_ != nullptr)) {
               Slice value_to_use = value;
 

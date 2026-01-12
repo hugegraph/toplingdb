@@ -89,9 +89,15 @@ namespace ROCKSDB_NAMESPACE {
 extern const bool kDefaultToAdaptiveMutex;
 
 #if PLATFORM_IS_LITTLE_ENDIAN
+#if defined(__swap32)
+inline uint64_t NativeOfBigEndian64(uint64_t x) { return __swap64(x); }
+inline uint32_t NativeOfBigEndian32(uint32_t x) { return __swap32(x); }
+inline uint16_t NativeOfBigEndian16(uint16_t x) { return __swap16(x); }
+#else
 inline uint64_t NativeOfBigEndian64(uint64_t x) { return __bswap_64(x); }
 inline uint32_t NativeOfBigEndian32(uint32_t x) { return __bswap_32(x); }
 inline uint16_t NativeOfBigEndian16(uint16_t x) { return __bswap_16(x); }
+#endif
 #else
 inline uint64_t NativeOfBigEndian64(uint64_t x) { return (x); }
 inline uint32_t NativeOfBigEndian32(uint32_t x) { return (x); }

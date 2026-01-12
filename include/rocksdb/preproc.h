@@ -483,7 +483,11 @@
 #elif defined(__clang__)
 #define ROCKSDB_ASSUME(cond) __builtin_assume(cond)
 #elif defined(__GNUC__)
+#if __GNUC__ >= 13
+#define ROCKSDB_ASSUME(cond) [[assume(cond)]]
+#else
 #define ROCKSDB_ASSUME(cond) ((cond) ? static_cast<void>(0) : __builtin_unreachable())
+#endif
 #else
 #define ROCKSDB_ASSUME(cond) static_cast<void>(!!(cond))
 #endif
@@ -568,6 +572,11 @@ decltype(ROCKSDB_PP_CAT2(func_on_exit_,__LINE__))> \
 
 #if defined(_MSC_VER) && !defined(__always_inline)
   #define __always_inline __forceinline
+#endif
+
+#if defined(__ANDROID__)
+  #undef __always_inline
+  #define __always_inline inline
 #endif
 
 // clang-format on

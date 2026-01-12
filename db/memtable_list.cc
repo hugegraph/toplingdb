@@ -40,8 +40,14 @@ void MemTableListVersion::UnrefMemTable(autovector<MemTable*>* to_delete,
                                         MemTable* m) {
   if (m->Unref()) {
     to_delete->push_back(m);
+   #if 0
     ROCKSDB_ASSERT_GE(*parent_memtable_list_memory_usage_, m->ApproximateMemoryUsage());
     *parent_memtable_list_memory_usage_ -= m->ApproximateMemoryUsage();
+   #else
+    // Tolerate CSPPMemTable::ApproximateMemoryUsage()
+    *parent_memtable_list_memory_usage_ -=
+             std::min(*parent_memtable_list_memory_usage_, m->ApproximateMemoryUsage());
+   #endif
   }
 }
 

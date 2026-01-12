@@ -96,7 +96,7 @@ constexpr bool kMustFreeHeapAllocations = false;
 #undef __POPCNT__
 #endif
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) && !defined(TOPLING_USE_DYNAMIC_TLS)
 #define ROCKSDB_STATIC_TLS __attribute__((tls_model("initial-exec")))
 #define ROCKSDB_RAW_TLS __thread
 #else

@@ -73,6 +73,9 @@ class ArenaWrappedDBIter final : public Iterator {
   void Prev() override { db_iter_->Prev(); }
   Slice NextWithKey() override { return db_iter_->NextWithKey(); }
   Slice PrevWithKey() override { return db_iter_->PrevWithKey(); }
+  size_t CountKeysInRange(const Slice& beg, const Slice& end, size_t fixed_user_key_len) override {
+    return db_iter_->CountKeysInRange(beg, end, fixed_user_key_len);
+  }
 
   ROCKSDB_FLATTEN
   Slice key() const override { return db_iter_->key(); }
@@ -81,14 +84,13 @@ class ArenaWrappedDBIter final : public Iterator {
   const WideColumns& columns() const override { return db_iter_->columns(); }
   Status status() const override { return db_iter_->status(); }
   Slice timestamp() const override { return db_iter_->timestamp(); }
-  ROCKSDB_FLATTEN
-  bool PrepareValue() override { return db_iter_->PrepareValue(); }
   bool IsBlob() const { return db_iter_->IsBlob(); }
 
   Status GetProperty(std::string prop_name, std::string* prop) override;
 
   Status Refresh() override;
   Status Refresh(const Snapshot*, bool keep_iter_pos) override;
+  Iterator* GetUnwrapped() override { return db_iter_; }
 
   void Init(Env* env, const ReadOptions& read_options,
             const ImmutableOptions& ioptions,

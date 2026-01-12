@@ -236,30 +236,13 @@ Status OverlapWithIterator(const Comparator* ucmp,
 // levels. Therefore we are guaranteed that if we find data
 // in a smaller level, later levels are irrelevant (unless we
 // are MergeInProgress).
+template<class UKCmp, class IKCmp>
 class FilePicker {
-#if defined(_MSC_VER) || defined(__clang__)
-  typedef FdWithKeyRange* (FilePicker::*GetNextFileFN)();
-  #define Set_m_get_next_file(Cmp) \
-    m_get_next_file = &FilePicker::GetNextFileTmpl<Cmp>
-#else
-  typedef FdWithKeyRange* (*GetNextFileFN)(FilePicker*);
-  #pragma GCC diagnostic ignored "-Wpmf-conversions"
-  #define Set_m_get_next_file(Cmp) \
-    do { \
-      auto func = &FilePicker::GetNextFileTmpl<Cmp>;  \
-      m_get_next_file = (GetNextFileFN)(this->*func); \
-    } while (0)
-#endif
-  GetNextFileFN m_get_next_file;
-  typedef int (*FindFileInRangeFN)(const InternalKeyComparator*,
-                    const LevelFilesBrief& file_level, Slice key,
-                    size_t left, size_t right);
-  FindFileInRangeFN m_find_file_in_range;
   __always_inline
   int FindFileInRange(const InternalKeyComparator& icmp,
                       const LevelFilesBrief& file_level, const Slice& key,
                       size_t left, size_t right) {
-    return m_find_file_in_range(&icmp, file_level, key, left, right);
+    return (int)FindFileInRangeTmpl(IKCmp{&icmp}, file_level, key, left, right);
   }
  public:
   FilePicker(const Slice& user_key, const Slice& ikey,
@@ -280,18 +263,6 @@ class FilePicker {
         file_indexer_(file_indexer),
         user_comparator_(user_comparator),
         internal_comparator_(internal_comparator) {
-    if (IsForwardBytewiseComparator(user_comparator)) {
-      Set_m_get_next_file(ForwardBytewiseCompareUserKeyNoTS);
-      m_find_file_in_range = &FindFileInRangeInst<BytewiseCompareInternalKey>;
-    }
-    else if (IsReverseBytewiseComparator(user_comparator)) {
-      Set_m_get_next_file(ReverseBytewiseCompareUserKeyNoTS);
-      m_find_file_in_range = &FindFileInRangeInst<RevBytewiseCompareInternalKey>;
-    }
-    else {
-      Set_m_get_next_file(VirtualFunctionCompareUserKeyNoTS);
-      m_find_file_in_range = &FindFileInRangeInst<FallbackVirtCmp>;
-    }
     // Setup member variables to search first level.
     search_ended_ = !PrepareNextLevel();
     if (!search_ended_) {
@@ -307,17 +278,8 @@ class FilePicker {
 
   int GetCurrentLevel() const { return curr_level_; }
 
-  __always_inline
   FdWithKeyRange* GetNextFile() {
-  #if defined(_MSC_VER) || defined(__clang__)
-    return (this->*m_get_next_file)();
-  #else
-    return m_get_next_file(this);
-  #endif
-  }
-  template<class Compare>
-  FdWithKeyRange* GetNextFileTmpl() {
-    Compare cmp{user_comparator_};
+    UKCmp cmp{user_comparator_};
     while (!search_ended_) {  // Loops over different levels.
       while (curr_index_in_curr_level_ < curr_file_level_->num_files) {
         // Loops over all files in current level.
@@ -1232,6 +1194,31 @@ class LevelIterator final : public InternalIterator {
   void SkipEmptyFileBackward();
   void SetFileIterator(InternalIterator* iter);
   void InitFileIterator(size_t new_file_index);
+  bool RetryNextAndGetResult(IterateResult*) override;
+  void PrepareScan(IteratorWrapper* iw) override {
+    assert(iw != nullptr);
+    my_wrapper_ = iw;
+    UpdateScanFunc(iw);
+  }
+  void UpdateScanFunc(IteratorWrapper* iw) {
+    if (to_return_sentinel_ || file_iter_.iter() == nullptr) {
+      iw->work_iter_ = this;
+      iw->value_iter_ = this;
+      iw->next_and_get_result_ = ForgeFuncPtr(this,
+                                     &LevelIterator::NextAndGetResult);
+      iw->prepare_and_get_value_ = ForgeFuncPtr(this,
+                                     &LevelIterator::PrepareAndGetValue);
+    } else {
+      iw->work_iter_ = file_iter_.iter();
+      iw->value_iter_ = file_iter_.iter();
+      iw->next_and_get_result_ = ForgeFuncPtr(file_iter_.iter(),
+                                  &InternalIterator::NextAndGetResult);
+      iw->prepare_and_get_value_ = ForgeFuncPtr(file_iter_.iter(),
+                                  &InternalIterator::PrepareAndGetValue);
+    }
+    retry_already_goes_invalid_ = false;
+  }
+  IteratorWrapper* my_wrapper_ = nullptr;
 
   const Slice& file_smallest_key(size_t file_index) const {
     assert(file_index < flevel_->num_files);
@@ -1393,6 +1380,7 @@ class LevelIterator final : public InternalIterator {
   bool prefix_exhausted_ = false;
   // Whether next/prev key is a sentinel key.
   bool to_return_sentinel_ = false;
+  bool retry_already_goes_invalid_ = false;
 
   // Sets flags for if we should return the sentinel key next.
   // The condition for returning sentinel is reaching the end of current
@@ -1610,6 +1598,17 @@ bool LevelIterator::NextAndGetResult(IterateResult* result) {
   bool is_valid = !to_return_sentinel_ && file_iter_.NextAndGetResult(result);
   result->is_valid = is_valid;
   if (UNLIKELY(!is_valid)) {
+    retry_already_goes_invalid_ = false;
+    return RetryNextAndGetResult(result);
+  } else {
+    return true;
+  }
+}
+
+bool LevelIterator::RetryNextAndGetResult(IterateResult* result) {
+  ROCKSDB_ASSERT_EQ(result->is_valid, false);
+  bool is_valid = false;
+  if (!retry_already_goes_invalid_) {
     if (to_return_sentinel_) {
       ClearSentinel();
     } else if (range_tombstone_iter_) {
@@ -1620,6 +1619,9 @@ bool LevelIterator::NextAndGetResult(IterateResult* result) {
     is_next_read_sequential_ = false;
     is_valid = Valid();
     result->is_valid = is_valid;
+    if (my_wrapper_) {
+      UpdateScanFunc(my_wrapper_);
+    }
     if (is_valid) {
       // This could be set in TrySetDeleteRangeSentinel() or
       // SkipEmptyFileForward() above.
@@ -1636,12 +1638,23 @@ bool LevelIterator::NextAndGetResult(IterateResult* result) {
         result->value_prepared = !allow_unprepared_value_;
       }
     }
+    else {
+      retry_already_goes_invalid_ = true;
+    }
   }
   return is_valid;
 }
 
 void LevelIterator::Prev() {
   assert(Valid());
+  if (auto iw = my_wrapper_; UNLIKELY(iw && iw->work_iter_ != this)) {
+    iw->work_iter_ = this;
+    iw->value_iter_ = this;
+    iw->next_and_get_result_ = ForgeFuncPtr(this,
+                                    &LevelIterator::NextAndGetResult);
+    iw->prepare_and_get_value_ = ForgeFuncPtr(this,
+                                    &LevelIterator::PrepareAndGetValue);
+  }
   if (to_return_sentinel_) {
     ClearSentinel();
   } else {
@@ -2499,6 +2512,22 @@ Version::Version(ColumnFamilyData* column_family_data, VersionSet* vset,
                             FSSupportedOps::kAsyncIO)) {
     use_async_io_ = true;
   }
+  if (cfd_) {
+    using terark::ExtractFuncPtr;
+    using GetFP = decltype(m_get);
+    if (IsForwardBytewiseComparator(user_comparator())) {
+      m_get = ExtractFuncPtr<GetFP>(this, &Version::GetInst
+        <ForwardBytewiseCompareUserKeyNoTS, BytewiseCompareInternalKey>);
+    }
+    else if (IsReverseBytewiseComparator(user_comparator())) {
+      m_get = ExtractFuncPtr<GetFP>(this, &Version::GetInst
+        <ReverseBytewiseCompareUserKeyNoTS, RevBytewiseCompareInternalKey>);
+    }
+    else {
+      m_get = ExtractFuncPtr<GetFP>(this, &Version::GetInst
+        <VirtualFunctionCompareUserKeyNoTS, FallbackVirtCmp>);
+    }
+  }
 }
 
 Status Version::GetBlob(const ReadOptions& read_options, const Slice& user_key,
@@ -2630,8 +2659,9 @@ void Version::MultiGetBlob(
   }
 }
 
+template<class UKCmp, class IKCmp>
 ROCKSDB_FLATTEN
-void Version::Get(const ReadOptions& read_options, const LookupKey& k,
+void Version::GetInst(const ReadOptions& read_options, const LookupKey& k,
                   PinnableSlice* value, PinnableWideColumns* columns,
                   std::string* timestamp, Status* status,
                   MergeContext* merge_context,
@@ -2677,7 +2707,7 @@ void Version::Get(const ReadOptions& read_options, const LookupKey& k,
     pinned_iters_mgr->StartPinning();
   }
 
-  FilePicker fp(user_key, ikey, &storage_info_.level_files_brief_,
+  FilePicker<UKCmp, IKCmp> fp(user_key, ikey, &storage_info_.level_files_brief_,
                 storage_info_.num_non_empty_levels_,
                 &storage_info_.file_indexer_, user_comparator(),
                 internal_comparator());

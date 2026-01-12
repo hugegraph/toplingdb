@@ -1113,7 +1113,76 @@ __always_inline uint64_t GetUnalignedU64(const void* ptr) noexcept {
   return x;
 }
 
+#if !defined(TOPLINGDB_USE_MANUAL_MEMCMP)
+     #define TOPLINGDB_USE_MANUAL_MEMCMP 1
+#endif
+
+__always_inline bool MemoryEqual(const void* vx, const void* vy, size_t n) {
+  auto px = (const unsigned char*)vx;
+  auto py = (const unsigned char*)vy;
+ #if defined(__AVX512VL__) && defined(__AVX512BW__)
+  #if 0
+    {
+      // n is small value in most cases, and pointers are not likely aligned
+      // to 64, so it is better to do not handle such case
+      size_t j = size_t(vx) & 63;
+      if (j &&  (size_t(vy) & 63) == j) {
+        j = std::min(64 - j, n);
+        __mmask64 msk = _bzhi_u64(-1, j);
+        __m512i   xxx = _mm512_maskz_loadu_epi8(msk, px);
+        __m512i   yyy = _mm512_maskz_loadu_epi8(msk, py);
+        __mmask64 neq = _mm512_cmpneq_epi8_mask(xxx, yyy);
+        if (0 != neq)
+          return false;
+        n -= j;
+        px += j;
+        py += j;
+      }
+    }
+  #endif
+  // px and py maybe aligned, it should be faster if aligned
+  for (; UNLIKELY(n >= 64); n -= 64, px += 64, py += 64) {
+    __m512i   xxx = _mm512_loadu_epi8(px);
+    __m512i   yyy = _mm512_loadu_epi8(py);
+    __mmask64 neq = _mm512_cmpneq_epi8_mask(xxx, yyy);
+    if (0 != neq)
+      return false;
+  }
+  // n is unlikely aligned to 64, skip check n has no harm
+  // if (n) // do not check
+  {
+    __mmask64 msk = _bzhi_u64(-1, n);
+    __m512i   xxx = _mm512_maskz_loadu_epi8(msk, px);
+    __m512i   yyy = _mm512_maskz_loadu_epi8(msk, py);
+    __mmask64 neq = _mm512_cmpneq_epi8_mask(xxx, yyy);
+    return 0 == neq;
+  }
+  // return true;
+ #else
+  size_t i = 0;
+  for (; i + 8 <= n; i += 8) {
+    if (*(const uint64_t*)(px + i) != *(const uint64_t*)(py + i))
+      return false;
+  }
+  if (n % sizeof(uint64_t) >= 4) {
+    if (*(const uint32_t*)(px + i) != *(const uint32_t*)(py + i))
+      return false;
+    else
+      i += 4;
+  }
+  for (; i < n; i++) {
+    if (px[i] != py[i])
+      return false;
+  }
+  return true;
+ #endif
+}
+__always_inline bool SliceEqual(const Slice& x, const Slice& y) {
+  return x.size() == y.size() && MemoryEqual(x.data(), y.data(), x.size());
+}
+
 __always_inline bool SliceBytewiseLess(const Slice& x, const Slice& y) {
+#if TOPLINGDB_USE_MANUAL_MEMCMP
   auto px = (const unsigned char*)x.data(); size_t nx = x.size();
   auto py = (const unsigned char*)y.data(); size_t ny = y.size();
   size_t i = 0, n = std::min(nx, ny);
@@ -1137,11 +1206,14 @@ __always_inline bool SliceBytewiseLess(const Slice& x, const Slice& y) {
       return ux < uy;
   }
   return nx < ny;
+#else
+  return x < y;
+#endif
 }
 
 struct BytewiseCompareInternalKey {
   __always_inline bool operator()(Slice x, Slice y) const noexcept {
-  #if 0 // when unaligned load is slow
+  #if !TOPLINGDB_USE_MANUAL_MEMCMP
     size_t n = std::min(x.size_, y.size_) - 8;
     int cmp = memcmp(x.data_, y.data_, n);
     if (0 != cmp) return cmp < 0;
@@ -1220,7 +1292,7 @@ struct VirtualFunctionLessUserKey {
   const Comparator* cmp;
 };
 
-#if 0
+#if !TOPLINGDB_USE_MANUAL_MEMCMP
 __always_inline int BytewiseCompare(Slice x, Slice y) noexcept {
   size_t n = std::min(x.size_, y.size_);
   int cmp = memcmp(x.data_, y.data_, n);

@@ -29,6 +29,9 @@
 #include "rocksjni/kv_helper.h"
 #include "rocksjni/portal.h"
 
+#include <terark/util/nolocks_localtime.hpp>
+#include <topling/side_plugin_repo.h>
+
 #ifdef min
 #undef min
 #endif
@@ -308,6 +311,11 @@ void Java_org_rocksdb_RocksDB_closeDatabase(JNIEnv* env, jclass,
                                             jlong jhandle) {
   auto* db = reinterpret_cast<ROCKSDB_NAMESPACE::DB*>(jhandle);
   assert(db != nullptr);
+  if (ROCKSDB_NAMESPACE::SidePluginRepo::DebugLevel() >= 1) {
+    fprintf(stderr,
+      "%s: INFO: %s:%d: Java_org_rocksdb_RocksDB_closeDatabase(): db = %p, dbname = %s\n",
+      terark::StrDateTimeNow(), __FILE__, __LINE__, db, db->GetName().c_str());
+  }
   ROCKSDB_NAMESPACE::Status s = db->Close();
   ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
 }
@@ -600,6 +608,39 @@ void Java_org_rocksdb_RocksDB_dropColumnFamilies(
   }
 }
 
+class JNIKeyValuePopulator : public ROCKSDB_NAMESPACE::KeyValuePopulator {
+  JNIEnv* env_;
+  jbyteArray jkey_, jval_;
+  jint jkey_off_, jval_off_;
+public:
+  virtual ~JNIKeyValuePopulator() = default;
+  JNIKeyValuePopulator(JNIEnv* env,
+                       jbyteArray jkey, jint jkey_off, jint jkey_len,
+                       jbyteArray jval, jint jval_off, jint jval_len)
+    : KeyValuePopulator(jkey_len, jval_len), env_(env),
+      jkey_(jkey), jval_(jval), jkey_off_(jkey_off), jval_off_(jval_off) { }
+  void PopulateKeyValue(char* key, char* val) const override {
+    env_->GetByteArrayRegion(jkey_, jkey_off_, (jint)key_len_, (jbyte*)key);
+    ROCKSDB_NAMESPACE::KVException::ThrowOnError(env_);
+    env_->GetByteArrayRegion(jval_, jval_off_, (jint)val_len_, (jbyte*)val);
+    ROCKSDB_NAMESPACE::KVException::ThrowOnError(env_);
+  }
+};
+class JNIKeyOnlyPopulator : public ROCKSDB_NAMESPACE::KeyValuePopulator {
+  JNIEnv* env_;
+  jbyteArray jkey_;
+  jint jkey_off_;
+public:
+  virtual ~JNIKeyOnlyPopulator() = default;
+  JNIKeyOnlyPopulator(JNIEnv* env, jbyteArray jkey, jint jkey_off, jint jkey_len)
+    : KeyValuePopulator(jkey_len, 0), env_(env),
+      jkey_(jkey), jkey_off_(jkey_off) { }
+  void PopulateKeyValue(char* key, char*) const override {
+    env_->GetByteArrayRegion(jkey_, jkey_off_, (jint)key_len_, (jbyte*)key);
+    ROCKSDB_NAMESPACE::KVException::ThrowOnError(env_);
+  }
+};
+
 //////////////////////////////////////////////////////////////////////////////
 // ROCKSDB_NAMESPACE::DB::Put
 
@@ -617,10 +658,16 @@ void Java_org_rocksdb_RocksDB_put__J_3BII_3BII(JNIEnv* env, jobject,
   static const ROCKSDB_NAMESPACE::WriteOptions default_write_options =
       ROCKSDB_NAMESPACE::WriteOptions();
   try {
+   #if JNI_USE_KEY_VALUE_POPULATOR
+    JNIKeyValuePopulator kvp(env, jkey, jkey_off, jkey_len, jval, jval_off, jval_len);
+    ROCKSDB_NAMESPACE::Status s = db->Put(default_write_options, nullptr, kvp);
+    ROCKSDB_NAMESPACE::KVException::ThrowOnError(env, s);
+   #else
     ROCKSDB_NAMESPACE::JByteArraySlice key(env, jkey, jkey_off, jkey_len);
     ROCKSDB_NAMESPACE::JByteArraySlice value(env, jval, jval_off, jval_len);
     ROCKSDB_NAMESPACE::KVException::ThrowOnError(
         env, db->Put(default_write_options, key.slice(), value.slice()));
+   #endif
   } catch (ROCKSDB_NAMESPACE::KVException&) {
     return;
   }
@@ -650,11 +697,17 @@ void Java_org_rocksdb_RocksDB_put__J_3BII_3BIIJ(JNIEnv* env, jobject,
   }
 
   try {
+   #if JNI_USE_KEY_VALUE_POPULATOR
+    JNIKeyValuePopulator kvp(env, jkey, jkey_off, jkey_len, jval, jval_off, jval_len);
+    ROCKSDB_NAMESPACE::Status s = db->Put(default_write_options, cf_handle, kvp);
+    ROCKSDB_NAMESPACE::KVException::ThrowOnError(env, s);
+   #else
     ROCKSDB_NAMESPACE::JByteArraySlice key(env, jkey, jkey_off, jkey_len);
     ROCKSDB_NAMESPACE::JByteArraySlice value(env, jval, jval_off, jval_len);
     ROCKSDB_NAMESPACE::KVException::ThrowOnError(
         env,
         db->Put(default_write_options, cf_handle, key.slice(), value.slice()));
+   #endif
   } catch (ROCKSDB_NAMESPACE::KVException&) {
     return;
   }
@@ -676,10 +729,16 @@ void Java_org_rocksdb_RocksDB_put__JJ_3BII_3BII(JNIEnv* env, jobject,
       reinterpret_cast<ROCKSDB_NAMESPACE::WriteOptions*>(jwrite_options_handle);
 
   try {
+   #if JNI_USE_KEY_VALUE_POPULATOR
+    JNIKeyValuePopulator kvp(env, jkey, jkey_off, jkey_len, jval, jval_off, jval_len);
+    ROCKSDB_NAMESPACE::Status s = db->Put(*write_options, nullptr, kvp);
+    ROCKSDB_NAMESPACE::KVException::ThrowOnError(env, s);
+   #else
     ROCKSDB_NAMESPACE::JByteArraySlice key(env, jkey, jkey_off, jkey_len);
     ROCKSDB_NAMESPACE::JByteArraySlice value(env, jval, jval_off, jval_len);
     ROCKSDB_NAMESPACE::KVException::ThrowOnError(
         env, db->Put(*write_options, key.slice(), value.slice()));
+   #endif
   } catch (ROCKSDB_NAMESPACE::KVException&) {
     return;
   }
@@ -706,10 +765,16 @@ void Java_org_rocksdb_RocksDB_put__JJ_3BII_3BIIJ(
     return;
   }
   try {
+   #if JNI_USE_KEY_VALUE_POPULATOR
+    JNIKeyValuePopulator kvp(env, jkey, jkey_off, jkey_len, jval, jval_off, jval_len);
+    ROCKSDB_NAMESPACE::Status s = db->Put(*write_options, cf_handle, kvp);
+    ROCKSDB_NAMESPACE::KVException::ThrowOnError(env, s);
+   #else
     ROCKSDB_NAMESPACE::JByteArraySlice key(env, jkey, jkey_off, jkey_len);
     ROCKSDB_NAMESPACE::JByteArraySlice value(env, jval, jval_off, jval_len);
     ROCKSDB_NAMESPACE::KVException::ThrowOnError(
         env, db->Put(*write_options, cf_handle, key.slice(), value.slice()));
+   #endif
   } catch (ROCKSDB_NAMESPACE::KVException&) {
     return;
   }
@@ -757,6 +822,10 @@ bool rocksdb_delete_helper(JNIEnv* env, ROCKSDB_NAMESPACE::DB* db,
                            const ROCKSDB_NAMESPACE::WriteOptions& write_options,
                            ROCKSDB_NAMESPACE::ColumnFamilyHandle* cf_handle,
                            jbyteArray jkey, jint jkey_off, jint jkey_len) {
+#if JNI_USE_KEY_VALUE_POPULATOR
+  JNIKeyOnlyPopulator kop(env, jkey, jkey_off, jkey_len);
+  ROCKSDB_NAMESPACE::Status s = db->Delete(write_options, cf_handle, kop);
+#else
   jbyte* key = new jbyte[jkey_len];
   env->GetByteArrayRegion(jkey, jkey_off, jkey_len, key);
   if (env->ExceptionCheck()) {
@@ -776,6 +845,7 @@ bool rocksdb_delete_helper(JNIEnv* env, ROCKSDB_NAMESPACE::DB* db,
 
   // cleanup
   delete[] key;
+#endif
 
   if (s.ok()) {
     return true;
@@ -875,6 +945,10 @@ bool rocksdb_single_delete_helper(
     const ROCKSDB_NAMESPACE::WriteOptions& write_options,
     ROCKSDB_NAMESPACE::ColumnFamilyHandle* cf_handle, jbyteArray jkey,
     jint jkey_len) {
+#if JNI_USE_KEY_VALUE_POPULATOR
+  JNIKeyOnlyPopulator kop(env, jkey, 0, jkey_len);
+  ROCKSDB_NAMESPACE::Status s = db->SingleDelete(write_options, cf_handle, kop);
+#else
   jbyte* key = new jbyte[jkey_len];
   env->GetByteArrayRegion(jkey, 0, jkey_len, key);
   if (env->ExceptionCheck()) {
@@ -893,6 +967,7 @@ bool rocksdb_single_delete_helper(
   }
 
   delete[] key;
+#endif
 
   if (s.ok()) {
     return true;
@@ -1054,6 +1129,9 @@ void Java_org_rocksdb_RocksDB_deleteRange__J_3BII_3BII(
                               jend_key, jend_key_off, jend_key_len);
 }
 
+#if defined(__GNUC__)
+  #pragma GCC diagnostic ignored "-Wshift-negative-value"
+#endif
 // low 3 bits of object ptr are always 0, we use 1 bits here
 #define JLONG_OF_PTR(ptr)      jlong(ptr)
 #define JLONG_OF_ERROR(err)  ((jlong(err) << 3) | 1)
@@ -1381,10 +1459,16 @@ void Java_org_rocksdb_RocksDB_merge__J_3BII_3BII(JNIEnv* env, jobject,
   static const ROCKSDB_NAMESPACE::WriteOptions default_write_options =
       ROCKSDB_NAMESPACE::WriteOptions();
   try {
+   #if JNI_USE_KEY_VALUE_POPULATOR
+    JNIKeyValuePopulator kvp(env, jkey, jkey_off, jkey_len, jval, jval_off, jval_len);
+    ROCKSDB_NAMESPACE::Status s = db->Merge(default_write_options, nullptr, kvp);
+    ROCKSDB_NAMESPACE::KVException::ThrowOnError(env, s);
+   #else
     ROCKSDB_NAMESPACE::JByteArraySlice key(env, jkey, jkey_off, jkey_len);
     ROCKSDB_NAMESPACE::JByteArraySlice value(env, jval, jval_off, jval_len);
     ROCKSDB_NAMESPACE::KVException::ThrowOnError(
         env, db->Merge(default_write_options, key.slice(), value.slice()));
+   #endif
   } catch (ROCKSDB_NAMESPACE::KVException&) {
     return;
   }
@@ -1406,11 +1490,17 @@ void Java_org_rocksdb_RocksDB_merge__J_3BII_3BIIJ(
       reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
   if (cf_handle != nullptr) {
     try {
+     #if JNI_USE_KEY_VALUE_POPULATOR
+      JNIKeyValuePopulator kvp(env, jkey, jkey_off, jkey_len, jval, jval_off, jval_len);
+      ROCKSDB_NAMESPACE::Status s = db->Merge(default_write_options, cf_handle, kvp);
+      ROCKSDB_NAMESPACE::KVException::ThrowOnError(env, s);
+     #else
       ROCKSDB_NAMESPACE::JByteArraySlice key(env, jkey, jkey_off, jkey_len);
       ROCKSDB_NAMESPACE::JByteArraySlice value(env, jval, jval_off, jval_len);
       ROCKSDB_NAMESPACE::KVException::ThrowOnError(
           env, db->Merge(default_write_options, cf_handle, key.slice(),
                          value.slice()));
+     #endif
     } catch (ROCKSDB_NAMESPACE::KVException&) {
       return;
     }
@@ -1434,10 +1524,16 @@ void Java_org_rocksdb_RocksDB_merge__JJ_3BII_3BII(
   auto* write_options =
       reinterpret_cast<ROCKSDB_NAMESPACE::WriteOptions*>(jwrite_options_handle);
   try {
+   #if JNI_USE_KEY_VALUE_POPULATOR
+    JNIKeyValuePopulator kvp(env, jkey, jkey_off, jkey_len, jval, jval_off, jval_len);
+    ROCKSDB_NAMESPACE::Status s = db->Merge(*write_options, nullptr, kvp);
+    ROCKSDB_NAMESPACE::KVException::ThrowOnError(env, s);
+   #else
     ROCKSDB_NAMESPACE::JByteArraySlice key(env, jkey, jkey_off, jkey_len);
     ROCKSDB_NAMESPACE::JByteArraySlice value(env, jval, jval_off, jval_len);
     ROCKSDB_NAMESPACE::KVException::ThrowOnError(
         env, db->Merge(*write_options, key.slice(), value.slice()));
+   #endif
   } catch (ROCKSDB_NAMESPACE::KVException&) {
     return;
   }
@@ -1459,11 +1555,17 @@ void Java_org_rocksdb_RocksDB_merge__JJ_3BII_3BIIJ(
       reinterpret_cast<ROCKSDB_NAMESPACE::ColumnFamilyHandle*>(jcf_handle);
   if (cf_handle != nullptr) {
     try {
+     #if JNI_USE_KEY_VALUE_POPULATOR
+      JNIKeyValuePopulator kvp(env, jkey, jkey_off, jkey_len, jval, jval_off, jval_len);
+      ROCKSDB_NAMESPACE::Status s = db->Merge(*write_options, cf_handle, kvp);
+      ROCKSDB_NAMESPACE::KVException::ThrowOnError(env, s);
+     #else
       ROCKSDB_NAMESPACE::JByteArraySlice key(env, jkey, jkey_off, jkey_len);
       ROCKSDB_NAMESPACE::JByteArraySlice value(env, jval, jval_off, jval_len);
       ROCKSDB_NAMESPACE::KVException::ThrowOnError(
           env,
           db->Merge(*write_options, cf_handle, key.slice(), value.slice()));
+     #endif
     } catch (ROCKSDB_NAMESPACE::KVException&) {
       return;
     }
@@ -2472,9 +2574,6 @@ bool key_may_exist_direct_helper(JNIEnv* env, jlong jdb_handle,
 
 jboolean key_exists_helper(JNIEnv* env, jlong jdb_handle, jlong jcf_handle,
                            jlong jread_opts_handle, char* key, jint jkey_len) {
-  std::string value;
-  bool value_found = false;
-
   auto* db = reinterpret_cast<ROCKSDB_NAMESPACE::DB*>(jdb_handle);
 
   ROCKSDB_NAMESPACE::ColumnFamilyHandle* cf_handle;
@@ -2492,25 +2591,16 @@ jboolean key_exists_helper(JNIEnv* env, jlong jdb_handle, jlong jcf_handle,
                 jread_opts_handle));
 
   ROCKSDB_NAMESPACE::Slice key_slice(key, jkey_len);
-
-  const bool may_exist =
-      db->KeyMayExist(read_opts, cf_handle, key_slice, &value, &value_found);
-
-  if (may_exist) {
-    ROCKSDB_NAMESPACE::Status s;
-    {
-      ROCKSDB_NAMESPACE::PinnableSlice pinnable_val;
-      s = db->Get(read_opts, cf_handle, key_slice, &pinnable_val);
-    }
-    if (s.IsNotFound()) {
-      return JNI_FALSE;
-    } else if (s.ok()) {
-      return JNI_TRUE;
-    } else {
-      ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
-      return JNI_FALSE;
-    }
+  read_opts.just_check_key_exists = true;
+  ROCKSDB_NAMESPACE::PinnableSlice pinnable_val;
+  auto s = db->Get(read_opts, cf_handle, key_slice, &pinnable_val);
+  read_opts.just_check_key_exists = false;
+  if (s.IsNotFound()) {
+    return JNI_FALSE;
+  } else if (s.ok()) {
+    return JNI_TRUE;
   } else {
+    ROCKSDB_NAMESPACE::RocksDBExceptionJni::ThrowNew(env, s);
     return JNI_FALSE;
   }
 }
@@ -2525,17 +2615,15 @@ jboolean Java_org_rocksdb_RocksDB_keyExists(JNIEnv* env, jobject,
                                             jlong jread_opts_handle,
                                             jbyteArray jkey, jint jkey_offset,
                                             jint jkey_len) {
-  jbyte* key = new jbyte[jkey_len];
+  jbyte* key = (jbyte*)alloca(jkey_len);
   env->GetByteArrayRegion(jkey, jkey_offset, jkey_len, key);
   if (env->ExceptionCheck()) {
     // exception thrown: ArrayIndexOutOfBoundsException
-    delete[] key;
     return JNI_FALSE;
   } else {
     jboolean key_exists =
         key_exists_helper(env, jdb_handle, jcf_handle, jread_opts_handle,
                           reinterpret_cast<char*>(key), jkey_len);
-    delete[] key;
     return key_exists;
   }
 }

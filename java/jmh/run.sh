@@ -6,10 +6,12 @@ dbdir=/dev/shm/db_bench_enterprise # defined in db_bench_enterprise.yaml
 mkdir -p $dbdir
 cp $topdir/sideplugin/rockside/src/topling/web/{style.css,index.html} $dbdir
 args=(
+    --add-opens java.base/java.nio=ALL-UNNAMED
     -jar $mydir/target/rocksdbjni-jmh-1.0-SNAPSHOT-benchmarks.jar
     -p keyCount=10000
     -p keySize=128
     -p valueSize=512
+    #-p valueSize=65536 # larger value size showing zero copy faster
     #-p dbname=db_bench_enterprise
     #-p dbpath=/dev/shm/db_bench_enterprise
     -p sideConf=$topdir/sideplugin/rockside/sample-conf/db_bench_enterprise.yaml

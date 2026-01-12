@@ -199,11 +199,15 @@ class GetContext {
   bool has_callback() const { return callback_ != nullptr; }
 
   const Slice& ukey_to_get_blob_value() const {
+   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     if (!ukey_with_ts_found_.empty()) {
       return ukey_with_ts_found_;
     } else {
       return user_key_;
     }
+   #else
+    return user_key_;
+   #endif
   }
 
   uint64_t get_tracing_get_id() const { return tracing_get_id_; }
@@ -238,7 +242,9 @@ class GetContext {
   // When a blob index is found with the user key containing timestamp,
   // this copies the corresponding user key on record in the sst file
   // and is later used for blob verification.
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   PinnableSlice ukey_with_ts_found_;
+#endif
   PinnableSlice* pinnable_val_;
   PinnableWideColumns* columns_;
   std::string* timestamp_;

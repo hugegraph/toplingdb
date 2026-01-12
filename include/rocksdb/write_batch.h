@@ -35,7 +35,7 @@
 #include "rocksdb/status.h"
 #include "rocksdb/write_batch_base.h"
 #include "fake_atomic.h"
-#include <terark/util/function.hpp>
+#include <boost/intrusive_ptr.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -44,8 +44,8 @@ class ColumnFamilyHandle;
 struct SavePoints;
 struct SliceParts;
 class ReadonlyFileMmap;
-// We know ReadonlyFileMmap is single derived enable_shared_from_this
-inline auto base_enable_shared_from_this(ReadonlyFileMmap* p) { return p; }
+void intrusive_ptr_add_ref(ReadonlyFileMmap*);
+void intrusive_ptr_release(ReadonlyFileMmap*);
 
 struct KeyValuePassMemTable {
   Slice    value;
@@ -99,6 +99,7 @@ class WriteBatch : public WriteBatchBase {
   }
   Status Put(ColumnFamilyHandle* column_family, const Slice& key,
              const Slice& ts, const Slice& value) override;
+  Status Put(ColumnFamilyHandle*, const KeyValuePopulator&) override;
 
   // Variant of Put() that gathers output like writev(2).  The key and value
   // that will be written to the database are concatenations of arrays of
@@ -145,6 +146,7 @@ class WriteBatch : public WriteBatchBase {
   Status Delete(const Slice& key) override { return Delete(nullptr, key); }
   Status Delete(ColumnFamilyHandle* column_family, const Slice& key,
                 const Slice& ts) override;
+  Status Delete(ColumnFamilyHandle*, const KeyValuePopulator&) override;
 
   // variant that takes SliceParts
   // These two variants of Delete(..., const SliceParts& key) can be used when
@@ -164,6 +166,7 @@ class WriteBatch : public WriteBatchBase {
   }
   Status SingleDelete(ColumnFamilyHandle* column_family, const Slice& key,
                       const Slice& ts) override;
+  Status SingleDelete(ColumnFamilyHandle*, const KeyValuePopulator&) override;
 
   // variant that takes SliceParts
   Status SingleDelete(ColumnFamilyHandle* column_family,
@@ -202,6 +205,7 @@ class WriteBatch : public WriteBatchBase {
   }
   Status Merge(ColumnFamilyHandle* /*column_family*/, const Slice& /*key*/,
                const Slice& /*ts*/, const Slice& /*value*/) override;
+  Status Merge(ColumnFamilyHandle*, const KeyValuePopulator&) override;
 
   // variant that takes SliceParts
   Status Merge(ColumnFamilyHandle* column_family, const SliceParts& key,
@@ -475,7 +479,7 @@ class WriteBatch : public WriteBatchBase {
   size_t GetProtectionBytesPerKey() const;
 
   struct WALFileRef {
-    terark::narrow_shared_ptr<ReadonlyFileMmap> file_mmap;
+    boost::intrusive_ptr<ReadonlyFileMmap> file_mmap;
     uint64_t file_number = UINT64_MAX;
     uint64_t file_offset = UINT64_MAX;
   };

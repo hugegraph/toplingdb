@@ -105,6 +105,11 @@ class Slice {
     size_ -= n;
   }
 
+  Slice notail(size_t n) const {
+    ROCKSDB_ASSERT_LE(n, size_);
+    return Slice(data_, size_ - n);
+  }
+
   // Return a string that contains the copy of the referenced data.
   // when hex is true, returns a string of twice the length hex encoded (0-9A-F)
   std::string ToString(bool hex) const;
@@ -282,30 +287,6 @@ struct SliceParts {
   const Slice* parts;
   int num_parts;
 };
-
-__always_inline bool MemoryEqual(const void* vx, const void* vy, size_t n) {
-  auto px = (const unsigned char*)vx;
-  auto py = (const unsigned char*)vy;
-  size_t i = 0;
-  for (; i + 8 <= n; i += 8) {
-    if (*(const uint64_t*)(px + i) != *(const uint64_t*)(py + i))
-      return false;
-  }
-  if (n % sizeof(uint64_t) >= 4) {
-    if (*(const uint32_t*)(px + i) != *(const uint32_t*)(py + i))
-      return false;
-    else
-      i += 4;
-  }
-  for (; i < n; i++) {
-    if (px[i] != py[i])
-      return false;
-  }
-  return true;
-}
-__always_inline bool SliceEqual(const Slice& x, const Slice& y) {
-  return x.size() == y.size() && MemoryEqual(x.data(), y.data(), x.size());
-}
 
 inline bool operator==(const Slice& x, const Slice& y) {
   return ((x.size() == y.size()) &&

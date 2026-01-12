@@ -14,10 +14,10 @@
 #include "table/internal_iterator.h"
 #include "test_util/sync_point.h"
 
-#if defined(_MSC_VER) || defined(__clang__)
-#else
-  #pragma GCC diagnostic push
-  #pragma GCC diagnostic ignored "-Wpmf-conversions"
+#include <terark/util/function.hpp>
+#if TOPLING_USE_BOUND_PMF
+using terark::ExtractFuncPtr;
+using terark::ForgeFuncPtr;
 #endif
 
 namespace ROCKSDB_NAMESPACE {
@@ -26,7 +26,7 @@ namespace ROCKSDB_NAMESPACE {
 // the valid() and key() results for an underlying iterator.
 // This can help avoid virtual function calls and also gives better
 // cache locality.
-template <class TValue = Slice>
+template <class TValue>
 class IteratorWrapperBase {
  public:
   IteratorWrapperBase() : iter_(nullptr) {}
@@ -48,15 +48,18 @@ class IteratorWrapperBase {
     InternalIteratorBase<TValue>* old_iter = iter_;
 
     iter_ = _iter;
+   #if TOPLING_USE_BOUND_PMF
+    work_iter_ = _iter;
+    value_iter_ = _iter;
+   #endif
     if (iter_ == nullptr) {
       result_.is_valid = false;
     } else {
-     #if defined(_MSC_VER) || defined(__clang__)
-     #else
-      next_and_get_result_ = (NextAndGetResultFN)
-          (_iter->*(&InternalIteratorBase<TValue>::NextAndGetResult));
-      prepare_and_get_value_ = (PrepareAndGetValueFN)
-          (_iter->*(&InternalIteratorBase<TValue>::PrepareAndGetValue));
+     #if TOPLING_USE_BOUND_PMF
+      next_and_get_result_ = ExtractFuncPtr<NextAndGetResultFN>
+          (_iter, &InternalIteratorBase<TValue>::NextAndGetResult);
+      prepare_and_get_value_ = ExtractFuncPtr<PrepareAndGetValueFN>
+          (_iter, &InternalIteratorBase<TValue>::PrepareAndGetValue);
      #endif
       Update();
     }
@@ -138,10 +141,10 @@ class IteratorWrapperBase {
     }
     */
     //return result_.value_prepared = iter_->PrepareAndGetValue(v);
-   #if defined(_MSC_VER) || defined(__clang__)
+   #if !TOPLING_USE_BOUND_PMF
     return iter_->PrepareAndGetValue(v); // do minimal work
    #else
-    return prepare_and_get_value_(iter_, v);
+    return prepare_and_get_value_(value_iter_, v);
    #endif
   }
 #ifdef __GNUC__
@@ -149,10 +152,14 @@ class IteratorWrapperBase {
 #endif
   bool Next() {
     assert(iter_);
-#if defined(_MSC_VER) || defined(__clang__)
+#if !TOPLING_USE_BOUND_PMF
     const bool is_valid = iter_->NextAndGetResult(&result_);
 #else
-    const bool is_valid = next_and_get_result_(iter_, &result_);
+    bool is_valid = next_and_get_result_(work_iter_, &result_);
+    if (UNLIKELY(!is_valid)) {
+      // maybe update work_iter_ and next_and_get_result_
+      is_valid = iter_->RetryNextAndGetResult(&result_);
+    }
 #endif
     assert(is_valid == result_.is_valid);
     assert(!result_.is_valid || iter_->status().ok());
@@ -240,6 +247,7 @@ class IteratorWrapperBase {
 
  protected:
   void Update() {
+    iter_->PrepareScan(this);
     UpdateImpl(iter_->Valid());
   }
   void UpdateImpl(bool is_valid) {
@@ -258,8 +266,10 @@ class IteratorWrapperBase {
 #ifdef ROCKSDB_ASSERT_STATUS_CHECKED
   mutable bool status_checked_after_invalid_ = true;
 #endif
-#if defined(_MSC_VER) || defined(__clang__)
-#else
+#if TOPLING_USE_BOUND_PMF
+ public:
+  InternalIteratorBase<TValue>* work_iter_ = nullptr;
+  InternalIteratorBase<TValue>* value_iter_ = nullptr;
   typedef bool (*NextAndGetResultFN)(InternalIteratorBase<TValue>*, IterateResult*);
   typedef bool (*PrepareAndGetValueFN)(InternalIteratorBase<TValue>*, TValue*);
   NextAndGetResultFN next_and_get_result_ = nullptr;
@@ -278,12 +288,11 @@ class ThinIteratorWrapperBase {
     auto old_iter = iter_;
     iter_ = i;
     if (i) {
-     #if defined(_MSC_VER) || defined(__clang__)
-     #else
-      next_and_get_result_ = (NextAndGetResultFN)
-          (i->*(&InternalIteratorBase<TValue>::NextAndGetResult));
-      prepare_and_get_value_ = (PrepareAndGetValueFN)
-          (i->*(&InternalIteratorBase<TValue>::PrepareAndGetValue));
+     #if TOPLING_USE_BOUND_PMF
+      next_and_get_result_ = ExtractFuncPtr<NextAndGetResultFN>
+          (i, &InternalIteratorBase<TValue>::NextAndGetResult);
+      prepare_and_get_value_ = ExtractFuncPtr<PrepareAndGetValueFN>
+          (i, &InternalIteratorBase<TValue>::PrepareAndGetValue);
      #endif
     }
     return old_iter;
@@ -309,7 +318,7 @@ class ThinIteratorWrapperBase {
   bool PrepareValue() { assert(Valid()); return iter_->PrepareValue(); }
   bool PrepareAndGetValue(TValue* v) {
     assert(Valid());
-   #if defined(_MSC_VER) || defined(__clang__)
+   #if !TOPLING_USE_BOUND_PMF
     return iter_->PrepareAndGetValue(v);
    #else
     return prepare_and_get_value_(iter_, v);
@@ -318,7 +327,7 @@ class ThinIteratorWrapperBase {
   void Next() { assert(Valid()); iter_->Next(); }
   bool NextAndGetResult(IterateResult* r) {
     assert(iter_);
-   #if defined(_MSC_VER) || defined(__clang__)
+   #if !TOPLING_USE_BOUND_PMF
     return iter_->NextAndGetResult(r);
    #else
     return next_and_get_result_(iter_, r);
@@ -357,8 +366,7 @@ class ThinIteratorWrapperBase {
   }
  private:
   InternalIteratorBase<TValue>* iter_;
-#if defined(_MSC_VER) || defined(__clang__)
-#else
+#if TOPLING_USE_BOUND_PMF
   typedef bool (*NextAndGetResultFN)(InternalIteratorBase<TValue>*, IterateResult*);
   typedef bool (*PrepareAndGetValueFN)(InternalIteratorBase<TValue>*, TValue*);
   NextAndGetResultFN next_and_get_result_ = nullptr;
@@ -375,8 +383,3 @@ template <class TValue = Slice>
 extern InternalIteratorBase<TValue>* NewEmptyInternalIterator(Arena* arena);
 
 }  // namespace ROCKSDB_NAMESPACE
-
-#if defined(_MSC_VER) || defined(__clang__)
-#else
-  #pragma GCC diagnostic pop
-#endif

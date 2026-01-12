@@ -34,6 +34,7 @@
 #include "rocksdb/options.h"
 #include "rocksdb/table.h"
 #include "rocksdb/thread_status.h"
+#include <boost/intrusive_ptr.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -1920,28 +1921,37 @@ class FSDirectoryWrapper : public FSDirectory {
   FSDirectory* target_;
 };
 
-class ReadonlyFileMmap : public std::enable_shared_from_this<ReadonlyFileMmap>, public Slice {
+class ReadonlyFileMmap : public Slice {
   std::unique_ptr<FSRandomAccessFile> file_;
+  std::atomic_int32_t ref_count_;
+  friend void intrusive_ptr_add_ref(ReadonlyFileMmap* p) {
+    p->ref_count_.fetch_add(1, std::memory_order_relaxed);
+  }
+  friend void intrusive_ptr_release(ReadonlyFileMmap* p) {
+    if (p->ref_count_.fetch_sub(1, std::memory_order_release) == 1) {
+      delete p;
+    }
+  }
   struct PrivateCons{};
 public:
   ReadonlyFileMmap& operator=(const ReadonlyFileMmap&) = delete;
   ReadonlyFileMmap(const ReadonlyFileMmap&) = delete;
   ReadonlyFileMmap(PrivateCons);
   ~ReadonlyFileMmap();
-  static std::shared_ptr<ReadonlyFileMmap>
+  static boost::intrusive_ptr<ReadonlyFileMmap>
   New(IOStatus* s, FileSystem& fs, size_t fileno, const std::string& fname, size_t mmap_size = 0);
-  static IOStatus New(std::shared_ptr<ReadonlyFileMmap>* fp, FileSystem& fs,
+  static IOStatus New(boost::intrusive_ptr<ReadonlyFileMmap>* fp, FileSystem& fs,
                       size_t fileno, const std::string& fname, size_t mmap_size = 0) {
     IOStatus s;
     *fp = New(&s, fs, fileno, fname, mmap_size);
     return s;
   }
-  static std::pair<std::shared_ptr<ReadonlyFileMmap>, IOStatus>
+  static std::pair<boost::intrusive_ptr<ReadonlyFileMmap>, IOStatus>
   New(FileSystem& fs, size_t fileno, const std::string& fname, size_t mmap_size = 0) {
     IOStatus ios;
     return {New(&ios, fs, fileno, fname, mmap_size), ios};
   }
-  uint32_t fileno;
+  uint64_t fileno;
   std::shared_ptr<uint64_t> tail_pos;
 };
 

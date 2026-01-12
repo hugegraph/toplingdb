@@ -26,13 +26,17 @@ IOStatus CopyAcrossFS(FileSystem* dest, FileSystem* src,
   if (!ios.ok()) {
     return ios;
   }
-  auto src_reader = make_unique<SequentialFileReader>(move(srcfile), fname);
+  // we have using namespace std;
+  // fuck clang warns on use `move` instead of `std::move`
+  auto src_reader = make_unique<SequentialFileReader>(std::move(srcfile), fname);
   std::unique_ptr<FSWritableFile> dstfile;
   ios = dest->NewWritableFile(fname, fo, &dstfile, dbg);
   if (!ios.ok()) {
     return ios;
   }
-  auto dest_writer = make_unique<WritableFileWriter>(move(dstfile), fname, fo);
+  // we have using namespace std;
+  // fuck clang warns on use `move` instead of `std::move`
+  auto dest_writer = make_unique<WritableFileWriter>(std::move(dstfile), fname, fo);
   const size_t bufsize = 1024 * 1024;
 #if defined(_MSC_VER)
   char* buffer = (char*)_aligned_malloc(bufsize, 4096);
@@ -570,7 +574,7 @@ struct CatLogger : public Logger {
   }
 
   size_t GetLogFileSize() const override { return m_local->GetLogFileSize(); }
-  void Flush() {
+  void Flush() override {
     m_local->Flush();
     // do not: m_remote->Flush();
   }

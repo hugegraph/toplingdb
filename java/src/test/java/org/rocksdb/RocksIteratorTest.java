@@ -233,6 +233,41 @@ public class RocksIteratorTest {
   }
 
   @Test
+  public void rocksIteratorCount() throws RocksDBException {
+    try (final Options options =
+             new Options().setCreateIfMissing(true).setCreateMissingColumnFamilies(true);
+         final RocksDB db = RocksDB.open(options, dbFolder.getRoot().getAbsolutePath())) {
+      db.put("key1-001".getBytes(), "value11".getBytes());
+      db.put("key1-002".getBytes(), "value12".getBytes());
+      db.put("key1-003".getBytes(), "value13".getBytes());
+      db.put("key2-001".getBytes(), "value21".getBytes());
+      db.put("key2-002".getBytes(), "value22".getBytes());
+      db.put("key2-003".getBytes(), "value23".getBytes());
+
+      try (final RocksIterator iterator = db.newIterator()) {
+        assertThat(iterator.countKeysInRange("key1-000".getBytes(), "key2-000".getBytes(), 8)).isEqualTo(3);
+        assertThat(iterator.isValid()).isFalse();
+        assertThat(iterator.countKeysInRange("key1-000".getBytes(), "key3-000".getBytes(), 8)).isEqualTo(6);
+        assertThat(iterator.isValid()).isFalse();
+        assertThat(iterator.countKeysInRange("key1-002".getBytes(), "key2-002".getBytes(), 8)).isEqualTo(3);
+        assertThat(iterator.isValid()).isFalse();
+        iterator.status();
+        assertThat(iterator.countKeysInRange("key1-000".getBytes(), "key2-000".getBytes())).isEqualTo(3);
+        assertThat(iterator.isValid()).isFalse();
+        assertThat(iterator.countKeysInRange("key1-000".getBytes(), "key3-000".getBytes())).isEqualTo(6);
+        assertThat(iterator.isValid()).isFalse();
+        assertThat(iterator.countKeysInRange("key1-002".getBytes(), "key2-002".getBytes())).isEqualTo(3);
+        assertThat(iterator.isValid()).isFalse();
+        iterator.status();
+        assertThat(iterator.countKeysInRange(new byte[0], new byte[0])).isEqualTo(0);
+        assertThat(iterator.countKeysInRange(new byte[0], new byte[]{-1})).isEqualTo(6);
+        assertThat(iterator.countKeysInRange(new byte[]{-1}, new byte[0])).isEqualTo(0);
+        iterator.status();
+      }
+    }
+  }
+
+  @Test
   public void rocksIterator() throws RocksDBException {
     try (final Options options =
              new Options().setCreateIfMissing(true).setCreateMissingColumnFamilies(true);

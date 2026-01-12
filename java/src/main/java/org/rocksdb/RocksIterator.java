@@ -37,7 +37,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
    *
    * @return key for the current entry.
    */
-  public byte[] key() {
+  public final byte[] key() {
     assert(isOwningHandle());
     assert(isValid());
     long keyPtr = getZeroCopyKeyPtr();
@@ -77,9 +77,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
   public final void fetchValue() {
     assert(isOwningHandle());
     if (getZeroCopyValuePtr() == 0) {
-      byte[] val = value0(nativeHandle_ | 1); // or 1 indicate just do fetch
-      assert(val == null); // just fetch the value, not copy it, must be null
-      // this will not copy the value, just set the zero-copy pointer
+      value0(nativeHandle_); // just set the zero-copy value ptr and len
       assert(getZeroCopyValuePtr() != 0);
     }
   }
@@ -236,7 +234,7 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
    * <p>REQUIRES: !AtEnd() &amp;&amp; !AtStart()</p>
    * @return value for the current entry.
    */
-  public byte[] value() {
+  public final byte[] value() {
     assert(isOwningHandle());
     fetchValue();
     long valueLen = getZeroCopyValueLen();
@@ -402,6 +400,20 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
     prev0(nativeHandle_ | eagerFetchValue_);
   }
 
+  public long countKeysInRange(byte[] beg, byte[] end) {
+    return countKeysInRange0(nativeHandle_, beg, end, 0);
+  }
+  public long countKeysInRange(byte[] beg, byte[] end, int fixedUserKeyLen) {
+    return countKeysInRange0(nativeHandle_, beg, end, fixedUserKeyLen);
+  }
+  private native long countKeysInRange0(long handle, byte[] beg, byte[] end, int fixedUserKeyLen);
+
+  // iter position is kept and native key/value ptr may be updated
+  public final void refreshForDatabaseGC() throws RocksDBException {
+    nativeRefreshForDatabaseGC(nativeHandle_);
+  }
+  final native void nativeRefreshForDatabaseGC(long handle) throws RocksDBException;
+
   @Override protected final native void disposeInternal(final long handle);
   @Override final native boolean isValid0(long handle);
   @Override final native void seekToFirst0(long handle);
@@ -423,5 +435,5 @@ public class RocksIterator extends AbstractRocksIterator<RocksDB> {
       long handle, byte[] target, int targetOffset, int targetLen);
   @Override final native void status0(long handle) throws RocksDBException;
 
-  private native byte[] value0(long handle);
+  private native void value0(long handle);
 }

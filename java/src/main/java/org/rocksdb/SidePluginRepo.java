@@ -12,6 +12,7 @@ public class SidePluginRepo extends RocksObject {
         RocksDB.loadLibrary();
     }
     public native void importAutoFile(String fname) throws RocksDBException;
+    public native void importJson(String strJson) throws RocksDBException;
     public RocksDB openDB(String js) throws RocksDBException {
         RocksDB db = nativeOpenDB(nativeHandle_, js);
         dblist_.add(db);
@@ -65,8 +66,31 @@ public class SidePluginRepo extends RocksObject {
         }
         dblist_ = null;
     }
+    public void closeOneDB(RocksDB db) {
+        if (dblist_.remove(db)) {
+            nativeCloseOneDB(nativeHandle_, db.nativeHandle_);
+            db.close(); // can be called multiple times
+        }
+    }
+    public void removeOneDB(RocksDB db) {
+        // just remove from the repo
+        if (dblist_.remove(db)) {
+            nativeCloseOneDB(nativeHandle_, db.nativeHandle_);
+        }
+    }
     public ColumnFamilyHandle createCF(RocksDB db, String cfname, String spec) throws RocksDBException {
         long cfh = nativeCreateCF(nativeHandle_, db.nativeHandle_, cfname, spec);
+        return new ColumnFamilyHandle(db, cfh);
+    }
+    public ColumnFamilyHandle createCFWithImport(RocksDB db, String cfname, String spec,
+                final ImportColumnFamilyOptions importColumnFamilyOptions,
+                final List<ExportImportFilesMetaData> metadatas) throws RocksDBException {
+        long[] metadataHandles = new long[metadatas.size()];
+        for (int i = 0; i < metadatas.size(); i++) {
+            metadataHandles[i] = metadatas.get(i).nativeHandle_;
+        }
+        long cfh = nativeCreateCFWithImport(nativeHandle_, db.nativeHandle_,
+            cfname, spec, importColumnFamilyOptions.nativeHandle_, metadataHandles);
         return new ColumnFamilyHandle(db, cfh);
     }
     public void dropCF(RocksDB db, String cfname) throws RocksDBException {
@@ -87,6 +111,7 @@ public class SidePluginRepo extends RocksObject {
 
     // call native->CloseAllDB(false)
     private native void nativeCloseAllDB(long handle);
+    private native void nativeCloseOneDB(long handle, long db_handle);
 
     public void put(String name, Options opt) {
         // vscode sucks on text block, use plain stupid string literal
@@ -127,6 +152,10 @@ public class SidePluginRepo extends RocksObject {
     private native long nativeCreateCF(long handle, long dbh, String cfname, String spec) throws RocksDBException;
     private native void nativeDropCF(long handle, long dbh, String cfname) throws RocksDBException;
     private native void nativeDropCF(long handle, long dbh, long cfh) throws RocksDBException;
+
+    private native long nativeCreateCFWithImport(final long handle,
+        final long dbHandle, final String columnFamilyName, final String spec,
+        long importCFOptions, final long[] metadataHandleList) throws RocksDBException;
 
     public SidePluginRepo() {
         super(newSidePluginRepo());

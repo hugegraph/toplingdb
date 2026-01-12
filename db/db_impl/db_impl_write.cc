@@ -2502,6 +2502,17 @@ Status DB::Put(const WriteOptions& opt, ColumnFamilyHandle* column_family,
   return Write(opt, &batch);
 }
 
+Status DB::Put(const WriteOptions& opt, ColumnFamilyHandle* cf, const KeyValuePopulator& kvp) {
+  WriteBatch batch(0 /* reserved_bytes */, 0 /* max_bytes */,
+                   opt.protection_bytes_per_key,
+                   0 /* default_cf_ts_sz */);
+  Status s = batch.Put(cf, kvp);
+  if (!s.ok()) {
+    return s;
+  }
+  return Write(opt, &batch);
+}
+
 Status DB::PutEntity(const WriteOptions& options,
                      ColumnFamilyHandle* column_family, const Slice& key,
                      const WideColumns& columns) {
@@ -2566,6 +2577,17 @@ Status DB::Delete(const WriteOptions& opt, ColumnFamilyHandle* column_family,
   return Write(opt, &batch);
 }
 
+Status DB::Delete(const WriteOptions& opt, ColumnFamilyHandle* cf, const KeyValuePopulator& kvp) {
+  WriteBatch batch(0 /* reserved_bytes */, 0 /* max_bytes */,
+                   opt.protection_bytes_per_key,
+                   0 /* default_cf_ts_sz */);
+  Status s = batch.Delete(cf, kvp);
+  if (!s.ok()) {
+    return s;
+  }
+  return Write(opt, &batch);
+}
+
 Status DB::SingleDelete(const WriteOptions& opt,
                         ColumnFamilyHandle* column_family, const Slice& key) {
   WriteBatch batch(0 /* reserved_bytes */, 0 /* max_bytes */,
@@ -2588,6 +2610,17 @@ Status DB::SingleDelete(const WriteOptions& opt,
                    opt.protection_bytes_per_key,
                    default_cf_ucmp->timestamp_size());
   Status s = batch.SingleDelete(column_family, key, ts);
+  if (!s.ok()) {
+    return s;
+  }
+  return Write(opt, &batch);
+}
+
+Status DB::SingleDelete(const WriteOptions& opt, ColumnFamilyHandle* cf, const KeyValuePopulator& kvp) {
+  WriteBatch batch(0 /* reserved_bytes */, 0 /* max_bytes */,
+                   opt.protection_bytes_per_key,
+                   0 /* default_cf_ts_sz */);
+  Status s = batch.SingleDelete(cf, kvp);
   if (!s.ok()) {
     return s;
   }
@@ -2645,6 +2678,17 @@ Status DB::Merge(const WriteOptions& opt, ColumnFamilyHandle* column_family,
                    opt.protection_bytes_per_key,
                    default_cf_ucmp->timestamp_size());
   Status s = batch.Merge(column_family, key, ts, value);
+  if (!s.ok()) {
+    return s;
+  }
+  return Write(opt, &batch);
+}
+
+Status DB::Merge(const WriteOptions& opt, ColumnFamilyHandle* cf, const KeyValuePopulator& kvp) {
+  WriteBatch batch(0 /* reserved_bytes */, 0 /* max_bytes */,
+                   opt.protection_bytes_per_key,
+                   0 /* default_cf_ts_sz */);
+  Status s = batch.Merge(cf, kvp);
   if (!s.ok()) {
     return s;
   }

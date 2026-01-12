@@ -1811,7 +1811,7 @@ struct ReadOptions {
     }
     BooleanDontCopyTrue(BooleanDontCopyTrue&& y) {
       ROCKSDB_VERIFY(y.value == false); // strict for release
-      ROCKSDB_VERIFY(this->value == false); // strict for release
+      this->value = false;
     }
     BooleanDontCopyTrue& operator=(BooleanDontCopyTrue&& y) {
       ROCKSDB_VERIFY(y.value == false); // strict for release

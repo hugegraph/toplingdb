@@ -255,6 +255,10 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD dwReason, PVOID pv) {
 
 #endif  // OS_WIN
 
+#if !defined(__attribute_noinline__)
+#define __attribute_noinline__  __attribute__((noinline))
+#endif
+
 void ThreadLocalPtr::InitSingletons() { ThreadLocalPtr::Instance(); }
 
 __always_inline

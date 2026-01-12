@@ -404,7 +404,7 @@ inline uint64_t HostPrefixCache(const Slice& ikey) {
    #if defined(__AVX512VL__) && defined(__AVX512BW__)
     //#pragma message "__AVX512VL__ && __AVX512BW__, use _mm_maskz_loadu_epi8"
     // load 128 bits, keep low 64 bits, discard high 64 bits
-    auto mask = uint16_t(~(-1 << (ikey.size_ - 8)));
+    auto mask = _bzhi_u32(-1, uint32_t(ikey.size_ - 8));
     auto m128 = _mm_maskz_loadu_epi8(mask, ikey.data_);
     data = (uint64_t)_mm_extract_epi64(m128, 0);
    #else

@@ -172,30 +172,15 @@ class DBIter final : public Iterator {
       if (LIKELY(mut->iter_.PrepareAndGetValue(&mut->value_))) {
         mut->is_value_prepared_ = true;
         mut->local_stats_.bytes_read_ += value_.size_;
-      } else { // Can not go on, die with message
-        ROCKSDB_DIE("PrepareAndGetValue() failed, status = %s",
-                    iter_.status().ToString().c_str());
+      } else {
+        // form an invalid value for caller to check, avoid first call
+        // PrepareValue() then call value(). this should be very rare
+        mut->value_.data_ = nullptr;
+        mut->value_.size_ = size_t(-1);
+        mut->status_ = mut->iter_.status();
       }
     }
     return value_;
-  }
-
-  // without PrepareValue, user can not check iter_.PrepareAndGetValue(),
-  // thus must die in DBIter::value() if iter_.PrepareAndGetValue() fails.
-  bool PrepareValue() override { // enable error check for lazy load
-    assert(valid_);
-    if (!is_value_prepared_) {
-      if (LIKELY(iter_.PrepareAndGetValue(&value_))) {
-        is_value_prepared_ = true;
-        local_stats_.bytes_read_ += value_.size_;
-      } else {
-        valid_ = false;
-        status_ = iter_.status();
-        ROCKSDB_VERIFY(!status_.ok());
-        return false;
-      }
-    }
-    return true;
   }
 
 #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
@@ -235,6 +220,7 @@ class DBIter final : public Iterator {
   void Prev() final override;
   Slice NextWithKey() final override;
   Slice PrevWithKey() final override;
+  size_t CountKeysInRange(const Slice& beg, const Slice& end, size_t fixed_user_key_len) final override;
   // 'target' does not contain timestamp, even if user timestamp feature is
   // enabled.
   void Seek(const Slice& target) final override;
@@ -278,7 +264,7 @@ class DBIter final : public Iterator {
   // If `prefix` is not null, the iterator needs to stop when all keys for the
   // prefix are exhausted and the iterator is set to invalid.
   bool FindNextUserEntry(bool skipping_saved_key, const Slice* prefix);
-  template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS>
+  template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS, bool CheckMaxSkip>
   bool FindNextUserEntryInternalTmpl(bool, const Slice* prefix);
   bool ParseKey(ParsedInternalKey* key);
   bool MergeValuesNewToOld();
@@ -330,18 +316,11 @@ class DBIter final : public Iterator {
                : user_comparator_.CompareWithoutTimestamp(a, b);
   }
 
-  template<class CmpNoTS>
-  inline bool CmpKeyForSkip(const Slice& a, const Slice& b, const CmpNoTS& c) {
-    return timestamp_lb_ != nullptr
-               ? user_comparator_.Compare(a, b) < 0
-               : c(a, b);
-  }
-
-  template<class CmpNoTS>
+  template<size_t FixLen, class CmpNoTS>
   inline bool EqKeyForSkip(const Slice& a, const Slice& b, const CmpNoTS& c) {
     return timestamp_lb_ != nullptr // semantic exactly same with origin code
                ? user_comparator_.Compare(a, b) >= 0 // ^^^^^^^^^^^^^^^^^^^^^
-               : c.equal(a, b);
+               : c.template equal<FixLen>(a, b);
   }
 
   // Retrieves the blob value for the specified user key using the given blob
@@ -357,11 +336,12 @@ class DBIter final : public Iterator {
   }
 
   void SetValueAndColumnsFromPlain(const Slice& slice) {
-    assert(value_.empty());
+    //assert(value_.empty());
     value_ = slice;
 
 #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
-    assert(wide_columns_.empty());
+    //assert(wide_columns_.empty());
+    wide_columns_.clear();
     wide_columns_.emplace_back(kDefaultWideColumnName, slice);
 #endif
   }
@@ -372,7 +352,7 @@ class DBIter final : public Iterator {
                                          ValueType result_type);
 
   void ResetValueAndColumns() {
-    value_.clear();
+    value_.size_ = 0; // clear without reset .data_ = ""
 #if defined(TOPLINGDB_WITH_WIDE_COLUMNS)
     wide_columns_.clear();
 #endif
@@ -422,10 +402,10 @@ class DBIter final : public Iterator {
   // uncommitted data in db as in WriteUnCommitted.
   SequenceNumber sequence_;
 
-  template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS>
+  template<bool HasPrefix, bool HasUpperBound, TriBool MayHasCallback, size_t FixLen, class CmpNoTS, bool CheckMaxSkip>
   bool FindNextUserEntryPerf(bool skipping_saved_key, const Slice* prefix);
   void SetFuncPtr();
-#if defined(_MSC_VER) || defined(__clang__)
+#if !TOPLING_USE_BOUND_PMF
   typedef bool (DBIter::*FindNextUserEntryFN)(bool, const Slice*);
 #else
   typedef bool (*FindNextUserEntryFN)(DBIter*, bool, const Slice*);
@@ -438,7 +418,7 @@ class DBIter final : public Iterator {
 #else
   #define ROCKSDB_TEST_PinnedDataIterator 0
   struct FastIterKey {
-    terark::minimal_sso<64, false> key;
+    terark::minimal_sso<128, false> key; // avx512 max is 64, 128 > 64+(seqvt 8) and is power of 2
     void Clear() { key.clear(); }
     void SetUserKey(const Slice& uk, bool copy = true) {
       key.assign(uk.size_ + 8, [=](char* buf, size_t len) {
@@ -446,12 +426,8 @@ class DBIter final : public Iterator {
         // do not write last 8 bytes(seq + value_type)
       });
     }
-    void SetUserKey(const char* uk, size_t uk_len) {
-      key.risk_assign_local(uk_len + 8, [=](char* buf, size_t) {
-        memcpy(buf, uk, uk_len);
-        // do not write last 8 bytes(seq + value_type)
-      });
-    }
+    template<size_t UserKeyLen>
+    void SetUK(const Slice& uk);
     void SetInternalKey(const ParsedInternalKey& ikey) {
       SetInternalKey(ikey.user_key, ikey.sequence, ikey.type);
     }
@@ -481,6 +457,16 @@ class DBIter final : public Iterator {
         ROCKSDB_ASSERT_GE(key.size(), 8);
       }
       rocksdb::EncodeFixed64(end - 8, PackSequenceAndType(seq, vt));
+    }
+    template<size_t FixLen>
+    Slice GetUK() const {
+      if constexpr (FixLen == 64)
+        // avx512 FixLen==64 means max is 64(without seqvt 8)
+        return key.risk_to_str_local<Slice>().notail(8);
+      if constexpr (FixLen != 0)
+        return key.risk_to_str_local_known_len<Slice, FixLen + 8>().notail(8);
+      else
+        return GetUserKey();
     }
     Slice GetUserKey() const { return key.notail<Slice>(8); }
     Slice GetInternalKey() const { return key.to<Slice>(); }

@@ -81,9 +81,9 @@ class BinaryHeap : private Compare {
     downheap(get_root());
   }
 
-  void update_top() {
+  bool update_top() {
     assert(!empty());
-    downheap(get_root());
+    return downheap(get_root());
   }
 
   void pop() {
@@ -145,11 +145,12 @@ class BinaryHeap : private Compare {
     reset_root_cmp_cache();
   }
 
-  void downheap(size_t index) {
+  ///@returns true if top is changed
+  bool downheap(size_t index) {
     size_t heap_size = data_.size();
     assert(0 == index); ///< wiered, index must be 0
     if (UNLIKELY(1 >= heap_size)) {
-      return;
+      return false;
     }
     T* data_ = this->data_.data();
 
@@ -165,7 +166,7 @@ class BinaryHeap : private Compare {
     if (!cmp_()(data_[0], data_[picked_child])) {
       // the tree does not change anything
       root_cmp_cache_ = picked_child;
-      return;
+      return false;
     }
 
     reset_root_cmp_cache();
@@ -207,6 +208,7 @@ class BinaryHeap : private Compare {
 */
 
     data_[index] = std::move(v);
+    return true; // top is changed
   }
 
   terark::valvec32<T> data_;static_assert(std::is_trivially_destructible_v<T>);
