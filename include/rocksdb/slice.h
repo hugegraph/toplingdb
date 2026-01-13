@@ -115,6 +115,9 @@ class Slice {
   std::string ToString(bool hex) const;
   std::string ToString() const { return std::string(data_, size_); }
   std::string hex() const { return ToString(true); }
+  const char* operator*() const { return data_; } // shorter .data()
+  size_t      operator+() const { return size_; } // shorter .size()
+  int         operator~() const { return int(size_); } // for %.*s, same as .ilen()
 
   // Return a string_view that references the same data as this slice.
   std::string_view ToStringView() const {
