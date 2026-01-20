@@ -158,8 +158,7 @@ using rocksdb_slice_t = Slice;
 
 struct rocksdb_t {
   ObjectAtHere<DB> rep;
-private:
-  ~rocksdb_t();
+  ~rocksdb_t() = delete;
 };
 struct rocksdb_backup_engine_t {
   BackupEngine* rep;
@@ -172,8 +171,7 @@ struct rocksdb_restore_options_t {
 };
 struct rocksdb_iterator_t {
   ObjectAtHere<Iterator> rep;
-private:
-  ~rocksdb_iterator_t();
+  ~rocksdb_iterator_t() = delete;
 };
 struct rocksdb_writebatch_t {
   WriteBatch rep;
@@ -255,8 +253,7 @@ struct rocksdb_livefiles_t {
 };
 struct rocksdb_column_family_handle_t {
   ObjectAtHere<ColumnFamilyHandle> rep;
-private:
-  ~rocksdb_column_family_handle_t();
+  ~rocksdb_column_family_handle_t() = delete;
 };
 struct rocksdb_column_family_metadata_t {
   ColumnFamilyMetaData rep;
@@ -294,8 +291,7 @@ struct rocksdb_transactiondb_options_t {
 };
 struct rocksdb_transactiondb_t {
   ObjectAtHere<TransactionDB> rep;
-private:
-  ~rocksdb_transactiondb_t();
+  ~rocksdb_transactiondb_t() = delete;
 };
 struct rocksdb_transaction_options_t {
   TransactionOptions rep;
@@ -311,8 +307,7 @@ struct rocksdb_checkpoint_t {
 };
 struct rocksdb_optimistictransactiondb_t {
   ObjectAtHere<OptimisticTransactionDB> rep;
-private:
-  ~rocksdb_optimistictransactiondb_t();
+  ~rocksdb_optimistictransactiondb_t() = delete;
 };
 struct rocksdb_optimistictransaction_options_t {
   OptimisticTransactionOptions rep;
