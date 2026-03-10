@@ -672,6 +672,7 @@ endif()
 message(STATUS "found ${PROJECT_SOURCE_DIR}/sideplugin/${TOPLING_CORE}")
 add_compile_definitions(GITHUB_TOPLING_ZIP="https://github.com/rockeet/${TOPLING_CORE}")
 include_directories(${PROJECT_SOURCE_DIR}/sideplugin/${TOPLING_CORE}/src)
+include_directories(${PROJECT_SOURCE_DIR}/sideplugin/${TOPLING_CORE}/boost-include)
 if(MSVC)
   #add_compile_definitions(TERARK_USE_DLL) # makes non dll-export base class dll-export
   link_directories(${PROJECT_SOURCE_DIR}/sideplugin/${TOPLING_CORE}/boost-include/stage/lib)
