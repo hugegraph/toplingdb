@@ -2592,44 +2592,44 @@ install-headers: gen-pc
 	install -d $(INSTALL_LIBDIR)
 	install -d $(INSTALL_LIBDIR)/pkgconfig
 	for header_dir in `$(FIND) "include/rocksdb" -type d`; do \
-		install -d $(DESTDIR)/$(PREFIX)/$$header_dir; \
+		install -d $(DESTDIR)$(PREFIX)/$$header_dir; \
 	done
 	for header in `$(FIND) "include/rocksdb" -type f -name *.h`; do \
-		install -C -m 644 $$header $(DESTDIR)/$(PREFIX)/$$header; \
+		install -C -m 644 $$header $(DESTDIR)$(PREFIX)/$$header; \
 	done
 	for header in $(ROCKSDB_PLUGIN_HEADERS); do \
-		install -d $(DESTDIR)/$(PREFIX)/include/rocksdb/`dirname $$header`; \
-		install -C -m 644 $$header $(DESTDIR)/$(PREFIX)/include/rocksdb/$$header; \
+		install -d $(DESTDIR)$(PREFIX)/include/rocksdb/`dirname $$header`; \
+		install -C -m 644 $$header $(DESTDIR)$(PREFIX)/include/rocksdb/$$header; \
 	done
-	install -d                                  $(DESTDIR)/$(PREFIX)/include/topling
-	install -C -m 644 sideplugin/rockside/src/topling/json.h     $(DESTDIR)/$(PREFIX)/include/topling
-	install -C -m 644 sideplugin/rockside/src/topling/json_fwd.h $(DESTDIR)/$(PREFIX)/include/topling
-	install -C -m 644 sideplugin/rockside/src/topling/builtin_table_factory.h $(DESTDIR)/$(PREFIX)/include/topling
-	install -C -m 644 sideplugin/rockside/src/topling/side_plugin_repo.h      $(DESTDIR)/$(PREFIX)/include/topling
-	install -C -m 644 sideplugin/rockside/src/topling/side_plugin_factory.h   $(DESTDIR)/$(PREFIX)/include/topling
-	install -d $(DESTDIR)/$(PREFIX)/include/terark
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/io
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/succinct
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/thread
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/util
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/fsa
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/fsa/ppi
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/zbs
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/*.hpp          $(DESTDIR)/$(PREFIX)/include/terark
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/io/*.hpp       $(DESTDIR)/$(PREFIX)/include/terark/io
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/succinct/*.hpp $(DESTDIR)/$(PREFIX)/include/terark/succinct
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/thread/*.hpp   $(DESTDIR)/$(PREFIX)/include/terark/thread
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/util/*.hpp     $(DESTDIR)/$(PREFIX)/include/terark/util
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/*.hpp      $(DESTDIR)/$(PREFIX)/include/terark/fsa
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/*.inl      $(DESTDIR)/$(PREFIX)/include/terark/fsa
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/ppi/*.hpp  $(DESTDIR)/$(PREFIX)/include/terark/fsa/ppi
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/zbs/*.hpp      $(DESTDIR)/$(PREFIX)/include/terark/zbs
-	cp -ar ${TOPLING_CORE_DIR}/boost-include/boost  $(DESTDIR)/$(PREFIX)/include
-	install -d $(DESTDIR)/$(PREFIX)/site
-	install -d $(DESTDIR)/$(PREFIX)/toplingdb-conf
-	install -C -m 644 sideplugin/rockside/src/topling/web/index.html $(DESTDIR)/$(PREFIX)/site
-	install -C -m 644 sideplugin/rockside/src/topling/web/style.css  $(DESTDIR)/$(PREFIX)/site
-	install -C -m 644 sideplugin/rockside/sample-conf/db_bench_enterprise.yaml $(DESTDIR)/$(PREFIX)/site
+	install -d                                  $(DESTDIR)$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/json.h     $(DESTDIR)$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/json_fwd.h $(DESTDIR)$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/builtin_table_factory.h $(DESTDIR)$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/side_plugin_repo.h      $(DESTDIR)$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/side_plugin_factory.h   $(DESTDIR)$(PREFIX)/include/topling
+	install -d $(DESTDIR)$(PREFIX)/include/terark
+	install -d $(DESTDIR)$(PREFIX)/include/terark/io
+	install -d $(DESTDIR)$(PREFIX)/include/terark/succinct
+	install -d $(DESTDIR)$(PREFIX)/include/terark/thread
+	install -d $(DESTDIR)$(PREFIX)/include/terark/util
+	install -d $(DESTDIR)$(PREFIX)/include/terark/fsa
+	install -d $(DESTDIR)$(PREFIX)/include/terark/fsa/ppi
+	install -d $(DESTDIR)$(PREFIX)/include/terark/zbs
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/*.hpp          $(DESTDIR)$(PREFIX)/include/terark
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/io/*.hpp       $(DESTDIR)$(PREFIX)/include/terark/io
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/succinct/*.hpp $(DESTDIR)$(PREFIX)/include/terark/succinct
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/thread/*.hpp   $(DESTDIR)$(PREFIX)/include/terark/thread
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/util/*.hpp     $(DESTDIR)$(PREFIX)/include/terark/util
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/*.hpp      $(DESTDIR)$(PREFIX)/include/terark/fsa
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/*.inl      $(DESTDIR)$(PREFIX)/include/terark/fsa
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/ppi/*.hpp  $(DESTDIR)$(PREFIX)/include/terark/fsa/ppi
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/zbs/*.hpp      $(DESTDIR)$(PREFIX)/include/terark/zbs
+	cp -ar ${TOPLING_CORE_DIR}/boost-include/boost  $(DESTDIR)$(PREFIX)/include
+	install -d $(DESTDIR)$(PREFIX)/site
+	install -d $(DESTDIR)$(PREFIX)/toplingdb-conf
+	install -C -m 644 sideplugin/rockside/src/topling/web/index.html $(DESTDIR)$(PREFIX)/site
+	install -C -m 644 sideplugin/rockside/src/topling/web/style.css  $(DESTDIR)$(PREFIX)/site
+	install -C -m 644 sideplugin/rockside/sample-conf/db_bench_enterprise.yaml $(DESTDIR)$(PREFIX)/toplingdb-conf
 	install -C -m 644 rocksdb.pc $(INSTALL_LIBDIR)/pkgconfig/rocksdb.pc
 
 install-static: $(LIBRARY) static_lib
