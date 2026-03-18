@@ -2625,6 +2625,11 @@ install-headers: gen-pc
 	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/ppi/*.hpp  $(DESTDIR)/$(PREFIX)/include/terark/fsa/ppi
 	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/zbs/*.hpp      $(DESTDIR)/$(PREFIX)/include/terark/zbs
 	cp -ar ${TOPLING_CORE_DIR}/boost-include/boost  $(DESTDIR)/$(PREFIX)/include
+	install -d $(DESTDIR)/$(PREFIX)/site
+	install -d $(DESTDIR)/$(PREFIX)/toplingdb-conf
+	install -C -m 644 sideplugin/rockside/src/topling/web/index.html $(DESTDIR)/$(PREFIX)/site
+	install -C -m 644 sideplugin/rockside/src/topling/web/style.css  $(DESTDIR)/$(PREFIX)/site
+	install -C -m 644 sideplugin/rockside/sample-conf/db_bench_enterprise.yaml $(DESTDIR)/$(PREFIX)/site
 	install -C -m 644 rocksdb.pc $(INSTALL_LIBDIR)/pkgconfig/rocksdb.pc
 
 install-static: $(LIBRARY) static_lib
