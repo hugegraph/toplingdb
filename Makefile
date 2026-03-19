@@ -2639,6 +2639,9 @@ install-static: $(LIBRARY) static_lib
 install-shared: $(SHARED4) shared_lib
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(SHARED4) $(INSTALL_LIBDIR)
+ifeq ($(STRIP_DEBUG_INFO),1)
+	$(STRIP_CMD) $(INSTALL_LIBDIR)/$(SHARED4)
+endif
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED2)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED1)
@@ -2652,6 +2655,9 @@ install-dev: install-dev-${LIB_MODE}
 install-dcompact: install dcompact_worker
 	install -d $(DESTDIR)$(PREFIX)/bin
 	install -C -m 755 sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/dcompact_worker.exe $(DESTDIR)$(PREFIX)/bin
+ifeq ($(STRIP_DEBUG_INFO),1)
+	$(STRIP_CMD) $(DESTDIR)$(PREFIX)/bin/dcompact_worker.exe
+endif
 
 install-tools: install tools
 	mkdir -p $(DESTDIR)$(PREFIX)/bin

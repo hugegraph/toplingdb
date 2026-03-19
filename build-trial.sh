@@ -15,6 +15,7 @@ make install-dcompact install-dev db_bench -j`nproc` \
 
 install -C -m 755 db_bench    toplingdb-${MAJOR_DOT_MINOR}/bin
 install -C -m 755 db_bench.sh toplingdb-${MAJOR_DOT_MINOR}
+strip toplingdb-${MAJOR_DOT_MINOR}/bin/db_bench
 sed -e 's:sideplugin/rockside/src/topling/web:site:' \
     -e 's:sideplugin/rockside/sample-conf:toplingdb-conf:' \
     -e 's:\./db_bench:bin/db_bench:' \
