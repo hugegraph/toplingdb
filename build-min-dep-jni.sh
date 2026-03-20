@@ -38,9 +38,9 @@ shasum -a 1 ${TARGET_JAR} > ${TARGET_JAR}.sha1
 md5sum      ${TARGET_JAR} > ${TARGET_JAR}.md5
 
 #ospart # e.g. "/centos7"
-dir=topling-tools/toplingdb${ospart}/cn/topling/${db_artifactId}/${ROCKSDB_JAVA_VERSION}
+dir=toplingdb${ospart}/cn/topling/${db_artifactId}/${ROCKSDB_JAVA_VERSION}
 for file in ${TARGET_JAR}{,.sha1,.md5} ; do
-  ossutil cp --region=cn-qingdao -f $file oss://${dir}/
+  ossutil cp --region=cn-qingdao -f $file oss://topling-tools/${dir}/
 done
 set +x
 echo ===========================================
