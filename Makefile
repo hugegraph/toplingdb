@@ -613,9 +613,8 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   +=  -Isideplugin/topling-rocks/src
   CXXFLAGS   +=  -DHAS_TOPLING_ROCKS
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
-  EXTRA_LIB_SOURCES += \
-    $(wildcard sideplugin/topling-rocks/src/table/*.cc) \
-    sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
+  EXTRA_LIB_SOURCES += $(wildcard sideplugin/topling-rocks/src/table/*.cc)
+  EXTRA_LIB_SOURCES += sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
 else
   $(warning NotFound sideplugin/topling-rocks, this is ok, only ToplingZipTable is disabled)
 endif
