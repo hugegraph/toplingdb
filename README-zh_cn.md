@@ -17,7 +17,7 @@ sudo make install PREFIX=/some/path # default is /usr/local
 
 下载解压或者自行编译后，运行 [db_bench.sh](db_bench.sh)(需要[端口 2011](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4 "内嵌的 http web 服务使用端口 2011"))，然后使用 ToplingDB：[原生 C++](https://github.com/topling/rockside/wiki/101 "典型场景是从 rocksdb 迁移过来)")，也支持 [Java](https://github.com/topling/rockside/wiki/SidePlugin-Java-Binding "内置在本 github 仓库中") 和 [Rust](https://github.com/topling/rust-toplingdb "另外的专门的 github 仓库")。
 
-> 自己编译开源版时会自动下载预编译的试用版 ToplingZipTable，如果下载失败，可以给 `make` 传递变量 `WITH_TOPLING_ROCKS=0` 禁用它。
+> 自己编译开源版时会自动下载预编译的试用版(90天) ToplingZipTable，如果下载失败，可以给 `make` 传递变量 `WITH_TOPLING_ROCKS=0` 禁用它(或[联系我们](mailto:contact@topling.cn))。
 
 ## 简单介绍
 ToplingDB 的子模块 **[rockside](https://github.com/topling/rockside)** 是 ToplingDB 的入口，详情参考 **[SidePlugin wiki](https://github.com/topling/rockside/wiki)**。
