@@ -245,8 +245,10 @@ endif
 # better when combined with profile-guided optimizations (not currently
 # supported natively in Makefile).
 ifeq ($(USE_LTO), 1)
-	CXXFLAGS += -flto
-	LDFLAGS += -flto=auto -fuse-linker-plugin
+	ifeq (${DEBUG_LEVEL},0)
+		CXXFLAGS += -flto
+		LDFLAGS += -flto=auto -fuse-linker-plugin
+	endif
 endif
 
 # `COERCE_CONTEXT_SWITCH=1` will inject spurious wakeup and
