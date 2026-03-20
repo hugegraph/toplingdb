@@ -18,11 +18,7 @@ sudo make install PREFIX=/some/path # default is /usr/local
 
 After download+uncompress or compile, you can run bundled [db_bench.sh](db_bench.sh)(need [port 2011](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4 "use port 2011 for embeded http server")), then use ToplingDB [in C++](https://github.com/topling/sideplugin-wiki-en/wiki/101 "maybe migrate from rocksdb"), or in [Java](https://github.com/topling/sideplugin-wiki-en/wiki/SidePlugin-Java-Binding "Bundled in this repo"), [Rust](https://github.com/topling/rust-toplingdb "A seperated repo").
 
-> The opensource version of ToplingDB lacks [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable)(SST with Topling searchable compression algo),
-[download ToplingDB enterprise](https://topling-tools.oss-cn-qingdao.aliyuncs.com/toplingdb-8.10-trail90.tgz) to trial
-[Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable) 90 days,
-the shared lib of opensource version and enterprise version are binary compitible which can be exchanged,
-the unique difference is enterprise version has [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable).
+> During compiling, precompiled ToplingZipTable will be auto downloaded, if download failed, you can pass `WITH_TOPLING_ROCKS=0` to `make` to disalbe it.
 
 ## Introduction
 ToplingDB's submodule **[rockside](https://github.com/topling/rockside)** is the entry point of ToplingDB, see **[SidePlugin wiki](https://github.com/topling/sideplugin-wiki-en/wiki)**.
