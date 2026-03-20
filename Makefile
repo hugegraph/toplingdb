@@ -244,10 +244,14 @@ endif
 # interfaces/internal abstractions, like in the iterator hierarchy. It works
 # better when combined with profile-guided optimizations (not currently
 # supported natively in Makefile).
+OPTION_jemalloc := jemalloc-$(if $(filter 1,${DISABLE_JEMALLOC}),0,1)
+OPTION_dyna_tls := dyna_tls-$(if $(filter 1,${TOPLING_USE_DYNAMIC_TLS}),1,0)
+OPTION_lto := lto-0
 ifeq ($(USE_LTO), 1)
 	ifeq (${DEBUG_LEVEL},0)
 		CXXFLAGS += -flto
 		LDFLAGS += -flto=auto -fuse-linker-plugin
+		OPTION_lto := lto-$(if $(filter 1,${USE_LTO}),1,0)
 	endif
 endif
 
@@ -408,6 +412,9 @@ endif
 ORIG_OBJ_DIR := ${OBJ_DIR}
 OBJ_DIR := ${BUILD_PREFIX}${OBJ_DIR}/v${ROCKSDB_FULL_VERSION}
 
+# COMPILER is in ignored
+TRIAL_urldir := toplingdb/gpl-trial/${OPTION_lto}-${OPTION_jemalloc}-${OPTION_dyna_tls}/${UNAME_MachineSystem}-bmi2-${WITH_BMI2}/${BUILD_TYPE_SIG}
+
 # 1. we define ROCKSDB_DISABLE_ZSTD=1 on build_detect_platform.
 # 2. zstd lib is included in libterark-zbs
 # 3. we alway use ZSTD
@@ -435,31 +442,17 @@ ifndef WITH_TOPLING_ROCKS
       git submodule update --init --recursive \
     )
   endif
-  ifeq (,$(wildcard sideplugin/topling-rocks))
-    WITH_TOPLING_ROCKS := 0
-  else
-    WITH_TOPLING_ROCKS := 1
-  endif
+  # default 1
+  WITH_TOPLING_ROCKS := 1
 endif
 
 ifeq (${WITH_TOPLING_ROCKS},1)
-ifeq (,$(wildcard sideplugin/topling-rocks))
-  # topling specific: just for people who has permission to topling-rocks
-  dummy := $(shell set -e -x; \
-    cd sideplugin; \
-    git clone ${GIT_TOPLING_ROCKS}; \
-    cd topling-rocks; \
-    git submodule update --init --recursive \
-  )
-else
+ifneq (,$(wildcard sideplugin/topling-rocks))
   ifneq (${UPDATE_REPO},0)
    ifeq (${MAKE_RESTARTS},)
     dummy := $(shell set -ex; cd sideplugin/topling-rocks && git pull)
    endif
   endif
-endif
-ifeq (,$(wildcard sideplugin/topling-rocks/src/table/top_zip_table_builder.cc))
-  $(error WITH_TOPLING_ROCKS=1 but repo sideplugin/topling-rocks is broken)
 endif
 endif
 
@@ -615,10 +608,13 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   +=  -Isideplugin/topling-rocks/src
   CXXFLAGS   +=  -DHAS_TOPLING_ROCKS
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
-  EXTRA_LIB_SOURCES += $(wildcard sideplugin/topling-rocks/src/table/*.cc)
-  EXTRA_LIB_SOURCES += sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
-else
-  $(warning NotFound sideplugin/topling-rocks, this is ok, only ToplingZipTable is disabled)
+  ifeq (,${TOPLING_ZIP_TABLE_TRIAL_DAYS})
+    EXTRA_LIB_SOURCES += $(wildcard sideplugin/topling-rocks/src/table/*.cc)
+    EXTRA_LIB_SOURCES += sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
+  else
+    # no TOPLING_ROCKS_GIT_VER_SRC
+    EXTRA_LIB_SOURCES += sideplugin/topling-zip_table_reader/top_zip_table_builder.cc
+  endif
 endif
 endif
 
@@ -1099,6 +1095,12 @@ ifneq ($(PPC_LIBC_IS_GNU),0)
   # add to LIB_SOURCES to generate *.cc.d dependency rules
   LIB_SOURCES += ${RANGE_TREE_SOURCES}
   LIB_OBJECTS += $(patsubst %.cc, $(OBJ_DIR)/%.o, $(RANGE_TREE_SOURCES))
+endif
+
+ifeq (${WITH_TOPLING_ROCKS},1)
+  ifeq (,$(wildcard sideplugin/topling-rocks))
+    LIB_OBJECTS += $(OBJ_DIR)/sideplugin/topling-zip_table_reader/top_zip_table_builder.o
+  endif
 endif
 
 GTEST = $(OBJ_DIR)/$(GTEST_DIR)/gtest/gtest-all.o
@@ -2652,6 +2654,10 @@ install: install-${LIB_MODE}
 install-dev-static: install-headers install-static
 install-dev-shared: install-headers install-shared
 install-dev: install-dev-${LIB_MODE}
+upload-trial: ${OBJ_DIR}/sideplugin/topling-zip_table_reader/top_zip_table_builder.o
+	ossutil cp --region=cn-qingdao -f \
+		$(OBJ_DIR)/sideplugin/topling-zip_table_reader/top_zip_table_builder.o \
+		oss://topling-tools/${TRIAL_urldir}/
 
 install-dcompact: install dcompact_worker
 	install -d $(DESTDIR)$(PREFIX)/bin
@@ -3298,8 +3304,15 @@ ${BUILD_ROOT}/lib_static/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.a:
 ifeq (${WITH_TOPLING_ROCKS},1)
 ifneq (,$(wildcard sideplugin/topling-rocks))
 sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}: \
+  sideplugin/topling-rocks/Makefile \
   $(shell find sideplugin/topling-rocks/{src,tools} -name '*.cc' -o -name '*.h')
 	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC}
+sideplugin/topling-zip_table_reader/top_zip_table_builder.cc: sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
+else
+${OBJ_DIR}/sideplugin/topling-zip_table_reader/top_zip_table_builder.o:
+	@mkdir -p $(dir $@)
+	@cd $(dir $@) && \
+	 wget https://topling-tools.oss-cn-qingdao.aliyuncs.com/${TRIAL_urldir}/top_zip_table_builder.o
 endif
 endif
 
