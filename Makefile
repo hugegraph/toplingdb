@@ -782,7 +782,7 @@ endif
 
 ifeq ($(LIB_MODE),shared)
 # So that binaries are executable from build location, in addition to install location
-EXEC_LDFLAGS += -Wl,-rpath -Wl,'$$ORIGIN'
+EXEC_LDFLAGS += -Wl,-rpath -Wl,'$$ORIGIN:$$ORIGIN/../lib'
 endif
 
 ifeq ($(PLATFORM), OS_MACOSX)
