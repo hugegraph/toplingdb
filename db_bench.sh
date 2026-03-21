@@ -12,20 +12,23 @@ export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
 ulimit -n 100000
 args=(
     -json sideplugin/rockside/sample-conf/db_bench_enterprise.yaml
-    -num=10000000 -key_size=8
-    -value_size=2000
+   #-num=10000000
+    -key_size=8
+   #-value_size=2000
     -batch_size=100
    #-benchmarks=fillseq,compact,nextwithkey,nextwithkey,nextwithkey,nextwithkey,nextwithkey,readseq,readseq,readseq,readseq,readseq
     -benchmarks=fillrandom,readrandom
    #-benchmarks=fillseq,compact
-   #-benchmarks=compact -use_existing_db
+   #-benchmarks=compact
    #-benchmarks=readrandom
    #-benchmarks=readseq
    #-benchmarks=nextwithkey
    #-wkey_file=${HOME}/wikipedia-title-seq.txt
    #-rkey_file=${HOME}/wikipedia-title-seq.txt
    #-threads=8
-    -scan_omit_key -scan_omit_value
+   #-use_existing_db
+    -scan_omit_key
+    -scan_omit_value
     -enable_zero_copy # ToplingDB specific, for point search by Get/MultiGet
 )
 ./db_bench ${args[@]} "$@"
