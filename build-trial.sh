@@ -5,7 +5,7 @@ export UPDATE_REPO=0
 export TOPLING_ZIP_TABLE_TRIAL_DAYS=90
 MAJOR_DOT_MINOR=`build_tools/version.sh major`.`build_tools/version.sh minor`
 
-make -j60 libsnappy.a liblz4.a libbz2.a
+make -j60 libsnappy.a liblz4.a libbz2.a BUILD_PREFIX=bconf-0/
 GetDebugLevel=(2 0)
 for ((i=0;i<16;i++)); do
     export DEBUG_LEVEL=${GetDebugLevel[$((i/1%2))]}
