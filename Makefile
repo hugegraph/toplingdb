@@ -3302,7 +3302,7 @@ ${BUILD_ROOT}/lib_static/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.a:
 	+make -C ${TOPLING_CORE_DIR} core fsa zbs
 
 ifeq (${WITH_TOPLING_ROCKS},1)
-ifneq (,$(wildcard sideplugin/topling-rocks))
+ifneq (,$(wildcard sideplugin/topling-rocks/src/table/top_patent_algo.cc))
 sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}: \
   sideplugin/topling-rocks/Makefile \
   $(shell find sideplugin/topling-rocks/{src,tools} -name '*.cc' -o -name '*.h')
