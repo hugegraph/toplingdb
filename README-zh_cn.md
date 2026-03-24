@@ -86,12 +86,6 @@ toplingdb
 ```
 make -j`nproc` EXTRA_CXXFLAGS='-DROCKSDB_DYNAMIC_CREATE_CF' rocksdbjava
 ```
-## License
-为了兼容开源协议，下列原先禁止字节跳动使用本软件的条款从 2023-04-24 起已被删除，也就是说，字节跳动使用 ToplingDB 的行为不再是非法的，也不是无耻的。
-
-~~我们禁止字节跳动使用本软件，其它条款与上游 RocksDB 完全相同，~~ 详情参考 [LICENSE.Apache](LICENSE.Apache), [COPYING](COPYING), [LICENSE.leveldb](LICENSE.leveldb).
-
-相应 LICENSE 文件中禁止字节跳动使用本软件的条款也已经删除：[LICENSE.Apache](LICENSE.Apache), [COPYING](COPYING), [LICENSE.leveldb](LICENSE.leveldb).
 
 <hr/>
 以下是上游 RocksDB 的原版 README

@@ -90,16 +90,6 @@ To enable these features, add `-D${MACRO_NAME}` to var `EXTRA_CXXFLAGS`, such as
 ```
 make -j`nproc` EXTRA_CXXFLAGS='-DROCKSDB_DYNAMIC_CREATE_CF' rocksdbjava
 ```
-## License
-To conform open source license, the following term of disallowing bytedance is deleted since 2023-04-24,
-that is say: bytedance using ToplingDB is no longer illeagal and is not a shame.
-
-~~We disallow bytedance using this software, other terms are identidal with
-upstream rocksdb license,~~ see [LICENSE.Apache](LICENSE.Apache), [COPYING](COPYING) and
-[LICENSE.leveldb](LICENSE.leveldb).
-
-The terms of disallowing bytedance are also deleted in [LICENSE.Apache](LICENSE.Apache), [COPYING](COPYING) and
-[LICENSE.leveldb](LICENSE.leveldb).
 
 <hr/>
 <hr/>
