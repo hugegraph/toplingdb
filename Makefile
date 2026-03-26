@@ -441,6 +441,10 @@ ifndef WITH_TOPLING_ROCKS
       cd topling-rocks; \
       git submodule update --init --recursive \
     )
+  else
+    ifeq (,$(wildcard sideplugin/topling-rocks/src/table/top_patent_algo.cc))
+      dummy := $(shell rm -rf sideplugin/topling-rocks)
+    endif
   endif
   # default 1
   WITH_TOPLING_ROCKS := 1
