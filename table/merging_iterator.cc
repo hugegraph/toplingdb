@@ -150,14 +150,7 @@ private:
   const InternalKeyComparator* comparator_;
 };
 
-#if defined(_MSC_VER) /* Visual Studio */
-#define FORCE_INLINE __forceinline
-#define __bswap_64 _byteswap_uint64
-#elif defined(__GNUC__)
-#define FORCE_INLINE inline __attribute__((always_inline))
-#else
-#define FORCE_INLINE inline
-#endif
+#define FORCE_INLINE terark_forceinline
 
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
   // can be defined as 23 or 16
