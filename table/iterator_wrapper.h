@@ -56,10 +56,8 @@ class IteratorWrapperBase {
       result_.is_valid = false;
     } else {
      #if TOPLING_USE_BOUND_PMF
-      next_and_get_result_ = ExtractFuncPtr<NextAndGetResultFN>
-          (_iter, &InternalIteratorBase<TValue>::NextAndGetResult);
-      prepare_and_get_value_ = ExtractFuncPtr<PrepareAndGetValueFN>
-          (_iter, &InternalIteratorBase<TValue>::PrepareAndGetValue);
+      next_and_get_result_ = ForgeFuncPtr(_iter, &InternalIteratorBase<TValue>::NextAndGetResult);
+      prepare_and_get_value_ = ForgeFuncPtr(_iter, &InternalIteratorBase<TValue>::PrepareAndGetValue);
      #endif
       Update();
     }
@@ -289,10 +287,8 @@ class ThinIteratorWrapperBase {
     iter_ = i;
     if (i) {
      #if TOPLING_USE_BOUND_PMF
-      next_and_get_result_ = ExtractFuncPtr<NextAndGetResultFN>
-          (i, &InternalIteratorBase<TValue>::NextAndGetResult);
-      prepare_and_get_value_ = ExtractFuncPtr<PrepareAndGetValueFN>
-          (i, &InternalIteratorBase<TValue>::PrepareAndGetValue);
+      next_and_get_result_ = ForgeFuncPtr(i, &InternalIteratorBase<TValue>::NextAndGetResult);
+      prepare_and_get_value_ = ForgeFuncPtr(i, &InternalIteratorBase<TValue>::PrepareAndGetValue);
      #endif
     }
     return old_iter;
