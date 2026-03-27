@@ -1209,12 +1209,11 @@ class LevelIterator final : public InternalIterator {
       iw->prepare_and_get_value_ = ForgeFuncPtr(this,
                                      &LevelIterator::PrepareAndGetValue);
     } else {
-      iw->work_iter_ = file_iter_.iter();
-      iw->value_iter_ = file_iter_.iter();
-      iw->next_and_get_result_ = ForgeFuncPtr(file_iter_.iter(),
-                                  &InternalIterator::NextAndGetResult);
-      iw->prepare_and_get_value_ = ForgeFuncPtr(file_iter_.iter(),
-                                  &InternalIterator::PrepareAndGetValue);
+      auto fi = file_iter_.iter();
+      iw->work_iter_ = fi;
+      iw->value_iter_ = fi;
+      iw->next_and_get_result_ = ForgeFuncPtr(fi, &InternalIterator::NextAndGetResult);
+      iw->prepare_and_get_value_ = ForgeFuncPtr(fi, &InternalIterator::PrepareAndGetValue);
     }
     retry_already_goes_invalid_ = false;
   }
