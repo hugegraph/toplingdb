@@ -595,7 +595,7 @@ struct VirtualCmpNoTS {
 template<size_t UserKeyLen>
 __always_inline
 void DBIter::FastIterKey::SetUK(const Slice& uk_slice) {
-  static_assert(UserKeyLen < sizeof(key));
+  static_assert(UserKeyLen + 8 < sizeof(key));
   auto uk_ptr = uk_slice.data();
   auto uk_len = uk_slice.size();
   if constexpr (UserKeyLen == 0) {
