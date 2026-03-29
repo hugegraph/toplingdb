@@ -698,7 +698,8 @@ class MemTable : public CacheAlignedNewDelete {
   const SliceTransform* insert_with_hint_prefix_extractor_;
 
   // Insert hints for each prefix.
-  UnorderedMapH<Slice, void*, SliceHasher32> insert_hints_;
+  // UnorderedMapH<Slice, void*, SliceHasher32> insert_hints_;
+  terark::hash_strmap<void*> insert_hints_;
 
   // Timestamp of oldest key
   std::atomic<uint64_t> oldest_key_time_;

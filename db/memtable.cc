@@ -170,6 +170,10 @@ MemTable::~MemTable() {
   assert(refs_ == 0);
 }
 
+// for ApproximateMemoryUsage(insert_hints_)
+static size_t ApproximateMemoryUsage(const terark::hash_strmap<void*>& map) {
+  return map.capacity() * 16 + map.strpool_capacity() + map.bucket_size() * 4;
+}
 size_t MemTable::ApproximateMemoryUsage() {
   size_t usages[] = {
       arena_.ApproximateMemoryUsage(), table_->ApproximateMemoryUsage(),
