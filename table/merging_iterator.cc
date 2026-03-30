@@ -265,7 +265,7 @@ struct UintPrefix {
   unsigned char data[MERGE_ITER_PREFIX_LEN] = {0};
   UintPrefix(int=0) {}
 };
-static_assert(sizeof(UintPrefix) == 23);
+static_assert(sizeof(UintPrefix) == MERGE_ITER_PREFIX_LEN);
 
 #endif // MERGE_ITER_PREFIX_LEN
 
