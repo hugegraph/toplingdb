@@ -3537,13 +3537,14 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
         get_value);
     counting++;
   };
-  if (read_options.async_io) {
+  const bool async_io = read_options.async_io;
+  if (async_io) {
     gt_fiber_pool.update_fiber_count(read_options.async_queue_depth);
   }
   size_t memtab_miss = 0;
   for (size_t i = 0; i < num_keys; i++) {
     if (!ctx_vec[i].is_done()) {
-      if (read_options.async_io) {
+      if (async_io) {
         gt_fiber_pool.push({TERARK_C_CALLBACK(get_in_sst), i});
       } else {
         get_in_sst(i);
