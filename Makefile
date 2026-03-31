@@ -458,6 +458,7 @@ ifneq (,$(wildcard sideplugin/topling-rocks))
    endif
   endif
 endif
+CXXFLAGS += -DHAS_TOPLING_ROCKS
 endif
 
 ifeq (,$(wildcard sideplugin/cspp-memtable))
@@ -610,7 +611,6 @@ endif # WITH_TOPLING_DCOMPACT
 ifeq (${WITH_TOPLING_ROCKS},1)
 ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   +=  -Isideplugin/topling-rocks/src
-  CXXFLAGS   +=  -DHAS_TOPLING_ROCKS
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
   ifeq (,${TOPLING_ZIP_TABLE_TRIAL_DAYS})
     EXTRA_LIB_SOURCES += $(wildcard sideplugin/topling-rocks/src/table/*.cc)
