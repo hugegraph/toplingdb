@@ -3316,7 +3316,8 @@ else
 ${OBJ_DIR}/sideplugin/topling-zip_table_reader/top_zip_table_builder.o:
 	@mkdir -p $(dir $@)
 	@cd $(dir $@) && \
-	 wget https://topling-tools.oss-cn-qingdao.aliyuncs.com/${TRIAL_urldir}/top_zip_table_builder.o
+	 wget https://topling-tools.oss-cn-qingdao.aliyuncs.com/${TRIAL_urldir}/top_zip_table_builder.o || \
+	 echo 'Download top_zip_table_builder fail, add WITH_TOPLING_ROCKS=0 to make command and try again'
 endif
 endif
 
