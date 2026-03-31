@@ -1,14 +1,18 @@
 #!/usr/bin/bash
 
+ROCKSDB_VERSION=`build_tools/version.sh full`
+
 # ex: topling-8.10.2-frocksdb-1.0, part <frocksdb> will be ignored
 if [ -z "${TOPLING_VERSION}" ]; then
-    GITHUB_REF=`git symbolic-ref HEAD`
-    TOPLING_VERSION=`echo ${GITHUB_REF} | sed -n 's:^refs/tags/topling-'${ROCKSDB_VERSION}'[-_a-z]*\([.0-9]\):\1:p'`
+    GITHUB_REF=`git describe --tags --exact-match || git branch --show-current`
+    TOPLING_VERSION=`echo ${GITHUB_REF} | sed -n 's:^topling-'${ROCKSDB_VERSION}'[-_a-z]*\([.0-9]\):\1:p'`
     if [ -z "${TOPLING_VERSION}" ]; then
         echo TOPLING_VERSION is not set and can not parse from HEAD ref >&2
         exit 1
     fi
 fi
+#ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}-topling-${TOPLING_VERSION}-trial${TOPLING_ZIP_TABLE_TRIAL_DAYS}
+ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}-topling-${TOPLING_VERSION}
 
 export USE_LTO=1
 export UPDATE_REPO=0
@@ -26,8 +30,6 @@ make rocksdbjava install-dcompact -j`nproc` BUILD_PREFIX=min-dep-jni/ \
 exebin=min-dep-jni/bin/dcompact_worker.exe
 patchelf --replace-needed librocksdb.so.${MAJOR_DOT_MINOR} librocksdbjni-linux64.so ${exebin}
 
-ROCKSDB_VERSION=`build_tools/version.sh full`
-ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}-topling-${TOPLING_VERSION}-trial${TOPLING_ZIP_TABLE_TRIAL_DAYS}
 cd java/target
 db_artifactId=`sed -n 's/.*<artifactId>\(f\?rocksdbjni\)<\/artifactId>.*/\1/p' ../pom.xml.template`
 TARGET_JAR=${db_artifactId}-${ROCKSDB_JAVA_VERSION}.jar
