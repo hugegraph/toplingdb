@@ -2,9 +2,9 @@
 
 ROCKSDB_VERSION=`build_tools/version.sh full`
 
-# ex: topling-8.10.2-frocksdb-1.0, part <frocksdb> will be ignored
 if [ -z "${TOPLING_VERSION}" ]; then
     GITHUB_REF=`git describe --tags --exact-match || git branch --show-current`
+    # GITHUB_REF seems like: topling-8.10.2-frocksdb-1.0, part <frocksdb> will be ignored
     TOPLING_VERSION=`echo ${GITHUB_REF} | sed -n 's:^topling-'${ROCKSDB_VERSION}'[-_a-z]*\([.0-9]\):\1:p'`
     if [ -z "${TOPLING_VERSION}" ]; then
         echo TOPLING_VERSION is not set and can not parse from HEAD ref >&2
