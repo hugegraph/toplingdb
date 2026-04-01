@@ -19,6 +19,7 @@ done
 export BUILD_PREFIX=bconf-15/
 rm -rf toplingdb-${MAJOR_DOT_MINOR}
 rm -rf librocksdb* db_bench
+rm -rf sideplugin/topling-dcompact/tools/dcompact/build
 make install-dcompact install-dev db_bench -j`nproc` \
     PREFIX=toplingdb-${MAJOR_DOT_MINOR} STRIP_DEBUG_INFO=1
 
@@ -30,6 +31,12 @@ sed -e 's:sideplugin/rockside/src/topling/web:site:' \
     -e 's:\./db_bench:bin/db_bench:' \
     -e '/ulimit/iexport LD_LIBRARY_PATH=lib:$LD_LIBRARY_PATH' \
     -i toplingdb-${MAJOR_DOT_MINOR}/db_bench.sh
-sdk=toplingdb-${MAJOR_DOT_MINOR}-trail${TOPLING_ZIP_TABLE_TRIAL_DAYS}.tgz
+source /etc/os-release
+if [ "${ID}" = "centos" ]; then
+    ospart=-${ID}${VERSION_ID} # e.g. "-centos7"
+else
+    ospart="" # keep empty
+fi
+sdk=toplingdb-${MAJOR_DOT_MINOR}-trail${TOPLING_ZIP_TABLE_TRIAL_DAYS}${ospart}.tgz
 tar czf ${sdk} toplingdb-${MAJOR_DOT_MINOR}
 ossutil cp --region=cn-qingdao -f ${sdk} oss://topling-tools/
