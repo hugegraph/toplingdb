@@ -414,6 +414,12 @@ OBJ_DIR := ${BUILD_PREFIX}${OBJ_DIR}/v${ROCKSDB_FULL_VERSION}
 
 # COMPILER is in ignored
 TRIAL_urldir := toplingdb/gpl-trial/${OPTION_lto}-${OPTION_jemalloc}-${OPTION_dyna_tls}/${UNAME_MachineSystem}-bmi2-${WITH_BMI2}/${BUILD_TYPE_SIG}
+ifeq (${PLATFORM},OS_LINUX)
+LINUX_NAME := $(shell source /etc/os-release; echo $$ID)
+ifeq (${LINUX_NAME},centos)
+TRIAL_urldir := ${TRIAL_urldir}/$(shell source /etc/os-release; echo $$ID$$VERSION_ID)
+endif
+endif
 
 # 1. we define ROCKSDB_DISABLE_ZSTD=1 on build_detect_platform.
 # 2. zstd lib is included in libterark-zbs
