@@ -18,6 +18,7 @@ done
 # DEBUG_LEVEL=0,USE_LTO=1,DISABLE_JEMALLOC=1,TOPLING_USE_DYNAMIC_TLS=1
 export BUILD_PREFIX=bconf-15/
 rm -rf toplingdb-${MAJOR_DOT_MINOR}
+rm -rf librocksdb* db_bench
 make install-dcompact install-dev db_bench -j`nproc` \
     PREFIX=toplingdb-${MAJOR_DOT_MINOR} STRIP_DEBUG_INFO=1
 

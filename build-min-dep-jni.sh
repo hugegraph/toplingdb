@@ -23,22 +23,31 @@ export TOPLING_USE_DYNAMIC_TLS=1
 export TOPLING_ZIP_TABLE_TRIAL_DAYS=90
 MAJOR_DOT_MINOR=`build_tools/version.sh major`.`build_tools/version.sh minor`
 
+rm -rf java/include
+rm -rf snappy* lz4* bzip2*
+rm -f libsnappy.a liblz4.a libbz2.a
 make -j60 libsnappy.a liblz4.a libbz2.a
 make rocksdbjava install-dcompact -j`nproc` BUILD_PREFIX=min-dep-jni/ \
     PREFIX=min-dep-jni STRIP_DEBUG_INFO=1 ROCKSDB_JAR_WITH_DYNAMIC_LIBS=1
 
-exebin=min-dep-jni/bin/dcompact_worker.exe
-patchelf --replace-needed librocksdb.so.${MAJOR_DOT_MINOR} librocksdbjni-linux64.so ${exebin}
+patchelf --replace-needed librocksdb.so.${MAJOR_DOT_MINOR} librocksdbjni-linux64.so min-dep-jni/bin/dcompact_worker.exe
 
 cd java/target
 db_artifactId=`sed -n 's/.*<artifactId>\(f\?rocksdbjni\)<\/artifactId>.*/\1/p' ../pom.xml.template`
 TARGET_JAR=${db_artifactId}-${ROCKSDB_JAVA_VERSION}.jar
 mv rocksdbjni-${ROCKSDB_VERSION}-linux64.jar ${TARGET_JAR}
 rm *.sha1
-jar -uf ${TARGET_JAR} ../../${exebin}
+( # in sub shell
+    cd ../../min-dep-jni/bin
+    jar -uf ../../java/target/${TARGET_JAR} dcompact_worker.exe
+)
 shasum -a 1 ${TARGET_JAR} > ${TARGET_JAR}.sha1
 md5sum      ${TARGET_JAR} > ${TARGET_JAR}.md5
 
+source /etc/os-release
+if [ "${ID}" = "centos" ]; then
+    ospart=/${ID}${VERSION_ID}
+fi
 #ospart # e.g. "/centos7"
 dir=toplingdb${ospart}/cn/topling/${db_artifactId}/${ROCKSDB_JAVA_VERSION}
 for file in ${TARGET_JAR}{,.sha1,.md5} ; do
