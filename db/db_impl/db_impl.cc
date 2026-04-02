@@ -3579,6 +3579,10 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
   if (!read_options.internal_is_in_pinning_section)
     ReturnAndCleanupSuperVersion(cfd, sv);
 
+#else
+  for (size_t i = 0; i < num_keys; i++) {
+    statuses[i] = Status::NotSupported("macro TOPLINGDB_WITH_FIBER_AIO is 0 but env MultiGetUseFiber is true");
+  }
 #endif // TOPLINGDB_WITH_FIBER_AIO
 } // g_MultiGetUseFiber
 }
