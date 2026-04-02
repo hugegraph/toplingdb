@@ -613,7 +613,9 @@ void DBIter::FastIterKey::SetUK(const Slice& uk_slice) {
       // do not write last 8 bytes(seq + value_type)
     });
    #elif defined(__clang__) || !defined(__GNUC__) || __GNUC__ >= 13
-    static_assert(false, "UserKeyLen == 64 should not on non-avx512");
+    // (UserKeyLen != 64) == false here, for workardound clang(at least clang17)
+    // static_assert(false, "UserKeyLen == 64 should not on non-avx512"); // clang fail
+    static_assert(UserKeyLen != 64, "UserKeyLen == 64 should not on non-avx512"); // clang ok
    #endif
   } else {
     ROCKSDB_ASSERT_EQ(uk_len, UserKeyLen);
