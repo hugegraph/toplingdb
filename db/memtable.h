@@ -9,8 +9,6 @@
 
 #pragma once
 #include <atomic>
-#include <deque>
-#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -23,15 +21,12 @@
 #include "db/version_edit.h"
 #include "memory/allocator.h"
 #include "memory/concurrent_arena.h"
-#include "monitoring/instrumented_mutex.h"
 #include "options/cf_options.h"
 #include "rocksdb/db.h"
 #include "rocksdb/memtablerep.h"
 #include "table/internal_iterator.h"
 #include "table/multiget_context.h"
 #include "util/dynamic_bloom.h"
-#include "util/hash.h"
-#include "util/hash_containers.h"
 
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
 #include <terark/sso.hpp>
