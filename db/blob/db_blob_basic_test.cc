@@ -942,9 +942,11 @@ TEST_F(DBBlobBasicTest, MultiGetBlob_CorruptIndex) {
       "Version::MultiGet::TamperWithBlobIndex", [&key](void* arg) {
         KeyContext* const key_context = static_cast<KeyContext*>(arg);
         assert(key_context);
+      #if defined(TOPLINGDB_WITH_TIMESTAMP)
         assert(key_context->key);
+      #endif
 
-        if (*(key_context->key) == key) {
+        if (key_context->ukey_without_ts == key) {
           Slice* const blob_index = key_context->value;
           assert(blob_index);
           assert(!blob_index->empty());

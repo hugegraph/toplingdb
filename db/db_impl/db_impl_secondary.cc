@@ -424,7 +424,7 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   LookupKey lkey(key, snapshot, read_options.timestamp);
 #else
-  LookupKey lkey(key, snapshot);
+  ParsedInternalKey lkey(key, snapshot, kValueTypeForSeek);
 #endif
   PERF_TIMER_STOP(get_snapshot_time);
   bool done = false;

@@ -109,9 +109,28 @@ namespace {
 #define __builtin_prefetch(ptr)
 #endif
 
+inline uint64_t HostPrefixCache(const ParsedInternalKey& ikey) {
+  if (LIKELY(ikey.user_key.size_ >= 8)) {
+    uint64_t data = GetUnalignedU64(ikey.user_key.data_);
+    return NativeOfBigEndian64(data);
+  } else {
+   #if defined(__AVX512VL__) && defined(__AVX512BW__)
+    //#pragma message "__AVX512VL__ && __AVX512BW__, use _mm_maskz_loadu_epi8"
+    // load 128 bits, keep low 64 bits, discard high 64 bits
+    auto mask = _bzhi_u32(-1, uint32_t(ikey.user_key.size_));
+    auto m128 = _mm_maskz_loadu_epi8(mask, ikey.user_key.data_);
+    uint64_t data = (uint64_t)_mm_extract_epi64(m128, 0);
+   #else
+    uint64_t data = 0;
+    memcpy(&data, ikey.user_key.data_, ikey.user_key.size_);
+   #endif
+    return NativeOfBigEndian64(data);
+  }
+}
+
 template<class Cmp>
 size_t FindFileInRangeTmpl(Cmp cmp, const LevelFilesBrief& brief,
-                           Slice key, size_t lo, size_t hi) {
+                           const ParsedInternalKey& key, size_t lo, size_t hi) {
   const uint64_t* pxcache = brief.prefix_cache;
   const uint64_t  key_prefix = HostPrefixCache(key);
   const FdWithKeyRange* a = brief.files;
@@ -141,7 +160,7 @@ size_t FindFileInRangeTmpl(Cmp cmp, const LevelFilesBrief& brief,
 
 static
 size_t FindFileInRangeTmpl(FallbackVirtCmp cmp, const LevelFilesBrief& brief,
-                           Slice key, size_t lo, size_t hi) {
+                           const ParsedInternalKey& key, size_t lo, size_t hi) {
   const FdWithKeyRange* a = brief.files;
   while (lo < hi) {
     size_t mid = (lo + hi) / 2;
@@ -157,7 +176,7 @@ template<class Cmp>
 static ROCKSDB_FLATTEN
 int FindFileInRangeInst(const InternalKeyComparator* icmp,
                         const LevelFilesBrief& brief,
-                        Slice key, size_t lo, size_t hi) {
+                        const ParsedInternalKey& key, size_t lo, size_t hi) {
   return (int)FindFileInRangeTmpl(Cmp{icmp}, brief, key, lo, hi);
 }
 
@@ -167,7 +186,7 @@ int FindFileInRangeInst(const InternalKeyComparator* icmp,
 __attribute_noinline__
 #endif
 int FindFileInRange(const InternalKeyComparator& icmp,
-                    const LevelFilesBrief& file_level, const Slice& key,
+                    const LevelFilesBrief& file_level, const ParsedInternalKey& key,
                     uint32_t left, uint32_t right) {
 #ifdef TOPLINGDB_NO_OPT_FindFileInRange
   #pragma message "TOPLINGDB_NO_OPT_FindFileInRange is defined, intended for benchmark baseline"
@@ -240,12 +259,12 @@ template<class UKCmp, class IKCmp>
 class FilePicker {
   __always_inline
   int FindFileInRange(const InternalKeyComparator& icmp,
-                      const LevelFilesBrief& file_level, const Slice& key,
+                      const LevelFilesBrief& file_level, const ParsedInternalKey& key,
                       size_t left, size_t right) {
     return (int)FindFileInRangeTmpl(IKCmp{&icmp}, file_level, key, left, right);
   }
  public:
-  FilePicker(const Slice& user_key, const Slice& ikey,
+  FilePicker(const Slice& user_key, const ParsedInternalKey& ikey,
              autovector<LevelFilesBrief>* file_levels, unsigned int num_levels,
              FileIndexer* file_indexer, const Comparator* user_comparator,
              const InternalKeyComparator* internal_comparator)
@@ -270,7 +289,7 @@ class FilePicker {
       for (unsigned int i = 0; i < (*level_files_brief_)[0].num_files; ++i) {
         auto* r = (*level_files_brief_)[0].files[i].fd.table_reader;
         if (r) {
-          r->Prepare(ikey);
+          r->PreparePIK(ikey);
         }
       }
     }
@@ -367,7 +386,7 @@ class FilePicker {
   unsigned int curr_index_in_curr_level_;
   unsigned int start_index_in_curr_level_;
   Slice user_key_;
-  Slice ikey_;
+  ParsedInternalKey ikey_;
   FileIndexer* file_indexer_;
   const Comparator* user_comparator_;
   const InternalKeyComparator* internal_comparator_;
@@ -494,7 +513,7 @@ class FilePickerMultiGet {
         auto* r = (*level_files_brief_)[0].files[i].fd.table_reader;
         if (r) {
           for (auto iter = range_.begin(); iter != range_.end(); ++iter) {
-            r->Prepare(iter->ikey);
+            r->PreparePIK(iter->ikey);
           }
         }
       }
@@ -947,6 +966,12 @@ Version::~Version() {
 
 int FindFile(const InternalKeyComparator& icmp,
              const LevelFilesBrief& file_level, const Slice& key) {
+  return FindFileInRange(icmp, file_level, ParsedInternalKey(key), 0,
+                         static_cast<uint32_t>(file_level.num_files));
+}
+
+int FindFile(const InternalKeyComparator& icmp,
+             const LevelFilesBrief& file_level, const ParsedInternalKey& key) {
   return FindFileInRange(icmp, file_level, key, 0,
                          static_cast<uint32_t>(file_level.num_files));
 }
@@ -2660,7 +2685,7 @@ void Version::MultiGetBlob(
 
 template<class UKCmp, class IKCmp>
 ROCKSDB_FLATTEN
-void Version::GetInst(const ReadOptions& read_options, const LookupKey& k,
+void Version::GetInst(const ReadOptions& read_options, const ParsedInternalKey& ikey,
                   PinnableSlice* value, PinnableWideColumns* columns,
                   std::string* timestamp, Status* status,
                   MergeContext* merge_context,
@@ -2668,8 +2693,7 @@ void Version::GetInst(const ReadOptions& read_options, const LookupKey& k,
                   PinnedIteratorsManager* pinned_iters_mgr, bool* value_found,
                   bool* key_exists, SequenceNumber* seq, ReadCallback* callback,
                   bool* is_blob, bool do_merge) {
-  Slice ikey = k.internal_key();
-  Slice user_key = k.user_key();
+  const Slice& user_key = ikey.user_key;
 
   assert(status->ok() || status->IsMergeInProgress());
 
@@ -3079,7 +3103,7 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
   for (auto iter = range->begin(); s.ok() && iter != range->end(); ++iter) {
     GetContext& get_context = *iter->get_context;
     Status* status = iter->s;
-    Slice user_key = iter->lkey->user_key();
+    const Slice& user_key = iter->ikey.user_key;
 
     if (db_statistics_ != nullptr) {
       get_context.ReportCounters();
@@ -4909,7 +4933,7 @@ uint64_t VersionStorageInfo::NumLevelRawKV(int level) const {
 int VersionStorageInfo::FindFileInRange(int level, const Slice& key,
                                         uint32_t left, uint32_t right) const {
   return ROCKSDB_NAMESPACE::FindFileInRange(*internal_comparator_,
-            level_files_brief_[level], key, left, right);
+            level_files_brief_[level], ParsedInternalKey(key), left, right);
 }
 
 const char* VersionStorageInfo::LevelSummary(
@@ -7133,7 +7157,7 @@ VersionSet::ApproximateSizeTmpl(const SizeApproximationOptions& options,
 
     // identify the file position for start key
     const int idx_start =
-        (int)FindFileInRangeTmpl(cmp, files_brief, start, 0,
+        (int)FindFileInRangeTmpl(cmp, files_brief, ParsedInternalKey(start), 0,
                             static_cast<uint32_t>(files_brief.num_files - 1));
     assert(static_cast<size_t>(idx_start) < files_brief.num_files);
 
@@ -7141,7 +7165,7 @@ VersionSet::ApproximateSizeTmpl(const SizeApproximationOptions& options,
     int idx_end = idx_start;
     if (cmp(files_brief.files[idx_end].largest_key, end)) {
       idx_end =
-          (int)FindFileInRangeTmpl(cmp, files_brief, end, idx_start,
+          (int)FindFileInRangeTmpl(cmp, files_brief, ParsedInternalKey(end), idx_start,
                               static_cast<uint32_t>(files_brief.num_files - 1));
     }
     assert(idx_end >= idx_start &&

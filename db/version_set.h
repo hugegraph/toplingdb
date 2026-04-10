@@ -101,6 +101,9 @@ using VersionEditParams = VersionEdit;
 extern int FindFile(const InternalKeyComparator& icmp,
                     const LevelFilesBrief& file_level, const Slice& key);
 
+extern int FindFile(const InternalKeyComparator& icmp,
+                    const LevelFilesBrief& file_level, const ParsedInternalKey&);
+
 // Returns true iff some file in "files" overlaps the user key range
 // [*smallest,*largest].
 // smallest==nullptr represents a key smaller than all keys in the DB.
@@ -894,7 +897,7 @@ class Version {
   //    merge_context.operands_list and don't merge the operands
   // REQUIRES: lock is not held
   // REQUIRES: pinned_iters_mgr != nullptr
-  void Get(const ReadOptions& ro, const LookupKey& key, PinnableSlice* value,
+  void Get(const ReadOptions& ro, const ParsedInternalKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* status,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
@@ -910,7 +913,7 @@ class Version {
 
 private:
   template<class UKCmp, class IKCmp>
-  void GetInst(const ReadOptions&, const LookupKey& key, PinnableSlice* value,
+  void GetInst(const ReadOptions&, const ParsedInternalKey&, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* status,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
@@ -920,7 +923,7 @@ private:
            bool* is_blob, bool do_merge);
 
   void (*m_get)(Version*,
-           const ReadOptions&, const LookupKey& key, PinnableSlice* value,
+           const ReadOptions&, const ParsedInternalKey&, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* status,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,

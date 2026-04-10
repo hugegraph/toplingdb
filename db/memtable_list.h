@@ -57,14 +57,14 @@ class MemTableListVersion {
   // If any operation was found for this key, its most recent sequence number
   // will be stored in *seq on success (regardless of whether true/false is
   // returned).  Otherwise, *seq will be set to kMaxSequenceNumber.
-  bool Get(const LookupKey& key, PinnableSlice* value,
+  bool Get(const ParsedInternalKey&, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq, SequenceNumber* seq,
            const ReadOptions& read_opts, ReadCallback* callback = nullptr,
            bool* is_blob_index = nullptr);
 
-  bool Get(const LookupKey& key, PinnableSlice* value,
+  bool Get(const ParsedInternalKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
@@ -83,7 +83,7 @@ class MemTableListVersion {
 
   // Returns all the merge operands corresponding to the key by searching all
   // memtables starting from the most recent one.
-  bool GetMergeOperands(const LookupKey& key, Status* s,
+  bool GetMergeOperands(const ParsedInternalKey&, Status* s,
                         MergeContext* merge_context,
                         SequenceNumber* max_covering_tombstone_seq,
                         const ReadOptions& read_opts);
@@ -92,13 +92,13 @@ class MemTableListVersion {
   // have already been flushed.  Should only be used from in-memory only
   // queries (such as Transaction validation) as the history may contain
   // writes that are also present in the SST files.
-  bool GetFromHistory(const LookupKey& key, PinnableSlice* value,
+  bool GetFromHistory(const ParsedInternalKey&, PinnableSlice* value,
                       PinnableWideColumns* columns, std::string* timestamp,
                       Status* s, MergeContext* merge_context,
                       SequenceNumber* max_covering_tombstone_seq,
                       SequenceNumber* seq, const ReadOptions& read_opts,
                       bool* is_blob_index = nullptr);
-  bool GetFromHistory(const LookupKey& key, PinnableSlice* value,
+  bool GetFromHistory(const ParsedInternalKey& key, PinnableSlice* value,
                       PinnableWideColumns* columns, std::string* timestamp,
                       Status* s, MergeContext* merge_context,
                       SequenceNumber* max_covering_tombstone_seq,
@@ -162,7 +162,7 @@ class MemTableListVersion {
   // Return true if memtable is trimmed
   bool TrimHistory(autovector<MemTable*>* to_delete, size_t usage);
 
-  bool GetFromList(std::list<MemTable*>* list, const LookupKey& key,
+  bool GetFromList(std::list<MemTable*>* list, const ParsedInternalKey& key,
                    PinnableSlice* value, PinnableWideColumns* columns,
                    std::string* timestamp, Status* s,
                    MergeContext* merge_context,

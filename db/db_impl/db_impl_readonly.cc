@@ -94,10 +94,12 @@ Status DBImplReadOnly::GetImpl(const ReadOptions& read_options,
       return s;
     }
   }
+  LookupKey lkey(key, snapshot, read_options.timestamp);
+ #else
+  ParsedInternalKey lkey(key, snapshot, kValueTypeForSeek);
  #endif
   MergeContext merge_context;
   SequenceNumber max_covering_tombstone_seq = 0;
-  LookupKey lkey(key, snapshot, read_options.timestamp);
   PERF_TIMER_STOP(get_snapshot_time);
 
   // Look up starts here

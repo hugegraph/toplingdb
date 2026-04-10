@@ -151,16 +151,20 @@ struct ToplingMGetCtx : protected MergeContext {
 
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   std::string* timestamp = nullptr;
-#endif
   union {
     LookupKey lkey;
+  };
+#endif
+  union {
+    ParsedInternalKey pikey;
   };
   void InitLookupKey(const Slice& user_key, SequenceNumber seq,
                      const Slice* ts) {
    #if defined(TOPLINGDB_WITH_TIMESTAMP)
     new(&lkey)LookupKey(user_key, seq, ts);
+    new(&pikey)ParsedInternalKey(lkey.internal_key());
    #else
-    new(&lkey)LookupKey(user_key, seq);
+    new(&pikey)ParsedInternalKey(user_key, seq, kValueTypeForSeek);
     (void)ts;
     assert(ts == nullptr);
    #endif
@@ -168,8 +172,10 @@ struct ToplingMGetCtx : protected MergeContext {
   }
   ToplingMGetCtx() {}
   ~ToplingMGetCtx() {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
     if (this->ext_flags_ & FLAG_lkey_initialized)
       lkey.~LookupKey();
+#endif
   }
   void set_done() { this->ext_flags_ |= FLAG_done; }
   bool is_done() const { return (this->ext_flags_ & FLAG_done) != 0; }
@@ -2442,7 +2448,7 @@ Status DBImpl::GetInst(const ReadOptions& read_options, const Slice& key,
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   LookupKey lkey(key, snapshot, read_options.timestamp);
 #else
-  LookupKey lkey(key, snapshot);
+  ParsedInternalKey lkey(key, snapshot, kValueTypeForSeek);
 #endif
   PERF_TIMER_STOP(get_snapshot_time);
 
@@ -2769,7 +2775,7 @@ std::vector<Status> DBImpl::MultiGet(
     LookupKey lkey(keys[keys_read], consistent_seqnum, read_options.timestamp);
 #else
     std::string* timestamp = nullptr;
-    LookupKey lkey(keys[keys_read], consistent_seqnum);
+    ParsedInternalKey lkey(keys[keys_read], consistent_seqnum, kValueTypeForSeek);
 #endif
 
     auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(
@@ -3241,7 +3247,7 @@ struct CompareKeyContext {
 
     // Both keys are from the same column family
     int cmp = comparator->CompareWithoutTimestamp(
-        *(lhs->key), /*a_has_ts=*/false, *(rhs->key), /*b_has_ts=*/false);
+        lhs->ukey_without_ts, /*a_has_ts=*/false, rhs->ukey_without_ts, /*b_has_ts=*/false);
     if (cmp < 0) {
       return true;
     }
@@ -3253,7 +3259,7 @@ struct CompareKeyContextSameCF {
   const Comparator* comparator;
   inline bool operator()(const KeyContext* lhs, const KeyContext* rhs) {
     int cmp = comparator->CompareWithoutTimestamp(
-        *(lhs->key), /*a_has_ts=*/false, *(rhs->key), /*b_has_ts=*/false);
+        lhs->ukey_without_ts, /*a_has_ts=*/false, rhs->ukey_without_ts, /*b_has_ts=*/false);
     return cmp < 0;
   }
 };
@@ -3498,7 +3504,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
       auto& max_covering_tombstone_seq = ctx_vec[i].max_covering_tombstone_seq;
       MergeContext& merge_context = ctx_vec[i].merge_context();
       Status& s = statuses[i];
-      if (sv->mem->Get(ctx_vec[i].lkey, &values[i], columns,
+      if (sv->mem->Get(ctx_vec[i].pikey, &values[i], columns,
                        timestamp, &s, &merge_context,
                        &max_covering_tombstone_seq, read_options,
                        false, // immutable_memtable
@@ -3506,7 +3512,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
         ctx_vec[i].set_done();
         hits++;
       } else if ((s.ok() || s.IsMergeInProgress()) &&
-                sv->imm->Get(ctx_vec[i].lkey, &values[i], columns,
+                sv->imm->Get(ctx_vec[i].pikey, &values[i], columns,
                              timestamp, &s, &merge_context,
                              &max_covering_tombstone_seq, read_options,
                              callback, is_blob_index)) {
@@ -3527,7 +3533,7 @@ if (UNLIKELY(!g_MultiGetUseFiber)) {
     bool* value_found = nullptr;
     bool get_value = true;
     sv->current->Get(
-        read_options, ctx_vec[i].lkey, &values[i], columns,
+        read_options, ctx_vec[i].pikey, &values[i], columns,
         timestamp, &statuses[i],
         &merge_context, &max_covering_tombstone_seq, &pinned_iters_mgr,
         value_found,
@@ -6254,7 +6260,7 @@ Status DBImpl::GetLatestSequenceForKey(
  #if !defined(NDEBUG)
   constexpr size_t ts_sz = 0;
  #endif
-  LookupKey lkey(key, current_seq);
+  ParsedInternalKey lkey(key, current_seq, kValueTypeForSeek);
 #endif
 
   *seq = kMaxSequenceNumber;

@@ -439,7 +439,8 @@ bool TableCache::GetFromRowCache(const Slice& user_key, IterKey& row_cache_key,
 Status TableCache::GetWithRowCache(
     const ReadOptions& options,
     const InternalKeyComparator& internal_comparator,
-    const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
+    const FileMetaData& file_meta, const ParsedInternalKey& pik,
+    GetContext* get_context,
     uint8_t block_protection_bytes_per_key,
     const std::shared_ptr<const SliceTransform>& prefix_extractor,
     HistogramImpl* file_read_hist, bool skip_filters, int level,
@@ -453,6 +454,8 @@ Status TableCache::GetWithRowCache(
   // Check row cache if enabled.
   // Reuse row_cache_key sequence number when row cache hits.
   if (ioptions_.row_cache && !get_context->NeedToReadSequence()) {
+    const auto ikbuf = pik.MakeInternalKeyBuf();
+    const Slice k = ikbuf;
     auto user_key = ExtractUserKey(k);
     uint64_t cache_entry_seq_no =
         CreateRowCacheKeyPrefix(options, fd, k, get_context, row_cache_key);
@@ -486,7 +489,7 @@ Status TableCache::GetWithRowCache(
           t->NewRangeTombstoneIterator(options));
       if (range_del_iter != nullptr) {
         SequenceNumber seq =
-            range_del_iter->MaxCoveringTombstoneSeqnum(ExtractUserKey(k));
+            range_del_iter->MaxCoveringTombstoneSeqnum(pik.user_key);
         if (seq > *max_covering_tombstone_seq) {
           *max_covering_tombstone_seq = seq;
           if (get_context->NeedTimestamp()) {
@@ -498,7 +501,7 @@ Status TableCache::GetWithRowCache(
     }
     if (s.ok()) {
       get_context->SetReplayLog(row_cache_entry);  // nullptr if no cache.
-      s = t->Get(options, k, get_context, prefix_extractor.get(), skip_filters);
+      s = t->GetPIK(options, pik, get_context, prefix_extractor.get(), skip_filters);
       get_context->SetReplayLog(nullptr);
     } else if (options.read_tier == kBlockCacheTier && s.IsIncomplete()) {
       // Couldn't find Table in cache but treat as kFound if no_io set

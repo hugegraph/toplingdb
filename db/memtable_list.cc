@@ -110,7 +110,7 @@ int MemTableList::NumFlushed() const {
 // Search all the memtables starting from the most recent one.
 // Return the most recent value found, if any.
 // Operands stores the list of merge operations to apply, so far.
-bool MemTableListVersion::Get(const LookupKey& key, PinnableSlice* value,
+bool MemTableListVersion::Get(const ParsedInternalKey& key, PinnableSlice* value,
                               PinnableWideColumns* columns,
                               std::string* timestamp, Status* s,
                               MergeContext* merge_context,
@@ -135,7 +135,7 @@ void MemTableListVersion::MultiGet(const ReadOptions& read_options,
 }
 
 bool MemTableListVersion::GetMergeOperands(
-    const LookupKey& key, Status* s, MergeContext* merge_context,
+    const ParsedInternalKey& key, Status* s, MergeContext* merge_context,
     SequenceNumber* max_covering_tombstone_seq, const ReadOptions& read_opts) {
   for (MemTable* memtable : memlist_) {
     bool done = memtable->Get(
@@ -150,7 +150,7 @@ bool MemTableListVersion::GetMergeOperands(
 }
 
 bool MemTableListVersion::GetFromHistory(
-    const LookupKey& key, PinnableSlice* value, PinnableWideColumns* columns,
+    const ParsedInternalKey& key, PinnableSlice* value, PinnableWideColumns* columns,
     std::string* timestamp, Status* s, MergeContext* merge_context,
     SequenceNumber* max_covering_tombstone_seq, SequenceNumber* seq,
     const ReadOptions& read_opts, bool* is_blob_index) {
@@ -160,7 +160,7 @@ bool MemTableListVersion::GetFromHistory(
 }
 
 bool MemTableListVersion::GetFromList(
-    std::list<MemTable*>* list, const LookupKey& key, PinnableSlice* value,
+    std::list<MemTable*>* list, const ParsedInternalKey& key, PinnableSlice* value,
     PinnableWideColumns* columns, std::string* timestamp, Status* s,
     MergeContext* merge_context, SequenceNumber* max_covering_tombstone_seq,
     SequenceNumber* seq, const ReadOptions& read_opts, ReadCallback* callback,

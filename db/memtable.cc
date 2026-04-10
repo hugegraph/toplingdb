@@ -302,6 +302,26 @@ int MemTable::KeyComparator::operator()(
   return comparator.CompareKeySeq(a, key);
 }
 
+int MemTable::KeyComparator::operator()(const char* prefix_len_key,
+                                        const ParsedInternalKey& b) const {
+  Slice a = GetLengthPrefixedSlice(prefix_len_key);
+  return comparator.Compare(a, b);
+}
+
+int MemTable::KeyComparator::operator()(const ParsedInternalKey& a,
+                                        const char* prefix_len_key) const {
+  Slice b = GetLengthPrefixedSlice(prefix_len_key);
+  return comparator.Compare(a, b);
+}
+
+void MemTableRep::GetPIK(const struct ReadOptions& ro,
+                         const ParsedInternalKey& pik, void* callback_args,
+                         bool (*callback_func)(void* arg, const KeyValuePair&))
+{
+  LookupKey lk(pik.user_key, pik.sequence);
+  Get(ro, lk, callback_args, callback_func);
+}
+
 void MemTableRep::InsertConcurrently(KeyHandle /*handle*/) {
   throw std::runtime_error("concurrent insert not supported");
 }
@@ -928,7 +948,12 @@ namespace {
 
 struct Saver {
   Status* status;
-  const LookupKey* key;
+  struct LikeLookupKey : private Slice {
+    using Slice::operator=;
+    const Slice& user_key() const { return *this; }
+    const LikeLookupKey* operator->() const { return this; }
+  };
+  LikeLookupKey key;
   PinnableSlice* value;
   PinnableWideColumns* columns;
   SequenceNumber seq;
@@ -1312,7 +1337,7 @@ static bool SaveValue(void* arg, const MemTableRep::KeyValuePair& pair) {
 }
 
 ROCKSDB_FLATTEN
-bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
+bool MemTable::Get(const ParsedInternalKey& key, PinnableSlice* value,
                    PinnableWideColumns* columns, std::string* timestamp,
                    Status* s, MergeContext* merge_context,
                    SequenceNumber* max_covering_tombstone_seq,
@@ -1329,11 +1354,11 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
 
   std::unique_ptr<FragmentedRangeTombstoneIterator> range_del_iter(
       NewRangeTombstoneIterator(read_opts,
-                                GetInternalKeySeqno(key.internal_key()),
+                                key.sequence,
                                 immutable_memtable));
   if (range_del_iter != nullptr) {
     SequenceNumber covering_seq =
-        range_del_iter->MaxCoveringTombstoneSeqnum(key.user_key());
+        range_del_iter->MaxCoveringTombstoneSeqnum(key.user_key);
     if (covering_seq > *max_covering_tombstone_seq) {
       *max_covering_tombstone_seq = covering_seq;
       if (timestamp) {
@@ -1349,9 +1374,9 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
     bool may_contain = true;
   #if defined(TOPLINGDB_WITH_TIMESTAMP)
     size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
-    Slice user_key_without_ts = StripTimestampFromUserKey(key.user_key(), ts_sz);
+    Slice user_key_without_ts = StripTimestampFromUserKey(key.user_key, ts_sz);
   #else
-    Slice user_key_without_ts = key.user_key();
+    Slice user_key_without_ts = key.user_key;
   #endif
     bool bloom_checked = false;
     // when both memtable_whole_key_filtering and prefix_extractor_ are set,
@@ -1384,7 +1409,7 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
   saver.status = s;
   saver.found_final_value = false;
   saver.merge_in_progress = s->IsMergeInProgress();
-  saver.key = &key;
+  saver.key = key.user_key;
   saver.value = value;
   saver.columns = columns;
   saver.timestamp = timestamp;
@@ -1406,7 +1431,7 @@ bool MemTable::Get(const LookupKey& key, PinnableSlice* value,
   if (LIKELY(value != nullptr)) {
     value->Reset();
   }
-  table_->Get(read_opts, key, &saver, SaveValue);
+  table_->GetPIK(read_opts, key, &saver, SaveValue);
   *seq = saver.seq;
 
   // No change to value, since we have not yet found a Put/Delete
@@ -1464,10 +1489,10 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
     if (!no_range_del) {
       std::unique_ptr<FragmentedRangeTombstoneIterator> range_del_iter(
           NewRangeTombstoneIteratorInternal(
-              read_options, GetInternalKeySeqno(iter->lkey->internal_key()),
+              read_options, iter->ikey.sequence,
               immutable_memtable));
       SequenceNumber covering_seq =
-          range_del_iter->MaxCoveringTombstoneSeqnum(iter->lkey->user_key());
+          range_del_iter->MaxCoveringTombstoneSeqnum(iter->ikey.user_key);
       if (covering_seq > iter->max_covering_tombstone_seq) {
         iter->max_covering_tombstone_seq = covering_seq;
         if (iter->timestamp) {
@@ -1482,7 +1507,7 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
     saver.status = iter->s;
     saver.found_final_value = false;
     saver.merge_in_progress = iter->s->IsMergeInProgress();
-    saver.key = iter->lkey;
+    saver.key = iter->ikey.user_key;
     saver.value = iter->value; // not null
     if (saver.value)
       saver.value->Reset();
@@ -1503,7 +1528,7 @@ void MemTable::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
     saver.allow_data_in_errors = moptions_.allow_data_in_errors;
     saver.is_zero_copy = read_options.internal_is_in_pinning_section;
     saver.needs_user_key_cmp_in_get = needs_user_key_cmp_in_get_;
-    table_->Get(read_options, *(iter->lkey), &saver, SaveValue);
+    table_->GetPIK(read_options, iter->ikey, &saver, SaveValue);
 
     if (!saver.found_final_value && saver.merge_in_progress) {
       *(iter->s) = Status::MergeInProgress();

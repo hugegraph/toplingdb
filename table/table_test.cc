@@ -3751,14 +3751,14 @@ TEST_P(BlockBasedTableTest, TracingMultiGetTest) {
                              /*PinnableWideColumns omitted*/ nullptr,
                              /*timestamp omitted*/ nullptr, statuses.data());
     key_context[0].ukey_without_ts = ukeys[0];
-    key_context[0].ikey = encoded_keys[0];
+    key_context[0].ikey = ParsedInternalKey(encoded_keys[0]);
     key_context[0].get_context = get_contexts.data();
     key_context.emplace_back(/*ColumnFamilyHandle omitted*/ nullptr, ukeys[1],
                              &values[1],
                              /*PinnableWideColumns omitted*/ nullptr,
                              /*timestamp omitted*/ nullptr, &statuses[1]);
     key_context[1].ukey_without_ts = ukeys[1];
-    key_context[1].ikey = encoded_keys[1];
+    key_context[1].ikey = ParsedInternalKey(encoded_keys[1]);
     key_context[1].get_context = &get_contexts[1];
     autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE> sorted_keys;
     sorted_keys.push_back(&key_context[0]);

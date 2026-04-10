@@ -120,7 +120,8 @@ class FilterBlockReader {
                             const ReadOptions& read_options) {
     for (auto iter = range->begin(); iter != range->end(); ++iter) {
       const Slice ukey_without_ts = iter->ukey_without_ts;
-      const Slice ikey = iter->ikey;
+      const auto ikbuf = iter->InternalKeyBuf();
+      const Slice ikey = ikbuf; // convert from named ikbuf
       GetContext* const get_context = iter->get_context;
       if (!KeyMayMatch(ukey_without_ts, no_io, &ikey, get_context,
                        lookup_context, read_options)) {
@@ -145,7 +146,8 @@ class FilterBlockReader {
                                 const ReadOptions& read_options) {
     for (auto iter = range->begin(); iter != range->end(); ++iter) {
       const Slice ukey_without_ts = iter->ukey_without_ts;
-      const Slice ikey = iter->ikey;
+      const auto ikbuf = iter->InternalKeyBuf();
+      const Slice ikey = ikbuf; // convert from named ikbuf
       GetContext* const get_context = iter->get_context;
       if (prefix_extractor->InDomain(ukey_without_ts) &&
           !PrefixMayMatch(prefix_extractor->Transform(ukey_without_ts), no_io,

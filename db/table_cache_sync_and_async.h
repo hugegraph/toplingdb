@@ -40,7 +40,8 @@ DEFINE_SYNC_AND_ASYNC(Status, TableCache::MultiGet)
   // sequence numbers, we cannot use it if we need to fetch the sequence.
   if (lookup_row_cache) {
     GetContext* first_context = first_key.get_context;
-    CreateRowCacheKeyPrefix(options, fd, first_key.ikey, first_context,
+    const auto first_ik = first_key.InternalKeyBuf();
+    CreateRowCacheKeyPrefix(options, fd, first_ik, first_context,
                             row_cache_key);
     row_cache_key_prefix_size = row_cache_key.Size();
 

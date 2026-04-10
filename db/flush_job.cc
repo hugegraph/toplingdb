@@ -748,7 +748,7 @@ bool FlushJob::MemPurgeDecider(double threshold) {
       // Count entry bytes as payload.
       payload += entry_size;
 
-      LookupKey lkey(res.user_key, kMaxSequenceNumber);
+      ParsedInternalKey lkey(res.user_key, kMaxSequenceNumber, kValueTypeForSeek);
 
       // Paranoia: zero out these values just in case.
       max_covering_tombstone_seq = 0;

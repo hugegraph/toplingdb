@@ -24,6 +24,8 @@
 #include "util/user_comparator_wrapper.h"
 #include <terark/sso.hpp>
 
+#define TOPLINGDB_OMIT_LOOKUP_KEY 1
+
 namespace ROCKSDB_NAMESPACE {
 
 // The file declares data structures and functions that deal with internal

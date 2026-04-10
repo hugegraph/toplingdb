@@ -134,6 +134,10 @@ class MemTable : public CacheAlignedNewDelete {
                            const char* prefix_len_key2) const override;
     virtual int operator()(const char* prefix_len_key,
                            const DecodedType& key) const override;
+    virtual int operator()(const char* prefix_len_key,
+                           const ParsedInternalKey&) const override;
+    virtual int operator()(const ParsedInternalKey&,
+                           const char* prefix_len_key) const override;
     virtual const InternalKeyComparator* icomparator() const override;
   };
 
@@ -301,7 +305,7 @@ class MemTable : public CacheAlignedNewDelete {
   // @param immutable_memtable Whether this memtable is immutable. Used
   // internally by NewRangeTombstoneIterator(). See comment above
   // NewRangeTombstoneIterator() for more detail.
-  bool Get(const LookupKey& key, PinnableSlice* value,
+  bool Get(const ParsedInternalKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq, SequenceNumber* seq,
@@ -309,7 +313,7 @@ class MemTable : public CacheAlignedNewDelete {
            ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
            bool do_merge = true);
 
-  bool Get(const LookupKey& key, PinnableSlice* value,
+  bool Get(const ParsedInternalKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
