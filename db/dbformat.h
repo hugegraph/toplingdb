@@ -22,6 +22,7 @@
 #include "rocksdb/types.h"
 #include "util/coding.h"
 #include "util/user_comparator_wrapper.h"
+#include <terark/sso.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -161,6 +162,18 @@ struct ParsedInternalKey {
     const char* addr = user_key.data() + user_key.size() - ts_sz;
     return Slice(const_cast<char*>(addr), ts_sz);
   }
+
+  struct InternalKeyBuf : private terark::minimal_sso<64> {
+    explicit InternalKeyBuf(const ParsedInternalKey& pik) :
+      terark::minimal_sso<64>(pik.user_key.size() + 8,
+      [&](char* buf, size_t len) {
+        EncodeFixed64(buf + (len - 8), pik.GetTag());
+        memcpy(buf, pik.user_key.data(), len - 8);
+      })
+    {}
+    operator Slice() const { return this->to<Slice>(); }
+  };
+  InternalKeyBuf MakeInternalKeyBuf() const { return InternalKeyBuf(*this); }
 };
 static_assert(sizeof(ParsedInternalKey) == 32);
 
@@ -1247,6 +1260,78 @@ struct BytewiseCompareInternalKey {
     return GetUnalignedU64(px + n) > GetUnalignedU64(py + n);
   #endif
   }
+  __always_inline bool operator()(const ParsedInternalKey& x, Slice y) const noexcept {
+    ROCKSDB_ASSERT_GE(y.size_, 8);
+  #if !TOPLINGDB_USE_MANUAL_MEMCMP
+    size_t n = std::min(x.user_key.size_, y.size_ - 8);
+    int cmp = memcmp(x.user_key.data_, y.data_, n);
+    if (0 != cmp) return cmp < 0;
+    if (x.user_key.size_ != y.size_ - 8) return x.user_key.size_ < y.size_ - 8;
+    return x.GetTag() > GetUnalignedU64(y.data_ + n);
+  #else
+    auto px = (const unsigned char*)x.user_key.data(); size_t nx = x.user_key.size();
+    auto py = (const unsigned char*)y.data(); size_t ny = y.size() - 8;
+    size_t i = 0, n = std::min(nx, ny);
+    for (; i + 8 <= n; i += 8) {
+      auto ux = NativeOfBigEndian64(*(const uint64_t*)(px + i));
+      auto uy = NativeOfBigEndian64(*(const uint64_t*)(py + i));
+      if (ux != uy)
+        return ux < uy;
+    }
+    if (n % sizeof(uint64_t) >= 4) {
+      auto ux = NativeOfBigEndian32(*(const uint32_t*)(px + i));
+      auto uy = NativeOfBigEndian32(*(const uint32_t*)(py + i));
+      if (ux != uy)
+        return ux < uy;
+      else
+        i += 4;
+    }
+    for (; i < n; i++) {
+      int ux = px[i], uy = py[i];
+      if (ux != uy)
+        return ux < uy;
+    }
+    if (nx != ny)
+      return nx < ny;
+    return x.GetTag() > GetUnalignedU64(py + n);
+  #endif
+  }
+  __always_inline bool operator()(Slice x, const ParsedInternalKey& y) const noexcept {
+    ROCKSDB_ASSERT_GE(x.size_, 8);
+  #if !TOPLINGDB_USE_MANUAL_MEMCMP
+    size_t n = std::min(x.size_ - 8, y.user_key.size_);
+    int cmp = memcmp(x.data_, y.user_key.data_, n);
+    if (0 != cmp) return cmp < 0;
+    if (x.size_ - 8 != y.user_key.size_) return x.size_ - 8 < y.user_key.size_;
+    return GetUnalignedU64(x.data_ + n) > y.GetTag();
+  #else
+    auto px = (const unsigned char*)x.data(); size_t nx = x.size() - 8;
+    auto py = (const unsigned char*)y.user_key.data(); size_t ny = y.user_key.size();
+    size_t i = 0, n = std::min(nx, ny);
+    for (; i + 8 <= n; i += 8) {
+      auto ux = NativeOfBigEndian64(*(const uint64_t*)(px + i));
+      auto uy = NativeOfBigEndian64(*(const uint64_t*)(py + i));
+      if (ux != uy)
+        return ux < uy;
+    }
+    if (n % sizeof(uint64_t) >= 4) {
+      auto ux = NativeOfBigEndian32(*(const uint32_t*)(px + i));
+      auto uy = NativeOfBigEndian32(*(const uint32_t*)(py + i));
+      if (ux != uy)
+        return ux < uy;
+      else
+        i += 4;
+    }
+    for (; i < n; i++) {
+      int ux = px[i], uy = py[i];
+      if (ux != uy)
+        return ux < uy;
+    }
+    if (nx != ny)
+      return nx < ny;
+    return GetUnalignedU64(px + n) > y.GetTag();
+  #endif
+  }
   __always_inline bool operator()(uint64_t x, uint64_t y) const noexcept {
     return x < y;
   }
@@ -1254,11 +1339,29 @@ struct BytewiseCompareInternalKey {
 };
 struct RevBytewiseCompareInternalKey {
   __always_inline bool operator()(Slice x, Slice y) const noexcept {
+    ROCKSDB_ASSERT_GE(x.size_, 8);
+    ROCKSDB_ASSERT_GE(y.size_, 8);
     size_t n = std::min(x.size_, y.size_) - 8;
     int cmp = memcmp(x.data_, y.data_, n);
     if (0 != cmp) return cmp > 0;
     if (x.size_ != y.size_) return x.size_ > y.size_;
     return GetUnalignedU64(x.data_ + n) > GetUnalignedU64(y.data_ + n);
+  }
+  __always_inline bool operator()(const ParsedInternalKey& x, Slice y) const noexcept {
+    ROCKSDB_ASSERT_GE(y.size_, 8);
+    size_t n = std::min(x.user_key.size_, y.size_ - 8);
+    int cmp = memcmp(x.user_key.data_, y.data_, n);
+    if (0 != cmp) return cmp > 0;
+    if (x.user_key.size_ != y.size_ - 8) return x.user_key.size_ > y.size_ - 8;
+    return x.GetTag() > GetUnalignedU64(y.data_ + n);
+  }
+  __always_inline bool operator()(Slice x, const ParsedInternalKey& y) const noexcept {
+    ROCKSDB_ASSERT_GE(x.size_, 8);
+    size_t n = std::min(x.size_ - 8, y.user_key.size_);
+    int cmp = memcmp(x.data_, y.user_key.data_, n);
+    if (0 != cmp) return cmp > 0;
+    if (x.size_ - 8 != y.user_key.size_) return x.size_ - 8 > y.user_key.size_;
+    return GetUnalignedU64(x.data_ + n) > y.GetTag();
   }
   __always_inline bool operator()(uint64_t x, uint64_t y) const noexcept {
     return x > y;
@@ -1266,7 +1369,8 @@ struct RevBytewiseCompareInternalKey {
   RevBytewiseCompareInternalKey(...) {}
 };
 struct FallbackVirtCmp {
-  __always_inline bool operator()(Slice x, Slice y) const {
+  template<class KeyX, class KeyY>
+  __always_inline bool operator()(const KeyX& x, const KeyY& y) const {
     return icmp->Compare(x, y) < 0;
   }
   const InternalKeyComparator* icmp;
