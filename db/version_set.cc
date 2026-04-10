@@ -877,7 +877,7 @@ class FilePickerMultiGet {
             // key falls to the right of `search_right_bound_`'s corresponding
             // file. So, pass a limit one higher, which allows us to detect this
             // case.
-            Slice& ikey = mget_iter->ikey;
+            auto& ikey = mget_iter->ikey;
             start_index = FindFileInRange(
                 *internal_comparator_, *curr_file_level_, ikey,
                 static_cast<uint32_t>(fp_ctx.search_left_bound),
