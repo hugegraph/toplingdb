@@ -1040,6 +1040,9 @@ endif
 # topling specific WARNING_FLAGS
 WARNING_FLAGS := -Wall -Wno-shadow
 ifeq "$(shell a=${COMPILER};echo $${a:0:5})" "clang"
+  CXXFLAGS := $(patsubst -flto, -flto=thin, ${CXXFLAGS})
+  LLD_LTO_FLAGS := -fuse-ld=lld -flto=thin -Wl,--thinlto-jobs=all
+  LDFLAGS := $(patsubst -flto=auto, ${LLD_LTO_FLAGS}, ${LDFLAGS})
   LDFLAGS += -latomic
   #$(error LDFLAGS = ${LDFLAGS})
   WARNING_FLAGS += -Wno-deprecated-builtins
