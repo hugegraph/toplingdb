@@ -2726,7 +2726,7 @@ void Version::GetInst(const ReadOptions& read_options, const LookupKey& k,
         perf_level >= PerfLevel::kEnableTimeExceptForMutex &&
         get_perf_context()->per_level_perf_context_enabled;
     StopWatchNano timer(clock_, timer_enabled /* auto_start */);
-    *status = table_cache_->Get(
+    Status s2 = table_cache_->Get(
         read_options, *internal_comparator(), *f->file_metadata, ikey,
         &get_context, mutable_cf_options_.block_protection_bytes_per_key,
         mutable_cf_options_.prefix_extractor,
@@ -2739,12 +2739,14 @@ void Version::GetInst(const ReadOptions& read_options, const LookupKey& k,
       PERF_COUNTER_BY_LEVEL_ADD(get_from_table_nanos, timer.ElapsedNanos(),
                                 fp.GetHitFileLevel());
     }
-    if (!status->ok()) {
+    if (UNLIKELY(!s2.ok())) {
+      *status = std::move(s2);
       if (db_statistics_ != nullptr) {
         get_context.ReportCounters();
       }
       return;
     }
+    status->SetAsOK();
 
     // report the counters before returning
     if (get_context.State() != GetContext::kNotFound &&
