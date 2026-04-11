@@ -77,7 +77,9 @@ class GetContext {
     kUnexpectedBlobIndex,
     kMergeOperatorFailed,
   };
+  union {
   GetContextStats get_context_stats_;
+  };
 
   // Constructor
   // @param value Holds the value corresponding to user_key. If its nullptr
