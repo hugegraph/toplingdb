@@ -2679,10 +2679,12 @@ void Version::GetInst(const ReadOptions& read_options, const LookupKey& k,
   }
 
   uint64_t tracing_get_id = BlockCacheTraceHelper::kReservedGetId;
+#if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   if (vset_ && vset_->block_cache_tracer_ &&
       vset_->block_cache_tracer_->is_tracing_enabled()) {
     tracing_get_id = vset_->block_cache_tracer_->NextGetId();
   }
+#endif
 
   // Note: the old StackableDB-based BlobDB passes in
   // GetImplOptions::is_blob_index; for the integrated BlobDB implementation, we
@@ -2730,9 +2732,14 @@ void Version::GetInst(const ReadOptions& read_options, const LookupKey& k,
         read_options, *internal_comparator(), *f->file_metadata, ikey,
         &get_context, mutable_cf_options_.block_protection_bytes_per_key,
         mutable_cf_options_.prefix_extractor,
+      #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
         cfd_->internal_stats()->GetFileReadHist(fp.GetHitFileLevel()),
         IsFilterSkipped(static_cast<int>(fp.GetHitFileLevel()),
                         fp.IsHitFileLastInLevel()),
+      #else
+        nullptr,
+        false,
+      #endif
         fp.GetHitFileLevel(), max_file_size_for_l0_meta_pin_);
     // TODO: examine the behavior for corrupted key
     if (timer_enabled) {
