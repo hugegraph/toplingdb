@@ -264,7 +264,7 @@ class FilePicker {
     return (int)FindFileInRangeTmpl(IKCmp{&icmp}, file_level, key, left, right);
   }
  public:
-  FilePicker(const Slice& user_key, const ParsedInternalKey& ikey,
+  FilePicker(const ParsedInternalKey& ikey,
              autovector<LevelFilesBrief>* file_levels, unsigned int num_levels,
              FileIndexer* file_indexer, const Comparator* user_comparator,
              const InternalKeyComparator* internal_comparator)
@@ -277,7 +277,6 @@ class FilePicker {
         level_files_brief_(file_levels),
         is_hit_file_last_in_level_(false),
         curr_file_level_(nullptr),
-        user_key_(user_key),
         ikey_(ikey),
         file_indexer_(file_indexer),
         user_comparator_(user_comparator),
@@ -322,11 +321,11 @@ class FilePicker {
           // range.
           assert(curr_level_ == 0 ||
                  curr_index_in_curr_level_ == start_index_in_curr_level_ ||
-                 cmp(user_key_, ExtractUserKey(f->smallest_key)) <= 0);
+                 cmp(ikey_.user_key, ExtractUserKey(f->smallest_key)) <= 0);
 
-          int cmp_smallest = cmp(user_key_, ExtractUserKey(f->smallest_key));
+          int cmp_smallest = cmp(ikey_.user_key, ExtractUserKey(f->smallest_key));
           if (cmp_smallest >= 0) {
-            cmp_largest = cmp(user_key_, ExtractUserKey(f->largest_key));
+            cmp_largest = cmp(ikey_.user_key, ExtractUserKey(f->largest_key));
           }
 
           // Setup file search bound for the next level based on the
@@ -385,7 +384,6 @@ class FilePicker {
   LevelFilesBrief* curr_file_level_;
   unsigned int curr_index_in_curr_level_;
   unsigned int start_index_in_curr_level_;
-  Slice user_key_;
   ParsedInternalKey ikey_;
   FileIndexer* file_indexer_;
   const Comparator* user_comparator_;
@@ -2732,7 +2730,7 @@ void Version::GetInst(const ReadOptions& read_options, const ParsedInternalKey& 
     pinned_iters_mgr->StartPinning();
   }
 
-  FilePicker<UKCmp, IKCmp> fp(user_key, ikey, &storage_info_.level_files_brief_,
+  FilePicker<UKCmp, IKCmp> fp(ikey, &storage_info_.level_files_brief_,
                 storage_info_.num_non_empty_levels_,
                 &storage_info_.file_indexer_, user_comparator(),
                 internal_comparator());
