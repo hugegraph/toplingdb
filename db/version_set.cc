@@ -2707,6 +2707,12 @@ void Version::GetInst(const ReadOptions& read_options, const ParsedInternalKey& 
     tracing_get_id = vset_->block_cache_tracer_->NextGetId();
   }
 #endif
+#if !defined(TOPLINGDB_WITH_TIMESTAMP)
+  timestamp = nullptr; // tell compiler it is always null
+#endif
+#if !defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+  columns = nullptr; // tell compiler it is always null
+#endif
 
   // Note: the old StackableDB-based BlobDB passes in
   // GetImplOptions::is_blob_index; for the integrated BlobDB implementation, we
