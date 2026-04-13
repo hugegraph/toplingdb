@@ -2540,87 +2540,69 @@ if (storage_info_.num_non_empty_levels_ > 0 &&
   }
 }
 #endif
-int curr_level = -1;
 int32_t search_left_bound = 0;
 int32_t search_right_bound = FileIndexer::kLevelMaxIndex;
-LevelFilesBrief* curr_file_level = nullptr;
-unsigned int curr_index_in_curr_level = 0;
-unsigned int start_index_in_curr_level = 0;
+for (int curr_level = 0; curr_level < storage_info_.num_non_empty_levels_; curr_level++) {
+  LevelFilesBrief* curr_file_level = &storage_info_.level_files_brief_[curr_level];
+  if (curr_file_level->num_files == 0) {
+    // When current level is empty, the search bound generated from upper
+    // level must be [0, -1] or [0, FileIndexer::kLevelMaxIndex] if it is
+    // also empty.
+    assert(search_left_bound == 0);
+    assert(search_right_bound == -1 ||
+           search_right_bound == FileIndexer::kLevelMaxIndex);
+    // Since current level is empty, it will need to search all files in
+    // the next level
+    search_left_bound = 0;
+    search_right_bound = FileIndexer::kLevelMaxIndex;
+    continue;
+  }
 
-auto prepare_next_level = [&]() -> bool {
-  curr_level++;
-  while (curr_level < storage_info_.num_non_empty_levels_) {
-    curr_file_level = &storage_info_.level_files_brief_[curr_level];
-    if (curr_file_level->num_files == 0) {
-      // When current level is empty, the search bound generated from upper
-      // level must be [0, -1] or [0, FileIndexer::kLevelMaxIndex] if it is
-      // also empty.
-      assert(search_left_bound == 0);
-      assert(search_right_bound == -1 ||
-             search_right_bound == FileIndexer::kLevelMaxIndex);
-      // Since current level is empty, it will need to search all files in
-      // the next level
-      search_left_bound = 0;
-      search_right_bound = FileIndexer::kLevelMaxIndex;
-      curr_level++;
-      continue;
-    }
-
-    // Some files may overlap each other. We find
-    // all files that overlap user_key and process them in order from
-    // newest to oldest. In the context of merge-operator, this can occur at
-    // any level. Otherwise, it only occurs at Level-0 (since Put/Deletes
-    // are always compacted into a single entry).
-    int32_t start_index;
-    if (curr_level == 0) {
-      // On Level-0, we read through all files to check for overlap.
+  // Some files may overlap each other. We find
+  // all files that overlap user_key and process them in order from
+  // newest to oldest. In the context of merge-operator, this can occur at
+  // any level. Otherwise, it only occurs at Level-0 (since Put/Deletes
+  // are always compacted into a single entry).
+  int32_t start_index;
+  if (curr_level == 0) {
+    // On Level-0, we read through all files to check for overlap.
       start_index = 0;
-    } else {
-      // On Level-n (n>=1), files are sorted. Binary search to find the
-      // earliest file whose largest key >= ikey. Search left bound and
-      // right bound are used to narrow the range.
-      if (search_left_bound <= search_right_bound) {
-        if (search_right_bound == FileIndexer::kLevelMaxIndex) {
-          search_right_bound =
-              static_cast<int32_t>(curr_file_level->num_files) - 1;
-        }
-        // `search_right_bound` is an inclusive upper-bound, but since it was
-        // determined based on user key, it is still possible the lookup key
-        // falls to the right of `search_right_bound`'s corresponding file.
-        // So, pass a limit one higher, which allows us to detect this case.
-        start_index = static_cast<int32_t>(FindFileInRangeTmpl(
-              IKCmp{internal_comparator()}, *curr_file_level, ikey,
-              static_cast<uint32_t>(search_left_bound),
-              static_cast<uint32_t>(search_right_bound) + 1));
-        if (start_index == search_right_bound + 1) {
-          // `ikey` comes after `search_right_bound`. The lookup key does
-          // not exist on this level, so let's skip this level and do a full
-          // binary search on the next level.
-          search_left_bound = 0;
-          search_right_bound = FileIndexer::kLevelMaxIndex;
-          curr_level++;
-          continue;
-        }
-      } else {
-        // search_left_bound > search_right_bound, key does not exist in
-        // this level. Since no comparison is done in this level, it will
-        // need to search all files in the next level.
+  } else {
+    // On Level-n (n>=1), files are sorted. Binary search to find the
+    // earliest file whose largest key >= ikey. Search left bound and
+    // right bound are used to narrow the range.
+    if (search_left_bound <= search_right_bound) {
+      if (search_right_bound == FileIndexer::kLevelMaxIndex) {
+        search_right_bound =
+            static_cast<int32_t>(curr_file_level->num_files) - 1;
+      }
+      // `search_right_bound` is an inclusive upper-bound, but since it was
+      // determined based on user key, it is still possible the lookup key
+      // falls to the right of `search_right_bound`'s corresponding file.
+      // So, pass a limit one higher, which allows us to detect this case.
+      start_index = static_cast<int32_t>(FindFileInRangeTmpl(
+            IKCmp{internal_comparator()}, *curr_file_level, ikey,
+            static_cast<uint32_t>(search_left_bound),
+            static_cast<uint32_t>(search_right_bound) + 1));
+      if (start_index == search_right_bound + 1) {
+        // `ikey` comes after `search_right_bound`. The lookup key does
+        // not exist on this level, so let's skip this level and do a full
+        // binary search on the next level.
         search_left_bound = 0;
         search_right_bound = FileIndexer::kLevelMaxIndex;
-        curr_level++;
         continue;
       }
+    } else {
+      // search_left_bound > search_right_bound, key does not exist in
+      // this level. Since no comparison is done in this level, it will
+      // need to search all files in the next level.
+      search_left_bound = 0;
+      search_right_bound = FileIndexer::kLevelMaxIndex;
+      continue;
     }
-    start_index_in_curr_level = start_index;
-    curr_index_in_curr_level = start_index;
-
-    return true;
   }
-  // curr_level = num_non_empty_levels_. So, no more levels to search.
-  return false;
-};
-
-while (prepare_next_level()) {
+  unsigned int start_index_in_curr_level __attribute__((unused)) = start_index;
+  unsigned int curr_index_in_curr_level = start_index;
   while (curr_index_in_curr_level < curr_file_level->num_files) {
     FdWithKeyRange* f = &curr_file_level->files[curr_index_in_curr_level];
     int hit_file_level = curr_level;
