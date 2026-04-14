@@ -2331,14 +2331,19 @@ Version::Version(ColumnFamilyData* column_family_data, VersionSet* vset,
     if (IsForwardBytewiseComparator(user_comparator())) {
       m_get = ExtractFuncPtr<GetFP>(this, &Version::GetInst
         <ForwardBytewiseCompareUserKeyNoTS, BytewiseCompareInternalKey>);
+      m_get_no_watch = ExtractFuncPtr<GetFP>(this, &Version::GetInst
+        <ForwardBytewiseCompareUserKeyNoTS, BytewiseCompareInternalKey, FakePerfStepTimer, FakeStopWatch>);
     }
     else if (IsReverseBytewiseComparator(user_comparator())) {
       m_get = ExtractFuncPtr<GetFP>(this, &Version::GetInst
         <ReverseBytewiseCompareUserKeyNoTS, RevBytewiseCompareInternalKey>);
+      m_get_no_watch = ExtractFuncPtr<GetFP>(this, &Version::GetInst
+        <ReverseBytewiseCompareUserKeyNoTS, RevBytewiseCompareInternalKey, FakePerfStepTimer, FakeStopWatch>);
     }
     else {
       m_get = ExtractFuncPtr<GetFP>(this, &Version::GetInst
         <VirtualFunctionCompareUserKeyNoTS, FallbackVirtCmp>);
+      m_get_no_watch = m_get; // do not instantiate more
     }
   }
 }
@@ -2472,7 +2477,7 @@ void Version::MultiGetBlob(
   }
 }
 
-template<class UKCmp, class IKCmp>
+template<class UKCmp, class IKCmp, class PerfStepTimer, class StopWatchNano>
 ROCKSDB_FLATTEN
 void Version::GetInst(const ReadOptions& read_options, const ParsedInternalKey& ikey,
                   PinnableSlice* value, PinnableWideColumns* columns,
@@ -2663,6 +2668,7 @@ for (int curr_level = 0; curr_level < storage_info_.num_non_empty_levels_; curr_
     }
 
     bool timer_enabled =
+        !std::is_same_v<PerfStepTimer, FakePerfStepTimer> &&
         perf_level >= PerfLevel::kEnableTimeExceptForMutex &&
         get_perf_context()->per_level_perf_context_enabled;
     StopWatchNano timer(clock_, timer_enabled /* auto_start */);

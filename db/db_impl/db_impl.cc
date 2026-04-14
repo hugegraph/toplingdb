@@ -2517,7 +2517,7 @@ Status DBImpl::GetInst(const ReadOptions& read_options, const Slice& key,
   PinnedIteratorsManager pinned_iters_mgr;
   if (!done) {
     PERF_TIMER_GUARD(get_from_output_files_time);
-    sv->current->Get(
+    sv->current->template Get<PerfStepTimer, typename StopWatch::WatchNano>(
         read_options, lkey, get_impl_options.value, get_impl_options.columns,
         timestamp, &s, &merge_context, &max_covering_tombstone_seq,
         &pinned_iters_mgr,

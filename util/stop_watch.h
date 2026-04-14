@@ -15,6 +15,9 @@
 #endif
 
 namespace ROCKSDB_NAMESPACE {
+
+class StopWatchNano;
+
 // Auto-scoped.
 // When statistics is not nullptr, records the measured time into any enabled
 // histograms supplied to the constructor. A histogram argument may be omitted
@@ -23,6 +26,7 @@ namespace ROCKSDB_NAMESPACE {
 // added to *elapsed if overwrite is false.
 class StopWatch {
  public:
+  typedef StopWatchNano WatchNano;
   inline
   StopWatch(SystemClock* clock, Statistics* statistics, const uint32_t hist_type)
   noexcept :
@@ -223,6 +227,7 @@ class StopWatchNano {
 };
 
 struct FakeStopWatch {
+  typedef FakeStopWatch WatchNano;
   FakeStopWatch(...) {}
   void DelayStart() {}
   void DelayStop() {}
