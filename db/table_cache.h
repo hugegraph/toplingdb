@@ -359,9 +359,11 @@ Status TableCache::GetNoneRowCache(
       auto seq = range_del_iter->MaxCoveringTombstoneSeqnum(pik.user_key);
       if (seq > *max_covering_tombstone_seq) {
         *max_covering_tombstone_seq = seq;
+       #if defined(TOPLINGDB_WITH_TIMESTAMP)
         if (get_context->NeedTimestamp()) {
           get_context->SetTimestampFromRangeTombstone(range_del_iter->timestamp());
         }
+       #endif
       }
     }
   }
