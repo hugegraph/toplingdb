@@ -33,6 +33,10 @@ namespace ROCKSDB_NAMESPACE {
 
 class Slice {
  public:
+  typedef char value_type;
+  typedef const char &const_reference, &reference;
+  typedef const char *const_iterator, *iterator;
+
   // Create an empty slice.
   Slice() : data_(""), size_(0) {}
 
