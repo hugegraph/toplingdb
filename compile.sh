@@ -2,6 +2,7 @@
 
 export SANDCASTLE=1
 export BUILD_PREFIX=../build-toplingdb/
+export PATH=/usr/local/bin:$PATH
 export CXX=clang++
 export CC=clang
 
