@@ -5151,7 +5151,7 @@ ReadOptions::~ReadOptions() {
 
 SuperVersion*
 DBImpl::GetAndRefSuperVersion(ColumnFamilyData* cfd, const ReadOptions* ro) {
-  if (!ro->internal_is_in_pinning_section) {
+  if (UNLIKELY(!ro->internal_is_in_pinning_section)) {
     // do not use zero copy, same as old behavior
     return GetAndRefSuperVersion(cfd);
   }
@@ -5159,7 +5159,7 @@ DBImpl::GetAndRefSuperVersion(ColumnFamilyData* cfd, const ReadOptions* ro) {
   ROCKSDB_ASSERT_EQ(tls->thread_id, ThisThreadID());
   size_t cfid = cfd->GetID();
   SuperVersion*& sv = tls->GetSuperVersionRef(cfid);
-  if (sv) {
+  if (LIKELY(sv != nullptr)) {
     if (LIKELY(sv->version_number == cfd->GetSuperVersionNumberNoAtomic())) {
       ROCKSDB_ASSERT_EQ(sv->cfd, cfd);
       return sv;
