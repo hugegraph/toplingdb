@@ -448,7 +448,7 @@ class DBImpl : public DB {
   virtual Status LockWAL() override;
   virtual Status UnlockWAL() override;
 
-  virtual SequenceNumber GetLatestSequenceNumber() const override;
+  virtual SequenceNumber GetLatestSequenceNumber() const override final;
 
   // IncreaseFullHistoryTsLow(ColumnFamilyHandle*, std::string) will acquire
   // and release db_mutex
@@ -466,7 +466,7 @@ class DBImpl : public DB {
 
   virtual Status GetDbSessionId(std::string& session_id) const override;
 
-  ColumnFamilyHandle* DefaultColumnFamily() const override;
+  ColumnFamilyHandle* DefaultColumnFamily() const override final;
 
   ColumnFamilyHandle* PersistentStatsColumnFamily() const;
 
@@ -677,7 +677,7 @@ class DBImpl : public DB {
                                       bool expose_blob_index = false,
                                       bool allow_refresh = true);
 
-  virtual SequenceNumber GetLastPublishedSequence() const {
+  virtual SequenceNumber GetLastPublishedSequence() const final {
     if (last_seq_same_as_publish_seq_) {
       return versions_->LastSequence();
     } else {
@@ -687,7 +687,7 @@ class DBImpl : public DB {
 
   // REQUIRES: joined the main write queue if two_write_queues is disabled, and
   // the second write queue otherwise.
-  virtual void SetLastPublishedSequence(SequenceNumber seq);
+  virtual void SetLastPublishedSequence(SequenceNumber seq) final;
   // Returns LastSequence in last_seq_same_as_publish_seq_
   // mode and LastAllocatedSequence otherwise. This is useful when visiblility
   // depends also on data written to the WAL but not to the memtable.
