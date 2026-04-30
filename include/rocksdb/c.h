@@ -3106,6 +3106,74 @@ extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_close_all(side_plugin_repo
 
 extern ROCKSDB_LIBRARY_API_WEAK const char* rocksdb_get_name(rocksdb_t*);
 
+typedef const rocksdb_comparator_t*
+(*rocksdb_comparator_creator_t)
+(const char* strjson, const side_plugin_repo_t* repo);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_register_comparator
+(const char* name, rocksdb_comparator_creator_t);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_unregister_comparator(const char* name);
+
+typedef rocksdb_mergeoperator_t*
+(*rocksdb_mergeoperator_creator_t)
+(const char* strjson, const side_plugin_repo_t* repo);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_register_merge_operator
+(const char* name, rocksdb_mergeoperator_creator_t);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_unregister_merge_operator(const char* name);
+
+typedef rocksdb_compactionfilterfactory_t*
+(*rocksdb_compactionfilterfactory_creator_t)
+(const char* strjson, const side_plugin_repo_t* repo);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_register_compaction_filter_factory
+(const char* name, rocksdb_compactionfilterfactory_creator_t);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_unregister_compaction_filter_factory(const char* name);
+
+typedef rocksdb_slicetransform_t*
+(*rocksdb_slicetransform_creator_t)
+(const char* strjson, const side_plugin_repo_t* repo);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_register_slicetransform
+(const char* name, rocksdb_slicetransform_creator_t);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_unregister_slicetransform(const char* name);
+
+typedef rocksdb_filterpolicy_t*
+(*rocksdb_filterpolicy_creator_t)
+(const char* strjson, const side_plugin_repo_t* repo);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_register_filterpolicy
+(const char* name, rocksdb_filterpolicy_creator_t);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_unregister_filterpolicy(const char* name);
+
+#if 0 // rocksdb c api does not support custom rate limiter
+typedef rocksdb_ratelimiter_t*
+(*rocksdb_ratelimiter_creator_t)
+(const char* strjson, const side_plugin_repo_t* repo);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_register_ratelimiter
+(const char* name, rocksdb_ratelimiter_creator_t);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_unregister_ratelimiter(const char* name);
+#endif
+
 #ifdef __cplusplus
 } /* end extern "C" */
 #endif

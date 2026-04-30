@@ -50,7 +50,7 @@
 #include "rocksdb/write_buffer_manager.h"
 #include "util/stderr_logger.h"
 #include "utilities/merge_operators.h"
-#include "topling/side_plugin_repo.h"
+#include "topling/side_plugin_factory.h"
 
 using ROCKSDB_NAMESPACE::BackupEngine;
 using ROCKSDB_NAMESPACE::BackupEngineOptions;
@@ -7078,5 +7078,89 @@ void side_plugin_repo_close_all(side_plugin_repo_t* r) {
 const char* rocksdb_get_name(rocksdb_t* p) {
   return p->rep->GetName().c_str();
 }
+
+} // end extern "C"
+
+using ROCKSDB_NAMESPACE::SidePluginRepo;
+using ROCKSDB_NAMESPACE::PluginFactory;
+using ROCKSDB_NAMESPACE::json;
+
+template<class Object, class FFI_Object>
+static void side_plugin_register_raw_ptr_plugin
+(const char* name, FFI_Object*(*creator)(const char* strjson, const side_plugin_repo_t*))
+{
+  auto cxx_creator = [creator](const json& js, const SidePluginRepo& repo) {
+    std::string strjson = js.dump();
+    static_assert(offsetof(side_plugin_repo_t, repo) == 0);
+    Object* ptr = creator(strjson.c_str(), (const side_plugin_repo_t*)(&repo));
+    return ptr;
+  };
+  PluginFactory<Object*>::DoReg(name, cxx_creator, __FILE__, __LINE__);
+}
+
+template<class Object, class FFI_Object>
+static void side_plugin_register_shared_ptr_plugin
+(const char* name, FFI_Object*(*creator)(const char* strjson, const side_plugin_repo_t*))
+{
+  auto cxx_creator = [creator](const json& js, const SidePluginRepo& repo) {
+    std::string strjson = js.dump();
+    static_assert(offsetof(side_plugin_repo_t, repo) == 0);
+    Object* ptr = creator(strjson.c_str(), (const side_plugin_repo_t*)(&repo));
+    return std::shared_ptr<Object>(ptr);
+  };
+  PluginFactory<std::shared_ptr<Object> >::DoReg(name, cxx_creator, __FILE__, __LINE__);
+}
+
+extern "C" {
+
+void side_plugin_register_comparator
+(const char* name, rocksdb_comparator_creator_t creator) {
+  side_plugin_register_raw_ptr_plugin<const Comparator>(name, creator);
+}
+void side_plugin_unregister_comparator(const char* name) {
+  PluginFactory<const Comparator*>::UnReg(name);
+}
+
+void side_plugin_register_compaction_filter_factory
+(const char* name, rocksdb_compactionfilterfactory_creator_t creator) {
+  side_plugin_register_shared_ptr_plugin<CompactionFilterFactory>(name, creator);
+}
+void side_plugin_unregister_compaction_filter_factory(const char* name) {
+  PluginFactory<std::shared_ptr<CompactionFilterFactory> >::UnReg(name);
+}
+
+void side_plugin_register_merge_operator
+(const char* name, rocksdb_mergeoperator_creator_t creator) {
+  side_plugin_register_shared_ptr_plugin<MergeOperator>(name, creator);
+}
+void side_plugin_unregister_merge_operator(const char* name) {
+  PluginFactory<std::shared_ptr<MergeOperator> >::UnReg(name);
+}
+
+void side_plugin_register_slicetransform
+(const char* name, rocksdb_slicetransform_creator_t creator) {
+  side_plugin_register_shared_ptr_plugin<const SliceTransform>(name, creator);
+}
+void side_plugin_unregister_slicetransform(const char* name) {
+  PluginFactory<std::shared_ptr<const SliceTransform> >::UnReg(name);
+}
+
+void side_plugin_register_filterpolicy
+(const char* name, rocksdb_filterpolicy_creator_t creator) {
+  side_plugin_register_shared_ptr_plugin<const FilterPolicy>(name, creator);
+}
+void side_plugin_unregister_filterpolicy(const char* name) {
+  PluginFactory<std::shared_ptr<const FilterPolicy> >::UnReg(name);
+}
+
+#if 0 // rocksdb c api does not support custom rate limiter
+void side_plugin_register_ratelimiter
+(const char* name, rocksdb_ratelimiter_creator_t creator) {
+  side_plugin_register_shared_ptr_plugin<RateLimiter>(name, creator);
+}
+void side_plugin_unregister_ratelimiter(const char* name) {
+  PluginFactory<std::shared_ptr<RateLimiter> >::UnReg(name);
+}
+#endif
 
 }  // end extern "C"
