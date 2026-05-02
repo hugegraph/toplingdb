@@ -6754,6 +6754,16 @@ const char* rocksdb_pinnableslice_value(const rocksdb_pinnableslice_t* v,
   return v->rep.data();
 }
 
+struct rocksdb_stdstr_t {
+  std::string rep;
+};
+
+rocksdb_stdstr_t* rocksdb_stdstr_create(const char* str, size_t len) {
+  return new rocksdb_stdstr_t{std::string(str, len)};
+}
+
+void rocksdb_stdstr_destroy(rocksdb_stdstr_t* v) { delete v; }
+
 // container to keep databases and caches in order to use
 // ROCKSDB_NAMESPACE::MemoryUtil
 struct rocksdb_memory_consumers_t {

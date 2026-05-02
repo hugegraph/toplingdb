@@ -143,6 +143,7 @@ typedef struct rocksdb_statistics_histogram_data_t
     rocksdb_statistics_histogram_data_t;
 typedef struct rocksdb_wait_for_compact_options_t
     rocksdb_wait_for_compact_options_t;
+typedef struct rocksdb_stdstr_t rocksdb_stdstr_t;
 
 #if !defined(ROCKSDB_C_API_IMPLEMENTATION)
 struct rocksdb_slice_t {
@@ -2969,6 +2970,9 @@ extern ROCKSDB_LIBRARY_API void rocksdb_pinnableslice_destroy(
     rocksdb_pinnableslice_t* v);
 extern ROCKSDB_LIBRARY_API const char* rocksdb_pinnableslice_value(
     const rocksdb_pinnableslice_t* t, size_t* vlen);
+
+extern ROCKSDB_LIBRARY_API rocksdb_stdstr_t* rocksdb_stdstr_create(const char* str, size_t len);
+extern ROCKSDB_LIBRARY_API void rocksdb_stdstr_destroy(rocksdb_stdstr_t* v);
 
 extern ROCKSDB_LIBRARY_API rocksdb_memory_consumers_t*
 rocksdb_memory_consumers_create(void);
