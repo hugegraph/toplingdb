@@ -7085,9 +7085,9 @@ using ROCKSDB_NAMESPACE::SidePluginRepo;
 using ROCKSDB_NAMESPACE::PluginFactory;
 using ROCKSDB_NAMESPACE::json;
 
-template<class Object, class FFI_Object>
+template<class Object, class FFI_BridgeObject>
 static void side_plugin_register_raw_ptr_plugin
-(const char* name, FFI_Object*(*creator)(const char* strjson, const side_plugin_repo_t*))
+(const char* name, FFI_BridgeObject*(*creator)(const char* strjson, const side_plugin_repo_t*))
 {
   auto cxx_creator = [creator](const json& js, const SidePluginRepo& repo) {
     std::string strjson = js.dump();
@@ -7098,9 +7098,9 @@ static void side_plugin_register_raw_ptr_plugin
   PluginFactory<Object*>::DoReg(name, cxx_creator, __FILE__, __LINE__);
 }
 
-template<class Object, class FFI_Object>
+template<class Object, class FFI_BridgeObject>
 static void side_plugin_register_shared_ptr_plugin
-(const char* name, FFI_Object*(*creator)(const char* strjson, const side_plugin_repo_t*))
+(const char* name, FFI_BridgeObject*(*creator)(const char* strjson, const side_plugin_repo_t*))
 {
   auto cxx_creator = [creator](const json& js, const SidePluginRepo& repo) {
     std::string strjson = js.dump();
