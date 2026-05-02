@@ -51,6 +51,8 @@
 #include "util/stderr_logger.h"
 #include "utilities/merge_operators.h"
 #include "topling/side_plugin_factory.h"
+#include "db/compaction/compaction_executor.h"
+#include "logging/logging.h"
 
 using ROCKSDB_NAMESPACE::BackupEngine;
 using ROCKSDB_NAMESPACE::BackupEngineOptions;
@@ -7091,13 +7093,154 @@ const char* rocksdb_get_name(rocksdb_t* p) {
 
 } // end extern "C"
 
+#define DoPrintLog(...) \
+    info_log ? ROCKS_LOG_INFO(info_log, __VA_ARGS__) \
+             : (void)fprintf(stderr, __VA_ARGS__)
+#define PrintLog(level, fmt, ...) \
+  do { if (SidePluginRepo::DebugLevel() >= level) \
+    DoPrintLog("%s: " fmt "\n", \
+            TERARK_PP_SmartForPrintf(rocksdb::StrDateTimeNow(), ## __VA_ARGS__)); \
+  } while (0)
+#define TRAC(...) PrintLog(4, "TRAC: " __VA_ARGS__)
+#define DEBG(...) PrintLog(3, "DEBG: " __VA_ARGS__)
+#define INFO(...) PrintLog(2, "INFO: " __VA_ARGS__)
+#define WARN(...) PrintLog(1, "WARN: " __VA_ARGS__)
+
+namespace ROCKSDB_NAMESPACE {
+
+template<class FFI_BridgeObject>
+static void* get_ffi_obj(const FFI_BridgeObject* bridge) {
+  // existing rocksdb bridge class consitently name ffi_obj as state_.
+  // bridge itself is always const.
+  return bridge->state_;
+}
+
+using terark::llong;
+template<class Object, class FFI_BridgeObject>
+struct FFI_SerDe : public DcompactSerDeFunc<Object> {
+  virtual void SerializeRequest(FILE* fp, const Object& obj) const final {
+    ROCKSDB_VERIFY(!IsCompactionWorker()); // phase 1, DB Side
+    auto bridge = dynamic_cast<const FFI_BridgeObject*>(&obj);
+    ROCKSDB_VERIFY(nullptr != bridge);
+    DEBG("job-%05d cf-%d %s::SerializeRequest: job raw = %.3f GB, zip = %.3f GB, smallest_seqno = %lld",
+          job_id, m_cp->cf_id, m_name, rawzip[0]/1e9, rawzip[1]/1e9, (llong)m_cp->smallest_seqno);
+    ffi_vtab.serialize_request(fp, get_ffi_obj(bridge));
+  }
+  virtual void DeSerializeRequest(FILE* fp, Object* obj) const final {
+    ROCKSDB_VERIFY(IsCompactionWorker()); // phase 2, compact worker side
+    DEBG("job-%05d cf-%d %s::DeSerializeRequest: job raw = %.3f GB, zip = %.3f GB, smallest_seqno = %lld",
+          job_id, m_cp->cf_id, m_name, rawzip[0]/1e9, rawzip[1]/1e9, (llong)m_cp->smallest_seqno);
+    auto bridge = dynamic_cast<const FFI_BridgeObject*>(obj);
+    ROCKSDB_VERIFY(nullptr != bridge);
+    ffi_vtab.deserialize_request(fp, get_ffi_obj(bridge));
+  }
+  virtual void SerializeResponse(FILE* fp, const Object& obj) const final {
+    ROCKSDB_VERIFY(IsCompactionWorker()); // phase 3, compact worker side
+    auto bridge = dynamic_cast<const FFI_BridgeObject*>(&obj);
+    ROCKSDB_VERIFY(nullptr != bridge);
+    ffi_vtab.serialize_response(fp, get_ffi_obj(bridge));
+  }
+  virtual void DeSerializeResponse(FILE* fp, Object* obj) const final {
+    ROCKSDB_VERIFY(!IsCompactionWorker()); // phase 4, DB side
+    auto bridge = dynamic_cast<const FFI_BridgeObject*>(obj);
+    ROCKSDB_VERIFY(nullptr != bridge);
+    ffi_vtab.deserialize_response(fp, get_ffi_obj(bridge));
+  }
+  FFI_SerDe(const json& js, const SidePluginRepo& repo,
+            const std::string& name, const side_plugin_ex_vtab_t& vtab)
+  : m_name(name)
+  {
+    ffi_vtab = vtab;
+    auto  cp = m_cp = JS_CompactionParamsDecodePtr(js);
+    info_log = cp->info_log;
+    const auto& smallest_user_key = Slice(cp->smallest_user_key).ToString(true/*hex*/);
+    const auto& largest_user_key = Slice(cp->largest_user_key).ToString(true/*hex*/);
+    job_id = cp->job_id;
+    cp->InputBytes(rawzip);
+    TRAC("job-%05d cf-%d %s::FFI_SerDe: smallest_user_key = %s, largest_user_key = %s, job raw = %.3f GB, zip = %.3f GB",
+      cp->job_id, cp->cf_id, name, smallest_user_key.c_str(), largest_user_key.c_str(), rawzip[0]/1e9, rawzip[1]/1e9);
+  }
+  std::string m_name;
+  side_plugin_ex_vtab_t ffi_vtab;
+  const CompactionParams* m_cp;
+  rocksdb::Logger* info_log;
+  int job_id;
+  size_t rawzip[2];
+};
+
+template<class Object, class FFI_BridgeObject>
+struct FFI_WebManip : public PluginManipFunc<Object> {
+  virtual void Update(Object* obj, const json& query, const json& body,
+                      const SidePluginRepo& repo) const {
+    std::string str_qry = query.dump();
+    std::string str_body = body.dump();
+    auto bridge = dynamic_cast<const FFI_BridgeObject*>(obj);
+    ROCKSDB_VERIFY(nullptr != bridge);
+    auto ffi_repo = (const side_plugin_repo_t*)(&repo);
+    if (m_ffi_vtab.web_update) {
+      m_ffi_vtab.web_update(get_ffi_obj(bridge), str_qry.c_str(), str_body.c_str(), ffi_repo);
+    }
+  }
+  virtual std::string ToString(const Object& obj, const json& query,
+                               const SidePluginRepo& repo) const {
+    std::string str_qry = query.dump();
+    auto bridge = dynamic_cast<const FFI_BridgeObject*>(&obj);
+    ROCKSDB_VERIFY(nullptr != bridge);
+    auto ffi_repo = (const side_plugin_repo_t*)(&repo);
+    rocksdb_stdstr_t* result = m_ffi_vtab.web_view(get_ffi_obj(bridge), str_qry.c_str(), ffi_repo);
+    TERARK_VERIFY(nullptr != result);
+    TERARK_SCOPE_EXIT(rocksdb_stdstr_destroy(result));
+    return std::move(result->rep);
+  }
+  FFI_WebManip(const side_plugin_ex_vtab_t& ffi_vtab) : m_ffi_vtab(ffi_vtab) {}
+  side_plugin_ex_vtab_t m_ffi_vtab;
+};
+
+template<class Object, class FFI_BridgeObject>
+static void side_plugin_register_ex(const char* name, const side_plugin_ex_vtab_t* ex_vtab) {
+  if (ex_vtab->serialize_request) {
+    ROCKSDB_VERIFY(nullptr != ex_vtab->deserialize_request );
+    ROCKSDB_VERIFY(nullptr != ex_vtab->  serialize_response);
+    ROCKSDB_VERIFY(nullptr != ex_vtab->deserialize_response);
+    using NoConstObj = std::remove_const_t<Object>;
+    auto cxx_creator = [name=std::string(name), cp_vtab=*ex_vtab]
+    (const json& js, const SidePluginRepo& repo) -> std::shared_ptr<SerDeFunc<NoConstObj> > {
+      static_assert(offsetof(side_plugin_repo_t, repo) == 0);
+      return std::make_shared<FFI_SerDe<NoConstObj, FFI_BridgeObject> >(js, repo, name, cp_vtab);
+    };
+    SerDeFactory<NoConstObj>::DoReg(name, cxx_creator, __FILE__, __LINE__);
+  }
+  if (ex_vtab->web_view) {
+    auto cxx_creator = [
+      singleton=std::make_shared<FFI_WebManip<Object, FFI_BridgeObject> >(*ex_vtab)
+    ](const json&, const SidePluginRepo&) -> const PluginManipFunc<Object>* {
+      static_assert(offsetof(side_plugin_repo_t, repo) == 0);
+      return singleton.get();
+    };
+    PluginManip<Object>::DoReg(name, cxx_creator, __FILE__, __LINE__);
+  }
+}
+
+} // ROCKSDB_NAMESPACE
+
 using ROCKSDB_NAMESPACE::SidePluginRepo;
 using ROCKSDB_NAMESPACE::PluginFactory;
 using ROCKSDB_NAMESPACE::json;
+using ROCKSDB_NAMESPACE::side_plugin_register_ex;
+using ROCKSDB_NAMESPACE::SerDeFactory;
+using ROCKSDB_NAMESPACE::PluginManip;
+
+template<class Object>
+static void side_plugin_unregister_ex(const char* name) {
+  using NoConstObj = std::remove_const_t<Object>;
+  SerDeFactory<NoConstObj>::UnReg(name);
+  PluginManip<Object>::UnReg(name);
+}
 
 template<class Object, class FFI_BridgeObject>
 static void side_plugin_register_raw_ptr_plugin
-(const char* name, FFI_BridgeObject*(*creator)(const char* strjson, const side_plugin_repo_t*))
+(const char* name, FFI_BridgeObject*(*creator)(const char* strjson, const side_plugin_repo_t*),
+ const side_plugin_ex_vtab_t* ex_vtab)
 {
   auto cxx_creator = [creator](const json& js, const SidePluginRepo& repo) {
     std::string strjson = js.dump();
@@ -7106,11 +7249,15 @@ static void side_plugin_register_raw_ptr_plugin
     return ptr;
   };
   PluginFactory<Object*>::DoReg(name, cxx_creator, __FILE__, __LINE__);
+  if (ex_vtab) {
+    side_plugin_register_ex<Object, FFI_BridgeObject>(name, ex_vtab);
+  }
 }
 
 template<class Object, class FFI_BridgeObject>
 static void side_plugin_register_shared_ptr_plugin
-(const char* name, FFI_BridgeObject*(*creator)(const char* strjson, const side_plugin_repo_t*))
+(const char* name, FFI_BridgeObject*(*creator)(const char* strjson, const side_plugin_repo_t*),
+ const side_plugin_ex_vtab_t* ex_vtab)
 {
   auto cxx_creator = [creator](const json& js, const SidePluginRepo& repo) {
     std::string strjson = js.dump();
@@ -7119,54 +7266,62 @@ static void side_plugin_register_shared_ptr_plugin
     return std::shared_ptr<Object>(ptr);
   };
   PluginFactory<std::shared_ptr<Object> >::DoReg(name, cxx_creator, __FILE__, __LINE__);
+  if (ex_vtab) {
+    side_plugin_register_ex<Object, FFI_BridgeObject>(name, ex_vtab);
+  }
 }
 
 extern "C" {
 
 void side_plugin_register_comparator
-(const char* name, rocksdb_comparator_creator_t creator) {
-  side_plugin_register_raw_ptr_plugin<const Comparator>(name, creator);
+(const char* name, rocksdb_comparator_creator_t creator, const side_plugin_ex_vtab_t* ex_vtab) {
+  side_plugin_register_raw_ptr_plugin<const Comparator>(name, creator, ex_vtab);
 }
 void side_plugin_unregister_comparator(const char* name) {
   PluginFactory<const Comparator*>::UnReg(name);
+  side_plugin_unregister_ex<const Comparator>(name);
 }
 
 void side_plugin_register_compaction_filter_factory
-(const char* name, rocksdb_compactionfilterfactory_creator_t creator) {
-  side_plugin_register_shared_ptr_plugin<CompactionFilterFactory>(name, creator);
+(const char* name, rocksdb_compactionfilterfactory_creator_t creator, const side_plugin_ex_vtab_t* ex_vtab) {
+  side_plugin_register_shared_ptr_plugin<CompactionFilterFactory>(name, creator, ex_vtab);
 }
 void side_plugin_unregister_compaction_filter_factory(const char* name) {
   PluginFactory<std::shared_ptr<CompactionFilterFactory> >::UnReg(name);
+  side_plugin_unregister_ex<CompactionFilterFactory>(name);
 }
 
 void side_plugin_register_merge_operator
-(const char* name, rocksdb_mergeoperator_creator_t creator) {
-  side_plugin_register_shared_ptr_plugin<MergeOperator>(name, creator);
+(const char* name, rocksdb_mergeoperator_creator_t creator, const side_plugin_ex_vtab_t* ex_vtab) {
+  side_plugin_register_shared_ptr_plugin<MergeOperator>(name, creator, ex_vtab);
 }
 void side_plugin_unregister_merge_operator(const char* name) {
   PluginFactory<std::shared_ptr<MergeOperator> >::UnReg(name);
+  side_plugin_unregister_ex<MergeOperator>(name);
 }
 
 void side_plugin_register_slicetransform
-(const char* name, rocksdb_slicetransform_creator_t creator) {
-  side_plugin_register_shared_ptr_plugin<const SliceTransform>(name, creator);
+(const char* name, rocksdb_slicetransform_creator_t creator, const side_plugin_ex_vtab_t* ex_vtab) {
+  side_plugin_register_shared_ptr_plugin<const SliceTransform>(name, creator, ex_vtab);
 }
 void side_plugin_unregister_slicetransform(const char* name) {
   PluginFactory<std::shared_ptr<const SliceTransform> >::UnReg(name);
+  side_plugin_unregister_ex<const SliceTransform>(name);
 }
 
 void side_plugin_register_filterpolicy
-(const char* name, rocksdb_filterpolicy_creator_t creator) {
-  side_plugin_register_shared_ptr_plugin<const FilterPolicy>(name, creator);
+(const char* name, rocksdb_filterpolicy_creator_t creator, const side_plugin_ex_vtab_t* ex_vtab) {
+  side_plugin_register_shared_ptr_plugin<const FilterPolicy>(name, creator, ex_vtab);
 }
 void side_plugin_unregister_filterpolicy(const char* name) {
   PluginFactory<std::shared_ptr<const FilterPolicy> >::UnReg(name);
+  side_plugin_unregister_ex<const FilterPolicy>(name);
 }
 
 #if 0 // rocksdb c api does not support custom rate limiter
 void side_plugin_register_ratelimiter
-(const char* name, rocksdb_ratelimiter_creator_t creator) {
-  side_plugin_register_shared_ptr_plugin<RateLimiter>(name, creator);
+(const char* name, rocksdb_ratelimiter_creator_t creator, const side_plugin_ex_vtab_t* ex_vtab) {
+  side_plugin_register_shared_ptr_plugin<RateLimiter>(name, creator, ex_vtab);
 }
 void side_plugin_unregister_ratelimiter(const char* name) {
   PluginFactory<std::shared_ptr<RateLimiter> >::UnReg(name);

@@ -67,6 +67,7 @@ extern "C" {
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* Exported types */
 
@@ -3110,13 +3111,29 @@ extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_close_all(side_plugin_repo
 
 extern ROCKSDB_LIBRARY_API_WEAK const char* rocksdb_get_name(rocksdb_t*);
 
+struct side_plugin_ex_vtab_t {
+    // serialize_request == NULL means serde(all the 4) are not supported
+    void (*  serialize_request )(FILE*, const void* obj);
+    void (*deserialize_request )(FILE*,       void* obj);
+    void (*  serialize_response)(FILE*, const void* obj);
+    void (*deserialize_response)(FILE*,       void* obj);
+
+    // web_view   == NULL means web view and update are not supported
+    // web_update == NULL means web only     update is  not supported
+    rocksdb_stdstr_t* (*web_view)(const void* obj, const char* dump_options_json, const side_plugin_repo_t*);
+    void (*web_update)(void* obj, const char* dump_options_json, const char* body_json, const side_plugin_repo_t*);
+};
+#if !defined(__cplusplus)
+typedef struct side_plugin_ex_vtab_t side_plugin_ex_vtab_t;
+#endif
+
 typedef const rocksdb_comparator_t*
 (*rocksdb_comparator_creator_t)
 (const char* strjson, const side_plugin_repo_t* repo);
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_register_comparator
-(const char* name, rocksdb_comparator_creator_t);
+(const char* name, rocksdb_comparator_creator_t, const side_plugin_ex_vtab_t*);
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_unregister_comparator(const char* name);
@@ -3127,7 +3144,7 @@ typedef rocksdb_mergeoperator_t*
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_register_merge_operator
-(const char* name, rocksdb_mergeoperator_creator_t);
+(const char* name, rocksdb_mergeoperator_creator_t, const side_plugin_ex_vtab_t*);
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_unregister_merge_operator(const char* name);
@@ -3138,7 +3155,7 @@ typedef rocksdb_compactionfilterfactory_t*
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_register_compaction_filter_factory
-(const char* name, rocksdb_compactionfilterfactory_creator_t);
+(const char* name, rocksdb_compactionfilterfactory_creator_t, const side_plugin_ex_vtab_t*);
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_unregister_compaction_filter_factory(const char* name);
@@ -3149,7 +3166,7 @@ typedef rocksdb_slicetransform_t*
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_register_slicetransform
-(const char* name, rocksdb_slicetransform_creator_t);
+(const char* name, rocksdb_slicetransform_creator_t, const side_plugin_ex_vtab_t*);
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_unregister_slicetransform(const char* name);
@@ -3160,7 +3177,7 @@ typedef rocksdb_filterpolicy_t*
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_register_filterpolicy
-(const char* name, rocksdb_filterpolicy_creator_t);
+(const char* name, rocksdb_filterpolicy_creator_t, const side_plugin_ex_vtab_t*);
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_unregister_filterpolicy(const char* name);
@@ -3172,7 +3189,7 @@ typedef rocksdb_ratelimiter_t*
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_register_ratelimiter
-(const char* name, rocksdb_ratelimiter_creator_t);
+(const char* name, rocksdb_ratelimiter_creator_t, const side_plugin_ex_vtab_t*);
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_unregister_ratelimiter(const char* name);
