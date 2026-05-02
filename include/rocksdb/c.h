@@ -3109,6 +3109,8 @@ side_plugin_repo_put_cf_options(side_plugin_repo_t*, const char* name, rocksdb_o
 
 extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_close_all(side_plugin_repo_t*);
 
+extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_forget_db(side_plugin_repo_t*, rocksdb_t*);
+
 extern ROCKSDB_LIBRARY_API_WEAK const char* rocksdb_get_name(rocksdb_t*);
 
 struct side_plugin_ex_vtab_t {

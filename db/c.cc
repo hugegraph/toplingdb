@@ -7087,6 +7087,10 @@ void side_plugin_repo_close_all(side_plugin_repo_t* r) {
   delete r;
 }
 
+void side_plugin_repo_forget_db(side_plugin_repo_t* r, rocksdb_t* db) {
+  r->repo.CloseOneDB(db->rep, false);
+}
+
 const char* rocksdb_get_name(rocksdb_t* p) {
   return p->rep->GetName().c_str();
 }
