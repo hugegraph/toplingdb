@@ -7291,6 +7291,9 @@ void side_plugin_unregister_comparator(const char* name) {
   PluginFactory<const Comparator*>::UnReg(name);
   side_plugin_unregister_ex<const Comparator>(name);
 }
+void* side_plugin_comparator_get_state(const rocksdb_comparator_t* p) {
+  return p->state_;
+}
 
 void side_plugin_register_compaction_filter_factory
 (const char* name, rocksdb_compactionfilterfactory_creator_t creator, const side_plugin_ex_vtab_t* ex_vtab) {
@@ -7299,6 +7302,9 @@ void side_plugin_register_compaction_filter_factory
 void side_plugin_unregister_compaction_filter_factory(const char* name) {
   PluginFactory<std::shared_ptr<CompactionFilterFactory> >::UnReg(name);
   side_plugin_unregister_ex<CompactionFilterFactory>(name);
+}
+void* side_plugin_compactionfilterfactory_get_state(const rocksdb_compactionfilterfactory_t* p) {
+  return p->state_;
 }
 
 void side_plugin_register_merge_operator
@@ -7309,6 +7315,9 @@ void side_plugin_unregister_merge_operator(const char* name) {
   PluginFactory<std::shared_ptr<MergeOperator> >::UnReg(name);
   side_plugin_unregister_ex<MergeOperator>(name);
 }
+void* side_plugin_mergeoperator_get_state(const rocksdb_mergeoperator_t* p) {
+  return p->state_;
+}
 
 void side_plugin_register_slicetransform
 (const char* name, rocksdb_slicetransform_creator_t creator, const side_plugin_ex_vtab_t* ex_vtab) {
@@ -7317,6 +7326,9 @@ void side_plugin_register_slicetransform
 void side_plugin_unregister_slicetransform(const char* name) {
   PluginFactory<std::shared_ptr<const SliceTransform> >::UnReg(name);
   side_plugin_unregister_ex<const SliceTransform>(name);
+}
+void* side_plugin_slicetransform_get_state(const rocksdb_slicetransform_t* p) {
+  return p->state_;
 }
 
 void side_plugin_register_filterpolicy
@@ -7327,6 +7339,9 @@ void side_plugin_unregister_filterpolicy(const char* name) {
   PluginFactory<std::shared_ptr<const FilterPolicy> >::UnReg(name);
   side_plugin_unregister_ex<const FilterPolicy>(name);
 }
+void* side_plugin_filterpolicy_get_state(const rocksdb_filterpolicy_t* p) {
+  return p->state_;
+}
 
 #if 0 // rocksdb c api does not support custom rate limiter
 void side_plugin_register_ratelimiter
@@ -7335,6 +7350,9 @@ void side_plugin_register_ratelimiter
 }
 void side_plugin_unregister_ratelimiter(const char* name) {
   PluginFactory<std::shared_ptr<RateLimiter> >::UnReg(name);
+}
+void* side_plugin_ratelimiter_get_state(const rocksdb_ratelimiter_creator_t* p) {
+  return p->state_;
 }
 #endif
 

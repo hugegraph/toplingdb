@@ -3143,6 +3143,9 @@ void side_plugin_register_comparator
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_unregister_comparator(const char* name);
 
+extern ROCKSDB_LIBRARY_API_WEAK
+void* side_plugin_comparator_get_state(const rocksdb_comparator_t*);
+
 typedef rocksdb_mergeoperator_t*
 (*rocksdb_mergeoperator_creator_t)
 (const char* strjson, const side_plugin_repo_t* repo);
@@ -3153,6 +3156,9 @@ void side_plugin_register_merge_operator
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_unregister_merge_operator(const char* name);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void* side_plugin_mergeoperator_get_state(const rocksdb_mergeoperator_t*);
 
 typedef rocksdb_compactionfilterfactory_t*
 (*rocksdb_compactionfilterfactory_creator_t)
@@ -3165,6 +3171,9 @@ void side_plugin_register_compaction_filter_factory
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_unregister_compaction_filter_factory(const char* name);
 
+extern ROCKSDB_LIBRARY_API_WEAK
+void* side_plugin_compactionfilterfactory_get_state(const rocksdb_compactionfilterfactory_t*);
+
 typedef rocksdb_slicetransform_t*
 (*rocksdb_slicetransform_creator_t)
 (const char* strjson, const side_plugin_repo_t* repo);
@@ -3175,6 +3184,9 @@ void side_plugin_register_slicetransform
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_unregister_slicetransform(const char* name);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void* side_plugin_slicetransform_get_state(const rocksdb_slicetransform_t*);
 
 typedef rocksdb_filterpolicy_t*
 (*rocksdb_filterpolicy_creator_t)
@@ -3187,6 +3199,9 @@ void side_plugin_register_filterpolicy
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_unregister_filterpolicy(const char* name);
 
+extern ROCKSDB_LIBRARY_API_WEAK
+void* side_plugin_filterpolicy_get_state(const rocksdb_filterpolicy_t*);
+
 #if 0 // rocksdb c api does not support custom rate limiter
 typedef rocksdb_ratelimiter_t*
 (*rocksdb_ratelimiter_creator_t)
@@ -3198,6 +3213,9 @@ void side_plugin_register_ratelimiter
 
 extern ROCKSDB_LIBRARY_API_WEAK
 void side_plugin_unregister_ratelimiter(const char* name);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void* side_plugin_ratelimiter_get_state(const rocksdb_ratelimiter_t*);
 #endif
 
 #ifdef __cplusplus
