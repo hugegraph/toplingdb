@@ -3088,6 +3088,9 @@ extern ROCKSDB_LIBRARY_API_WEAK side_plugin_repo_t* side_plugin_repo_create(void
 extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_import_auto_file
 (side_plugin_repo_t*, const char* fname, char** errptr);
 
+extern ROCKSDB_LIBRARY_API_WEAK void
+side_plugin_repo_import(side_plugin_repo_t*, const char* json_str, char** errptr);
+
 extern ROCKSDB_LIBRARY_API_WEAK rocksdb_t*
 side_plugin_repo_open(side_plugin_repo_t*, rocksdb_column_family_handle_t***,
                       size_t* num_cf, char** errptr);

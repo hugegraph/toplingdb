@@ -7017,6 +7017,12 @@ void side_plugin_repo_import_auto_file(side_plugin_repo_t* r,
   SaveError(errptr, s);
 }
 
+void side_plugin_repo_import(side_plugin_repo_t* r,
+                              const char* json_str, char** errptr) {
+  auto s = r->repo.Import(std::string(json_str));
+  SaveError(errptr, s);
+}
+
 rocksdb_t* side_plugin_repo_open(side_plugin_repo_t* r,
     rocksdb_column_family_handle_t*** p_cfhs, size_t* num_cf, char** errptr) {
   if (p_cfhs) { // Open with column families
