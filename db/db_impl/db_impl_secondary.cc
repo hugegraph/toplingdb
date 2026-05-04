@@ -801,6 +801,9 @@ Status DB::OpenAsSecondary(
   *dbptr = nullptr;
 
   DBOptions tmp_opts(db_options);
+  MaybeOptionsUpdateFrom(&tmp_opts,
+      const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
+      "default");
   Status s;
   if (nullptr == tmp_opts.info_log) {
     s = CreateLoggerFromOptions(secondary_path, tmp_opts, &tmp_opts.info_log);

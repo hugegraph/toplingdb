@@ -46,6 +46,9 @@ Status BlobDB::Open(const DBOptions& db_options,
     return Status::NotSupported(
         "Blob DB doesn't support non-default column family.");
   }
+  MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
+      const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
+      "default");
 
   BlobDBImpl* blob_db_impl = new BlobDBImpl(dbname, bdb_options, db_options,
                                             column_families[0].options);

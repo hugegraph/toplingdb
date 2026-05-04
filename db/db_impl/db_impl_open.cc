@@ -1980,6 +1980,9 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
                     const std::vector<ColumnFamilyDescriptor>& column_families,
                     std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
                     const bool seq_per_batch, const bool batch_per_txn) {
+  MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
+      const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
+      "default");
   Status s = ValidateOptionsByTable(db_options, column_families);
   if (!s.ok()) {
     return s;
