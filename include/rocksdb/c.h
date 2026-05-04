@@ -3110,6 +3110,12 @@ side_plugin_repo_get_cf_options(side_plugin_repo_t*, const char* name, char** er
 extern ROCKSDB_LIBRARY_API_WEAK void
 side_plugin_repo_put_cf_options(side_plugin_repo_t*, const char* name, rocksdb_options_t*);
 
+extern ROCKSDB_LIBRARY_API_WEAK bool
+side_plugin_db_options_update_from(rocksdb_options_t*, const side_plugin_repo_t*, const char* name);
+
+extern ROCKSDB_LIBRARY_API_WEAK bool
+side_plugin_cf_options_update_from(rocksdb_options_t*, const side_plugin_repo_t*, const char* name);
+
 extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_close_all(side_plugin_repo_t*);
 
 extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_forget_db(side_plugin_repo_t*, rocksdb_t*);

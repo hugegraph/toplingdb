@@ -7088,6 +7088,14 @@ void side_plugin_repo_put_cf_options(side_plugin_repo_t* r, const char* name,
   r->repo.Put(name, std::make_shared<ColumnFamilyOptions>(opt->rep));
 }
 
+bool side_plugin_db_options_update_from(rocksdb_options_t* opt, const side_plugin_repo_t* r, const char* name) {
+  return r->repo.DBOptionsUpdateFrom(&opt->rep, name);
+}
+
+bool side_plugin_cf_options_update_from(rocksdb_options_t* opt, const side_plugin_repo_t* r, const char* name) {
+  return r->repo.CFOptionsUpdateFrom(&opt->rep, name);
+}
+
 void side_plugin_repo_close_all(side_plugin_repo_t* r) {
   r->repo.CloseAllDB(false); // also close http
   delete r;
