@@ -349,7 +349,7 @@ Status DBImplReadOnly::OpenForReadOnlyWithoutCheck(
 
   MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
       const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
-      "default");
+      dbname);
 
   SuperVersionContext sv_context(/* create_superversion */ true);
   DBImplReadOnly* impl = new DBImplReadOnly(db_options, dbname);

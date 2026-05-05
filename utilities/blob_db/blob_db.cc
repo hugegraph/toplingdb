@@ -48,7 +48,7 @@ Status BlobDB::Open(const DBOptions& db_options,
   }
   MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
       const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
-      "default");
+      dbname);
 
   BlobDBImpl* blob_db_impl = new BlobDBImpl(dbname, bdb_options, db_options,
                                             column_families[0].options);

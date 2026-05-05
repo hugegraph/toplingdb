@@ -2807,7 +2807,7 @@ class GetWithTimestampReadCallback : public ReadCallback {
 
 extern bool MaybeCFOptionsUpdateFrom(ColumnFamilyOptions*, const std::string& src_name);
 extern bool MaybeOptionsUpdateFrom
-(DBOptions*, std::vector<ColumnFamilyDescriptor>*, const std::string& src_dbo_name);
+(DBOptions*, std::vector<ColumnFamilyDescriptor>*, const std::string& dbpath);
 
 extern Options SanitizeOptions(const std::string& db, const Options& src,
                                bool read_only = false,
