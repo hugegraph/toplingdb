@@ -4028,7 +4028,8 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
   Status s;
   *handle = nullptr;
 
-  MaybeCFOptionsUpdateFrom(const_cast<ColumnFamilyOptions*>(&cf_options), column_family_name);
+  MaybeCFOptionsUpdateFrom(const_cast<ColumnFamilyOptions*>(&cf_options),
+                           column_family_name, dbname_);
   DBOptions db_options =
       BuildDBOptions(immutable_db_options_, mutable_db_options_);
   s = ColumnFamilyData::ValidateOptions(db_options, cf_options);
