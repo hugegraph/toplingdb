@@ -1983,6 +1983,9 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
       const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
       dbname);
+  *dbptr = nullptr;
+  ROCKSDB_SCOPE_EXIT(MaybeRetainDB(*dbptr, *handles));
+
   Status s = ValidateOptionsByTable(db_options, column_families);
   if (!s.ok()) {
     return s;

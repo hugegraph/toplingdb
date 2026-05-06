@@ -834,6 +834,8 @@ Status DBImpl::CloseHelper() {
 Status DBImpl::CloseImpl() { return CloseHelper(); }
 
 DBImpl::~DBImpl() {
+  MaybeForgetDB(this);
+
   // TODO: remove this.
   init_logger_creation_s_.PermitUncheckedError();
 

@@ -804,6 +804,7 @@ Status DB::OpenAsSecondary(
   MaybeOptionsUpdateFrom(&tmp_opts,
       const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
       dbname);
+  ROCKSDB_SCOPE_EXIT(MaybeRetainDB(*dbptr, *handles));
   Status s;
   if (nullptr == tmp_opts.info_log) {
     s = CreateLoggerFromOptions(secondary_path, tmp_opts, &tmp_opts.info_log);

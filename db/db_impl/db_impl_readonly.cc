@@ -350,6 +350,7 @@ Status DBImplReadOnly::OpenForReadOnlyWithoutCheck(
   MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
       const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
       dbname);
+  ROCKSDB_SCOPE_EXIT(MaybeRetainDB(*dbptr, *handles));
 
   SuperVersionContext sv_context(/* create_superversion */ true);
   DBImplReadOnly* impl = new DBImplReadOnly(db_options, dbname);
