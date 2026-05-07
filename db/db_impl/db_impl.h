@@ -2813,6 +2813,8 @@ extern bool MaybeOptionsUpdateFrom
 (DBOptions*, std::vector<ColumnFamilyDescriptor>*, const std::string& dbpath);
 extern void MaybeRetainDB(DB*, const std::vector<ColumnFamilyHandle*>&);
 extern void MaybeForgetDB(DB*);
+extern void MaybeRetainCF(DB*, ColumnFamilyHandle*);
+extern void MaybeForgetCF(DB*, ColumnFamilyHandle*);
 
 extern Options SanitizeOptions(const std::string& db, const Options& src,
                                bool read_only = false,

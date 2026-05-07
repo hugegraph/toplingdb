@@ -4036,6 +4036,7 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
 
   MaybeCFOptionsUpdateFrom(const_cast<ColumnFamilyOptions*>(&cf_options),
                            column_family_name, dbname_);
+  ROCKSDB_SCOPE_EXIT(MaybeRetainCF(this, *handle));
   DBOptions db_options =
       BuildDBOptions(immutable_db_options_, mutable_db_options_);
   s = ColumnFamilyData::ValidateOptions(db_options, cf_options);
@@ -4160,6 +4161,8 @@ Status DBImpl::DropColumnFamilyImpl(ColumnFamilyHandle* column_family) {
   if (cfd->GetID() == 0) {
     return Status::InvalidArgument("Can't drop default column family");
   }
+
+  MaybeForgetCF(this, column_family);
 
   bool cf_support_snapshot = cfd->mem()->IsSnapshotSupported();
 
