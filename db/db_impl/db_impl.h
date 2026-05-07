@@ -2241,6 +2241,8 @@ public:
   SnapshotImpl* GetSnapshotImpl(SequenceNumber snapshot_seq,
                                 bool is_write_conflict_boundary,
                                 bool lock = true);
+  ColumnFamilyHandle* persist_stats_cf_handle() const { return persist_stats_cf_handle_; }
+
 protected:
 
   // If snapshot_seq != kMaxSequenceNumber, then this function can only be

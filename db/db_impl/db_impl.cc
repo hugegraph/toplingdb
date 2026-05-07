@@ -4021,6 +4021,10 @@ void DB_UpdateMaxColumnFamily(DB* db, uint32_t max_cf_id) {
   cfset->UpdateMaxColumnFamily(max_cf_id);
 }
 
+ColumnFamilyHandle* DB_persist_stats_cf_handle(const DB* db) {
+  return static_cast_with_check<const DBImpl>(db)->persist_stats_cf_handle();
+}
+
 Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
                                       const std::string& column_family_name,
                                       ColumnFamilyHandle** handle) {
