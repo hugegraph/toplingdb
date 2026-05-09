@@ -4546,6 +4546,10 @@ void rocksdb_readoptions_finish_pin(rocksdb_readoptions_t* opt) {
   return opt->rep.FinishPin();
 }
 
+unsigned char rocksdb_readoptions_is_in_pinning_section(rocksdb_readoptions_t* opt) {
+  return opt->rep.internal_is_in_pinning_section ? 1 : 0;
+}
+
 void rocksdb_readoptions_set_async_queue_depth(rocksdb_readoptions_t* opt, size_t v) {
   v = std::min(v, (size_t)1024);
   opt->rep.async_queue_depth = v;
