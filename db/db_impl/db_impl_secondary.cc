@@ -167,10 +167,12 @@ Status DBImplSecondary::MaybeInitLogReader(
           io_tracer_));
     }
 
-    bool wal_memtable_format = false;
-    if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
-                 (*fs_, fname, &wal_memtable_format); !ios.ok()) {
-      return Status(ios);
+    bool wal_memtable_format = immutable_db_options_.memtable_as_log_index;
+    if (immutable_db_options_.check_wal_format) {
+      if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
+                   (*fs_, fname, &wal_memtable_format); !ios.ok()) {
+        return Status(ios);
+      }
     }
 
     // Create the log reader.

@@ -1167,13 +1167,15 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       logFileDropped();
       continue;
     }
-    bool wal_memtable_format = false;
-    if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
-                       (*fs_, fname, &wal_memtable_format); !ios.ok()) {
-      auto info_log = immutable_db_options_.info_log.get();
-      ROCKS_LOG_WARN(info_log, "%s: %s", fname.c_str(), *ios.ToSSO());
-      logFileDropped();
-      continue;
+    bool wal_memtable_format = immutable_db_options_.memtable_as_log_index;
+    if (immutable_db_options_.check_wal_format) {
+      if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
+                   (*fs_, fname, &wal_memtable_format); !ios.ok()) {
+        auto info_log = immutable_db_options_.info_log.get();
+        ROCKS_LOG_WARN(info_log, "%s: %s", fname.c_str(), *ios.ToSSO());
+        logFileDropped();
+        continue;
+      }
     }
 
     std::unique_ptr<SequentialFileReader> file_reader;

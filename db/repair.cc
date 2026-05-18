@@ -401,10 +401,12 @@ class Repairer {
     std::string scratch;
     Slice record;
     WriteBatch batch;
-    bool wal_memtable_format = false;
-    if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
-                       (*fs, logname, &wal_memtable_format); !ios.ok()) {
-        return Status(ios);
+    bool wal_memtable_format = db_options_.memtable_as_log_index;
+    if (db_options_.check_wal_format) {
+      if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
+                         (*fs, logname, &wal_memtable_format); !ios.ok()) {
+          return Status(ios);
+      }
     }
     if (wal_memtable_format) {
       reader.InitSetMemTableAsLogIndex(*fs);
