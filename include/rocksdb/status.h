@@ -29,6 +29,7 @@
 #endif
 
 #include "rocksdb/slice.h"
+#include <terark/sso.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -495,6 +496,7 @@ class Status {
   // Return a string representation of this status suitable for printing.
   // Returns the string "OK" for success.
   std::string ToString() const;
+  terark::minimal_sso<32> ToSSO() const;
 
   void swap(Status& y) {
     static_assert(sizeof(Status) == 2*sizeof(uint64_t));
