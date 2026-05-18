@@ -1173,8 +1173,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
                    (*fs_, fname, &wal_memtable_format); !ios.ok()) {
         auto info_log = immutable_db_options_.info_log.get();
         ROCKS_LOG_WARN(info_log, "%s: %s", fname.c_str(), *ios.ToSSO());
-        logFileDropped();
-        continue;
+        return Status(ios);
       }
     }
 
