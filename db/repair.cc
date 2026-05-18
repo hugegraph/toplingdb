@@ -405,7 +405,9 @@ class Repairer {
     if (db_options_.check_wal_format) {
       if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
                          (*fs, logname, &wal_memtable_format); !ios.ok()) {
-          return Status(ios);
+        ROCKS_LOG_WARN(db_options_.info_log, "%s: %s",
+                       logname.c_str(), *ios.ToSSO());
+        return Status(ios);
       }
     }
     if (wal_memtable_format) {
