@@ -485,9 +485,14 @@ Status WalManager::ReadFirstLine(const std::string& fname,
   reporter.fname = fname.c_str();
   reporter.status = &status;
   reporter.ignore_error = !db_options_.paranoid_checks;
+  bool wal_memtable_format = false;
+  if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
+            (*db_options_.fs, fname, &wal_memtable_format); !ios.ok()) {
+    return Status(ios);
+  }
   log::Reader reader(db_options_.info_log, std::move(file_reader), &reporter,
                      true /*checksum*/, number);
-  if (db_options_.memtable_as_log_index) {
+  if (wal_memtable_format) {
     reader.InitSetMemTableAsLogIndex(*db_options_.fs);
   }
   std::string scratch;

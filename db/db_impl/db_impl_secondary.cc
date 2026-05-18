@@ -167,11 +167,17 @@ Status DBImplSecondary::MaybeInitLogReader(
           io_tracer_));
     }
 
+    bool wal_memtable_format = false;
+    if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
+                 (*fs_, fname, &wal_memtable_format); !ios.ok()) {
+      return Status(ios);
+    }
+
     // Create the log reader.
     LogReaderContainer* log_reader_container = new LogReaderContainer(
         env_, immutable_db_options_.info_log, fname,
         std::move(file_reader), log_number);
-    if (immutable_db_options_.memtable_as_log_index) {
+    if (wal_memtable_format) {
       // will tailing log Reader, so must preserve mmap size
       auto mmap_size = GetMaxTotalWalSize() + 8*1024*1024;
       if (mmap_size > (1ull << 40)) {

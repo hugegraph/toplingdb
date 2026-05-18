@@ -288,10 +288,16 @@ Status TransactionLogIteratorImpl::OpenLogReader(const LogFile* log_file) {
     return s;
   }
   assert(file);
+  const std::string& fname = file->file_name();
+  bool wal_memtable_format = false;
+  if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
+               (*options_->fs, fname, &wal_memtable_format); !ios.ok()) {
+    return Status(ios);
+  }
   current_log_reader_.reset(
       new log::Reader(options_->info_log, std::move(file), &reporter_,
                       read_options_.verify_checksums_, log_file->LogNumber()));
-  if (options_->memtable_as_log_index) {
+  if (wal_memtable_format) {
     current_log_reader_->InitSetMemTableAsLogIndex(*options_->fs);
   }
   return Status::OK();
