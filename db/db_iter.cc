@@ -2008,9 +2008,9 @@ void DBIter::Seek(const Slice& target) {
   if (statistics_ != nullptr) {
     // Decrement since we don't want to count this key as skipped
     RecordTick(statistics_, NUMBER_DB_SEEK_FOUND);
-    RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
+    RecordTick(statistics_, ITER_BYTES_READ, key().size());
   }
-  PERF_COUNTER_ADD(iter_read_bytes, key().size() + value().size());
+  PERF_COUNTER_ADD(iter_read_bytes, key().size());
   //local_stats_.BumpGlobalStatistics(statistics_);
 }
 
