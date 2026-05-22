@@ -1887,7 +1887,7 @@ struct ReadOptions {
     ~ScopePinIfNotPinned() { if (ro_) ro_->FinishPin(); }
   };
 
-  ReadOptions() {}
+  ReadOptions();
   ReadOptions(bool _verify_checksums, bool _fill_cache);
   explicit ReadOptions(Env::IOActivity _io_activity);
   ReadOptions(const ReadOptions&, BooleanDontCopyTrue/*dispatch_tag*/);
