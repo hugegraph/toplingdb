@@ -450,6 +450,8 @@ ifndef WITH_TOPLING_ROCKS
   else
     ifeq (,$(wildcard sideplugin/topling-rocks/src/table/top_patent_algo.cc))
       dummy := $(shell rm -rf sideplugin/topling-rocks)
+      dummy := $(shell rm -rf sideplugin/cspp-memtable/cspp_memtable.cc)
+               # check with topling-rocks, not graceful, just works
     endif
   endif
   # default 1
@@ -495,14 +497,35 @@ else
   endif
 endif
 
-ifneq (,$(wildcard sideplugin/cspp-memtable))
-  # now we have cspp-memtable
-  CXXFLAGS   += -DHAS_TOPLING_CSPP_MEMTABLE
-  CSPP_MEMTABLE_GIT_VER_SRC = ${BUILD_ROOT}/git-version-cspp_memtable.cc
-  EXTRA_LIB_SOURCES += sideplugin/cspp-memtable/cspp_memtable.cc \
-                       sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}
+WITH_CSPP_MEMTABLE ?= 1 # allow override by env or cmd line
+
+ifeq (${WITH_CSPP_MEMTABLE}${WITH_TOPLING_ROCKS},10)
+  $(error "When WITH_CSPP_MEMTABLE is 1, WITH_TOPLING_ROCKS must be 1 also")
+endif
+
+ifneq (,$(wildcard sideplugin/cspp-memtable/cspp_memtable.cc))
+  ifeq (${WITH_CSPP_MEMTABLE},0)
+    $(warning cspp-memtable exists but intentional disabled)
+  else
+    # now we have cspp-memtable
+    CXXFLAGS   += -DHAS_TOPLING_CSPP_MEMTABLE
+    CSPP_MEMTABLE_GIT_VER_SRC = ${BUILD_ROOT}/git-version-cspp_memtable.cc
+    ifeq (,${TOPLING_ZIP_TABLE_TRIAL_DAYS})
+      EXTRA_LIB_SOURCES += sideplugin/cspp-memtable/cspp_memtable.cc \
+                           sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}
+    else
+      # no CSPP_MEMTABLE_GIT_VER_SRC
+      EXTRA_LIB_SOURCES += sideplugin/topling-zip_table_reader/cspp_memtable.cc
+    endif
+  endif
 else
-  $(warning NotFound sideplugin/cspp-memtable, this is ok, only Topling CSPP MemTab is disabled)
+  ifeq (${WITH_CSPP_MEMTABLE},0)
+    $(warning cspp-memtable does not exist, intentional disabled, not use trial)
+  else
+    # use dir topling-zip_table_reader, not graceful, just works
+    # this file does not exist, just for generating filepath cspp_memtable.o
+    EXTRA_LIB_SOURCES += sideplugin/topling-zip_table_reader/cspp_memtable.cc
+  endif
 endif
 
 ifneq (,$(wildcard sideplugin/cspp-wbwi))
@@ -2667,9 +2690,14 @@ install: install-${LIB_MODE}
 install-dev-static: install-headers install-static
 install-dev-shared: install-headers install-shared
 install-dev: install-dev-${LIB_MODE}
-upload-trial: ${OBJ_DIR}/sideplugin/topling-zip_table_reader/top_zip_table_builder.o
+upload-trial: \
+  ${OBJ_DIR}/sideplugin/topling-zip_table_reader/top_zip_table_builder.o \
+  ${OBJ_DIR}/sideplugin/topling-zip_table_reader/cspp_memtable.o
 	ossutil cp --region=cn-qingdao -f \
 		$(OBJ_DIR)/sideplugin/topling-zip_table_reader/top_zip_table_builder.o \
+		oss://topling-tools/${TRIAL_urldir}/
+	ossutil cp --region=cn-qingdao -f \
+		$(OBJ_DIR)/sideplugin/topling-zip_table_reader/cspp_memtable.o \
 		oss://topling-tools/${TRIAL_urldir}/
 
 install-dcompact: install dcompact_worker
@@ -3334,11 +3362,22 @@ ${OBJ_DIR}/sideplugin/topling-zip_table_reader/top_zip_table_builder.o:
 endif
 endif
 
-ifneq (,$(wildcard sideplugin/cspp-memtable))
+ifneq (,$(wildcard sideplugin/cspp-memtable/cspp_memtable.cc))
 sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}: \
   sideplugin/cspp-memtable/cspp_memtable.cc \
   sideplugin/cspp-memtable/Makefile
 	+make -C sideplugin/cspp-memtable ${CSPP_MEMTABLE_GIT_VER_SRC}
+sideplugin/topling-zip_table_reader/cspp_memtable.cc: \
+  sideplugin/cspp-memtable/cspp_memtable.cc \
+  sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}
+	@rm -f sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}
+	+make -C sideplugin/cspp-memtable ${CSPP_MEMTABLE_GIT_VER_SRC}
+else
+${OBJ_DIR}/sideplugin/topling-zip_table_reader/cspp_memtable.o:
+	@mkdir -p $(dir $@)
+	@cd $(dir $@) && \
+	 wget https://topling-tools.oss-cn-qingdao.aliyuncs.com/${TRIAL_urldir}/cspp_memtable.o || \
+	 echo 'Download cspp_memtable fail, add WITH_CSPP_MEMTABLE=0 to make command and try again'
 endif
 ifneq (,$(wildcard sideplugin/cspp-wbwi))
 sideplugin/cspp-wbwi/${CSPP_WBWI_GIT_VER_SRC}: \
