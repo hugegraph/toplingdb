@@ -550,6 +550,7 @@ struct BytewiseCmpNoTS {
     // return x < y;
     ROCKSDB_ASSERT_EQ(x.size(), y.size());
     ROCKSDB_ASSERT_LE(x.size(), 64);
+    ROCKSDB_ASSERT_GT(x.size(), 0);
     __mmask64 msk = _bzhi_u64(-1, x.size());
     __m512i   xxx = _mm512_maskz_loadu_epi8(msk, x.data());
     __m512i   yyy = _mm512_maskz_loadu_epi8(msk, y.data());
