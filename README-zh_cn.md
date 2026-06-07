@@ -18,6 +18,7 @@ sudo make install PREFIX=/some/path # default is /usr/local
 下载解压或者自行编译后，运行 [db_bench.sh](db_bench.sh)(需要[端口 2011](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4 "内嵌的 http web 服务使用端口 2011"))，然后使用 ToplingDB：[原生 C++](https://github.com/topling/rockside/wiki/101 "典型场景是从 rocksdb 迁移过来)")，也支持 [Java](https://github.com/topling/rockside/wiki/SidePlugin-Java-Binding "内置在本 github 仓库中") 和 [Rust](https://github.com/topling/rust-toplingdb "另外的专门的 github 仓库")。
 
 > 自己编译开源版时会自动下载预编译的试用版(90天) ToplingZipTable，如果下载失败，可以给 `make` 传递变量 `WITH_TOPLING_ROCKS=0` 禁用它(或[联系我们](mailto:contact@topling.cn))。
+> CSPP-MemTable 也是以这种方式分发的。
 
 ## 简单介绍
 ToplingDB 的子模块 **[rockside](https://github.com/topling/rockside)** 是 ToplingDB 的入口，详情参考 **[SidePlugin wiki](https://github.com/topling/rockside/wiki)**。
@@ -64,7 +65,7 @@ toplingdb
 [ToplingDB](https://github.com/topling/toplingdb) | public | 顶级仓库，分叉自 [RocksDB](https://github.com/facebook/rocksdb)，增加了我们的改进与修复
 [rockside](https://github.com/topling/rockside) | public | ToplingDB 子模块，包含：<ul><li>SidePlugin 框架和内置插件</li><li>内嵌的 Http 服务和 Prometheus 指标</li></ul>
 [cspp-wbwi<br>(**W**rite**B**atch**W**ith**I**ndex)](https://github.com/topling/cspp-wbwi) | public | 使用 Topling CSPP Trie 实现的 **CSPP_WBWI** 相比 rocksdb SkipList WBWI 最多有 20 倍以上的性能提升
-[cspp-memtable](https://github.com/topling/cspp-memtable) | public | (**CSPP** is **C**rash **S**afe **P**arallel **P**atricia trie) MemTab, 相比 SkipList：内存用量更低，单线程性能提升 7 倍，多线程线性提升，可[直接转化为 SST](https://github.com/topling/cspp-memtable#%E4%BA%8Cmemtable-%E7%9B%B4%E6%8E%A5%E8%BD%AC%E5%8C%96%E6%88%90-sst)
+[cspp-memtable](https://github.com/topling/rockside/wiki/CSPP-MemTable) | **private** | (**CSPP** is **C**rash **S**afe **P**arallel **P**atricia trie) MemTab, 相比 SkipList：内存用量更低，单线程性能提升 7 倍，多线程线性提升，可[直接转化为 SST](https://github.com/topling/cspp-memtable#%E4%BA%8Cmemtable-%E7%9B%B4%E6%8E%A5%E8%BD%AC%E5%8C%96%E6%88%90-sst)
 [topling-sst](https://github.com/topling/topling-sst) | public | 1. [SingleFastTable](https://github.com/topling/rockside/wiki/SingleFastTable)(主要用于 L0 和 L1)<br/> 2. VecAutoSortTable(主要用于 MyTopling bulk_load).<br/> 3. 已弃用：[ToplingFastTable](https://github.com/topling/rockside/wiki/ToplingFastTable), CSPPAutoSortTable
 [topling-dcompact](https://github.com/topling/topling-dcompact) | public | 分布式 Compact 与通用的 dcompact_worker 程序, 将 Compact 转移到弹性计算集群。<br/>相比 RocksDB 自身的 Remote Compaction，ToplingDB 的分布式 Compact 功能完备，使用便捷，对上层应用非常友好
 [topling-rocks](https://github.com/topling/topling-rocks) | **private** | 创建 [Topling**Zip**Table](https://github.com/topling/rockside/wiki/ToplingZipTable)，基于 Topling 可检索内存压缩算法的 SST，压缩率更高，且内存占用更低，一般用于 L2 及更深层 SST

@@ -19,6 +19,7 @@ sudo make install PREFIX=/some/path # default is /usr/local
 After download+uncompress or compile, you can run bundled [db_bench.sh](db_bench.sh)(need [port 2011](https://github.com/topling/rockside/blob/master/sample-conf/db_bench_enterprise.yaml#L4 "use port 2011 for embeded http server")), then use ToplingDB [in C++](https://github.com/topling/sideplugin-wiki-en/wiki/101 "maybe migrate from rocksdb"), or in [Java](https://github.com/topling/sideplugin-wiki-en/wiki/SidePlugin-Java-Binding "Bundled in this repo"), [Rust](https://github.com/topling/rust-toplingdb "A seperated repo").
 
 > During compiling, precompiled ToplingZipTable(90 days trial) will be auto downloaded, if download failed, you can pass `WITH_TOPLING_ROCKS=0` to `make` to disalbe it(or [contact us](mailto:contact@topling.cn)).
+> CSPPMemTable is also distributed this way.
 
 ## Introduction
 ToplingDB's submodule **[rockside](https://github.com/topling/rockside)** is the entry point of ToplingDB, see **[SidePlugin wiki](https://github.com/topling/sideplugin-wiki-en/wiki)**.
@@ -68,7 +69,7 @@ toplingdb
 [ToplingDB](https://github.com/topling/toplingdb) | public | Top repository, forked from [RocksDB](https://github.com/facebook/rocksdb) with our fixes, refactories and enhancements
 [rockside](https://github.com/topling/rockside) | public | This is a submodule, contains:<ul><li>SidePlugin framework and Builtin SidePlugin**s**</li><li>Embedded Http Server and Prometheus metrics</li></ul>
 [cspp-wbwi<br>(**W**rite**B**atch**W**ith**I**ndex)](https://github.com/topling/cspp-wbwi) | public | With CSPP and carefully coding, **CSPP_WBWI** is 20x faster than rocksdb SkipList based WBWI
-[cspp-memtable](https://github.com/topling/cspp-memtable/blob/memtable_as_log_index/README_EN.md) | public | (**CSPP** is **C**rash **S**afe **P**arallel **P**atricia trie) MemTab, which outperforms SkipList on all aspects: 3x lower memory usage, 7x single thread performance, perfect multi-thread scaling)
+[cspp-memtable](https://github.com/topling/sideplugin-wiki-en/wiki/CSPP-MemTable) | **private** | (**CSPP** is **C**rash **S**afe **P**arallel **P**atricia trie) MemTab, which outperforms SkipList on all aspects: 3x lower memory usage, 7x single thread performance, perfect multi-thread scaling
 [topling-sst](https://github.com/topling/topling-sst) | public | 1. [SingleFastTable](https://github.com/topling/sideplugin-wiki-en/wiki/SingleFastTable)(designed for L0 and L1)<br/> 2. VecAutoSortTable(designed for MyTopling bulk_load).<br/> 3. Deprecated [ToplingFastTable](https://github.com/topling/sideplugin-wiki-en/wiki/ToplingFastTable), CSPPAutoSortTable
 [topling-dcompact](https://github.com/topling/topling-dcompact) | public | Distributed Compaction with general dcompact_worker application, offload compactions to elastic computing clusters, much more powerful than RocksDB's Remote Compaction
 [topling-rocks](https://github.com/topling/topling-rocks) | **private** | For build [Topling**Zip**Table](https://github.com/topling/sideplugin-wiki-en/wiki/ToplingZipTable), an SST implementation optimized for RAM and SSD space, aimed for L2+ level compaction, which uses topling dedicated searchable in-memory data compression algorithms
