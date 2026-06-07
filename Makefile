@@ -3320,7 +3320,11 @@ sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}: \
   sideplugin/topling-rocks/Makefile \
   $(shell find sideplugin/topling-rocks/{src,tools} -name '*.cc' -o -name '*.h')
 	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC}
-sideplugin/topling-zip_table_reader/top_zip_table_builder.cc: sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
+sideplugin/topling-zip_table_reader/top_zip_table_builder.cc: \
+ sideplugin/topling-rocks/src/table/top_zip_table_builder.cc \
+ sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
+	@rm -f sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
+	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC}
 else
 ${OBJ_DIR}/sideplugin/topling-zip_table_reader/top_zip_table_builder.o:
 	@mkdir -p $(dir $@)
