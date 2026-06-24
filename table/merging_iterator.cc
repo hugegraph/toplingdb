@@ -431,7 +431,7 @@ class MinHeapBytewiseComp {
     __m256i   b256 = _mm256_maskz_loadu_epi8(mask, &b.key_prefix); \
     __mmask32 cneq = _mm256_cmpneq_epi8_mask(a256, b256);          \
     if (LIKELY(cneq != 0)) {                                       \
-      __mmask32 cmp = _mm256_cmp##cmp##_epi8_mask(a256, b256);     \
+      __mmask32 cmp = _mm256_cmp##cmp##_epu8_mask(a256, b256);     \
       return (cmp & -cneq) != 0;                                   \
     }
 //-------------------------------------------------------------------

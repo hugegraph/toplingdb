@@ -555,7 +555,7 @@ struct BytewiseCmpNoTS {
     __m512i   xxx = _mm512_maskz_loadu_epi8(msk, x.data());
     __m512i   yyy = _mm512_maskz_loadu_epi8(msk, y.data());
     __mmask64 neq = _mm512_cmpneq_epi8_mask(xxx, yyy);
-    __mmask64 lt  = _mm512_cmplt_epi8_mask (xxx, yyy);
+    __mmask64 lt  = _mm512_cmplt_epu8_mask (xxx, yyy);
     return (lt & -neq) != 0;
   }
  #endif
