@@ -1611,7 +1611,7 @@ MergingIterMethod(void)SeekForPrevImpl(const Slice& target,
     PERF_TIMER_GUARD(seek_max_heap_time);
     AddToMaxHeapOrCheckStatus(&children_[level]);
   }
-  if (!range_tombstone_iters_.empty()) {
+  if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
     // Add range tombstones before starting_level.
     for (size_t level = 0; level < starting_level; ++level) {
       if (range_tombstone_iters_[level] &&
@@ -1872,7 +1872,7 @@ MergingIterMethod(void)SwitchToForward() {
   // Previous direction is backward, so range tombstone iter may point to a
   // tombstone before current_. If there is no such tombstone, then the range
   // tombstone iter is !Valid(). Need to reseek here to make it valid again.
-  if (!range_tombstone_iters_.empty()) {
+  if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
     ParsedInternalKey pik(target);
     for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
       auto iter = range_tombstone_iters_[i];
