@@ -302,7 +302,7 @@ TEST_F(DBMemTableTest, ConcurrentMergeWrite) {
   Status status;
   ReadOptions roptions;
   SequenceNumber max_covering_tombstone_seq = 0;
-  LookupKey lkey("key", kMaxSequenceNumber);
+  ParsedInternalKey lkey("key", kMaxSequenceNumber, kValueTypeForSeek);
   PinnableSlice pin;
   bool res = mem->Get(lkey, &pin, /*columns=*/nullptr, /*timestamp=*/nullptr,
                       &status, &merge_context, &max_covering_tombstone_seq,

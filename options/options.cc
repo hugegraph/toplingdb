@@ -718,6 +718,9 @@ DBOptions* DBOptions::IncreaseParallelism(int total_threads) {
 static const bool g_cache_sst_file_iter =
     terark::getEnvBool("TOPLINGDB_CACHE_SST_FILE_ITER", false);
 
+ReadOptions::ReadOptions() {
+  cache_sst_file_iter = g_cache_sst_file_iter;
+}
 ReadOptions::ReadOptions(bool _verify_checksums, bool _fill_cache)
     : verify_checksums(_verify_checksums), fill_cache(_fill_cache) {
   cache_sst_file_iter = g_cache_sst_file_iter;

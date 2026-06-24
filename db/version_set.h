@@ -101,6 +101,9 @@ using VersionEditParams = VersionEdit;
 extern int FindFile(const InternalKeyComparator& icmp,
                     const LevelFilesBrief& file_level, const Slice& key);
 
+extern int FindFile(const InternalKeyComparator& icmp,
+                    const LevelFilesBrief& file_level, const ParsedInternalKey&);
+
 // Returns true iff some file in "files" overlaps the user key range
 // [*smallest,*largest].
 // smallest==nullptr represents a key smaller than all keys in the DB.
@@ -894,7 +897,9 @@ class Version {
   //    merge_context.operands_list and don't merge the operands
   // REQUIRES: lock is not held
   // REQUIRES: pinned_iters_mgr != nullptr
-  void Get(const ReadOptions& ro, const LookupKey& key, PinnableSlice* value,
+  template<class PerfStepTimer = ROCKSDB_NAMESPACE::PerfStepTimer,
+           class StopWatchNano = ROCKSDB_NAMESPACE::StopWatchNano>
+  void Get(const ReadOptions& ro, const ParsedInternalKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* status,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
@@ -903,14 +908,18 @@ class Version {
            SequenceNumber* seq = nullptr, ReadCallback* callback = nullptr,
            bool* is_blob = nullptr, bool do_merge = true)
   {
-    return m_get(this, ro, key, value, columns, timestamp, status,
+    auto f_get = std::is_same_v<StopWatchNano, FakeStopWatch>
+               ? m_get_no_watch : m_get;
+    return f_get(this, ro, key, value, columns, timestamp, status,
                  merge_context, max_covering_tombstone_seq, pinned_iters_mgr,
                  value_found, key_exists, seq, callback, is_blob, do_merge);
   }
 
 private:
-  template<class UKCmp, class IKCmp>
-  void GetInst(const ReadOptions&, const LookupKey& key, PinnableSlice* value,
+  template<class UKCmp, class IKCmp,
+           class PerfStepTimer = ROCKSDB_NAMESPACE::PerfStepTimer,
+           class StopWatchNano = ROCKSDB_NAMESPACE::StopWatchNano>
+  void GetInst(const ReadOptions&, const ParsedInternalKey&, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* status,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
@@ -920,7 +929,7 @@ private:
            bool* is_blob, bool do_merge);
 
   void (*m_get)(Version*,
-           const ReadOptions&, const LookupKey& key, PinnableSlice* value,
+           const ReadOptions&, const ParsedInternalKey&, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* status,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
@@ -928,6 +937,7 @@ private:
            bool* value_found, bool* key_exists,
            SequenceNumber* seq, ReadCallback* callback,
            bool* is_blob, bool do_merge);
+  decltype(m_get) m_get_no_watch;
 
 public:
 

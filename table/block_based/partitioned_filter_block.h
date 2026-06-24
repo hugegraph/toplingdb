@@ -138,6 +138,12 @@ class PartitionedFilterBlockReader
   BlockHandle GetFilterPartitionHandle(
       const CachableEntry<Block_kFilterPartitionIndex>& filter_block,
       const Slice& entry) const;
+  BlockHandle GetFilterPartitionHandle(
+      const CachableEntry<Block_kFilterPartitionIndex>& filter_block,
+      const ParsedInternalKey& entry) const {
+    // overload this function can minimize diff, the caller need not change
+    return GetFilterPartitionHandle(filter_block, entry.MakeInternalKeyBuf());
+  }
   Status GetFilterPartitionBlock(
       FilePrefetchBuffer* prefetch_buffer, const BlockHandle& handle,
       bool no_io, GetContext* get_context,

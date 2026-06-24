@@ -160,4 +160,8 @@ std::string Status::ToString() const {
   return result;
 }
 
+terark::minimal_sso<32> Status::ToSSO() const {
+  return terark::minimal_sso<32>{ToString()};
+}
+
 }  // namespace ROCKSDB_NAMESPACE

@@ -417,6 +417,7 @@ TEST_P(BlockBasedTableReaderTest, MultiGet) {
   autovector<GetContext, MultiGetContext::MAX_BATCH_SIZE> get_context;
   autovector<KeyContext, MultiGetContext::MAX_BATCH_SIZE> key_context;
   autovector<KeyContext*, MultiGetContext::MAX_BATCH_SIZE> sorted_keys;
+  get_context.reserve(keys.size());
   for (size_t i = 0; i < keys.size(); ++i) {
     get_context.emplace_back(options.comparator, nullptr, nullptr, nullptr,
                              GetContext::kNotFound, ExtractUserKey(keys[i]),

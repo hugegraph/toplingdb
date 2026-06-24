@@ -154,11 +154,6 @@ void Java_org_rocksdb_Transaction_rollbackToSavePoint(JNIEnv* env,
   }
 }
 
-typedef std::function<ROCKSDB_NAMESPACE::Status(
-    const ROCKSDB_NAMESPACE::ReadOptions&, const ROCKSDB_NAMESPACE::Slice&,
-    std::string*)>
-    FnGet;
-
 /*
  * Class:     org_rocksdb_Transaction
  * Method:    get

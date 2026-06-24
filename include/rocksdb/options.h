@@ -925,6 +925,18 @@ struct DBOptions {
 
   bool memtable_as_log_index = false;
 
+  // If true, each WAL file is probed on DB open to auto-detect its on-disk
+  // format, so recovery works even when memtable_as_log_index was changed
+  // between runs.
+  //
+  // Defaults to false because the probe relies on CRC32 self-consistency
+  // rather than a magic number to distinguish the two formats, which carries
+  // a 1/2^32 false-positive risk per file. Always probing would expose this
+  // risk on every open; turning this on only when needed reduces the
+  // exposure by orders of magnitude (only when a format switch actually
+  // occurred).
+  bool check_wal_format = false;
+
   // if not zero, periodically take stats snapshots and store in memory, the
   // memory size for stats snapshots is capped at stats_history_buffer_size
   // Default: 1MB
@@ -1875,7 +1887,7 @@ struct ReadOptions {
     ~ScopePinIfNotPinned() { if (ro_) ro_->FinishPin(); }
   };
 
-  ReadOptions() {}
+  ReadOptions();
   ReadOptions(bool _verify_checksums, bool _fill_cache);
   explicit ReadOptions(Env::IOActivity _io_activity);
   ReadOptions(const ReadOptions&, BooleanDontCopyTrue/*dispatch_tag*/);

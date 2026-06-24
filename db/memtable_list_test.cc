@@ -34,6 +34,12 @@ static auto g_cspp_fac = []()-> std::shared_ptr<MemTableRepFactory> {
   return nullptr;
 }();
 
+struct HideLookupKey : ParsedInternalKey {
+  HideLookupKey(Slice uk, uint64_t seq) :
+    ParsedInternalKey(uk, seq, kValueTypeForSeek) {}
+};
+#define LookupKey HideLookupKey
+
 class MemTableListTest : public testing::Test {
  public:
   std::string dbname;

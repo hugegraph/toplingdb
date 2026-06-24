@@ -28,6 +28,8 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+using terark::_rvref;
+
 struct WriteOptions;
 
 std::atomic<TransactionID> PessimisticTransaction::txn_id_counter_(1);
@@ -692,7 +694,7 @@ Status WriteCommittedTxn::CommitWithoutPrepareInternal() {
     Slice commit_ts(commit_ts_buf, sizeof(commit_ts_buf));
 
     Status s =
-        wb->UpdateTimestamps(commit_ts, [wbwi, this](uint32_t cf) -> size_t {
+        wb->UpdateTimestamps(commit_ts, _rvref*[wbwi, this](uint32_t cf) -> size_t {
           auto cf_iter = cfs_with_ts_tracked_when_indexing_disabled_.find(cf);
           if (cf_iter != cfs_with_ts_tracked_when_indexing_disabled_.end()) {
             return sizeof(kMaxTxnTimestamp);
@@ -776,7 +778,7 @@ Status WriteCommittedTxn::CommitInternal() {
     s = WriteBatchInternal::MarkCommitWithTimestamp(working_batch, name_,
                                                     commit_ts);
     if (s.ok()) {
-      s = wb->UpdateTimestamps(commit_ts, [wbwi, this](uint32_t cf) -> size_t {
+      s = wb->UpdateTimestamps(commit_ts, _rvref*[wbwi, this](uint32_t cf) -> size_t {
         if (cfs_with_ts_tracked_when_indexing_disabled_.find(cf) !=
             cfs_with_ts_tracked_when_indexing_disabled_.end()) {
           return sizeof(kMaxTxnTimestamp);

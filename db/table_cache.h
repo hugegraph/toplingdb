@@ -116,7 +116,7 @@ class TableCache {
   Status Get(
       const ReadOptions& options,
       const InternalKeyComparator& internal_comparator,
-      const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
+      const FileMetaData& file_meta, const ParsedInternalKey& k, GetContext* get_context,
       uint8_t block_protection_bytes_per_key,
       const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
       HistogramImpl* file_read_hist = nullptr, bool skip_filters = false,
@@ -136,7 +136,7 @@ private:
   Status GetWithRowCache(
       const ReadOptions& options,
       const InternalKeyComparator& internal_comparator,
-      const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
+      const FileMetaData& file_meta, const ParsedInternalKey&, GetContext*,
       uint8_t block_protection_bytes_per_key,
       const std::shared_ptr<const SliceTransform>& prefix_extractor,
       HistogramImpl* file_read_hist, bool skip_filters,
@@ -144,7 +144,7 @@ private:
   Status GetNoneRowCache(
       const ReadOptions& options,
       const InternalKeyComparator& internal_comparator,
-      const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
+      const FileMetaData& file_meta, const ParsedInternalKey&, GetContext*,
       uint8_t block_protection_bytes_per_key,
       const std::shared_ptr<const SliceTransform>& prefix_extractor,
       HistogramImpl* file_read_hist, bool skip_filters,
@@ -329,7 +329,8 @@ __always_inline
 Status TableCache::GetNoneRowCache(
     const ReadOptions& options,
     const InternalKeyComparator& internal_comparator,
-    const FileMetaData& file_meta, const Slice& k, GetContext* get_context,
+    const FileMetaData& file_meta, const ParsedInternalKey& pik,
+    GetContext* get_context,
     uint8_t block_protection_bytes_per_key,
     const std::shared_ptr<const SliceTransform>& prefix_extractor,
     HistogramImpl* file_read_hist, bool skip_filters, int level,
@@ -355,19 +356,21 @@ Status TableCache::GetNoneRowCache(
     std::unique_ptr<FragmentedRangeTombstoneIterator> range_del_iter(
         t->NewRangeTombstoneIterator(options));
     if (range_del_iter != nullptr) {
-      auto seq = range_del_iter->MaxCoveringTombstoneSeqnum(ExtractUserKey(k));
+      auto seq = range_del_iter->MaxCoveringTombstoneSeqnum(pik.user_key);
       if (seq > *max_covering_tombstone_seq) {
         *max_covering_tombstone_seq = seq;
+       #if defined(TOPLINGDB_WITH_TIMESTAMP)
         if (get_context->NeedTimestamp()) {
           get_context->SetTimestampFromRangeTombstone(range_del_iter->timestamp());
         }
+       #endif
       }
     }
   }
   if (LIKELY(handle == nullptr)) { // optimize for compiler tail call
-    return t->Get(options, k, get_context, prefix_extractor.get(), skip_filters);
+    return t->GetPIK(options, pik, get_context, prefix_extractor.get(), skip_filters);
   } else {
-    Status s = t->Get(options, k, get_context, prefix_extractor.get(), skip_filters);
+    Status s = t->GetPIK(options, pik, get_context, prefix_extractor.get(), skip_filters);
     cache_.Release(handle);
     return s;
   }

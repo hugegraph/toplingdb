@@ -8,10 +8,10 @@ cp sideplugin/rockside/src/topling/web/{index.html,style.css} /dev/shm/db_bench_
 
 export TOPLINGDB_GetContext_sampling=kNone
 export ROCKSDB_KICK_OUT_OPTIONS_FILE=1
+export TOPLINGDB_EASY_MIGRATE_CONF=sideplugin/rockside/sample-conf/db_bench_enterprise.yaml
 #export PRINT_NOT_FOUND=true
 ulimit -n 100000
 args=(
-    -json sideplugin/rockside/sample-conf/db_bench_enterprise.yaml
    #-num=10000000
     -key_size=8
    #-value_size=2000

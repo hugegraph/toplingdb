@@ -109,9 +109,28 @@ namespace {
 #define __builtin_prefetch(ptr)
 #endif
 
+inline uint64_t HostPrefixCache(const ParsedInternalKey& ikey) {
+  if (LIKELY(ikey.user_key.size_ >= 8)) {
+    uint64_t data = GetUnalignedU64(ikey.user_key.data_);
+    return NativeOfBigEndian64(data);
+  } else {
+   #if defined(__AVX512VL__) && defined(__AVX512BW__)
+    //#pragma message "__AVX512VL__ && __AVX512BW__, use _mm_maskz_loadu_epi8"
+    // load 128 bits, keep low 64 bits, discard high 64 bits
+    auto mask = _bzhi_u32(-1, uint32_t(ikey.user_key.size_));
+    auto m128 = _mm_maskz_loadu_epi8(mask, ikey.user_key.data_);
+    uint64_t data = (uint64_t)_mm_extract_epi64(m128, 0);
+   #else
+    uint64_t data = 0;
+    memcpy(&data, ikey.user_key.data_, ikey.user_key.size_);
+   #endif
+    return NativeOfBigEndian64(data);
+  }
+}
+
 template<class Cmp>
 size_t FindFileInRangeTmpl(Cmp cmp, const LevelFilesBrief& brief,
-                           Slice key, size_t lo, size_t hi) {
+                           const ParsedInternalKey& key, size_t lo, size_t hi) {
   const uint64_t* pxcache = brief.prefix_cache;
   const uint64_t  key_prefix = HostPrefixCache(key);
   const FdWithKeyRange* a = brief.files;
@@ -141,7 +160,7 @@ size_t FindFileInRangeTmpl(Cmp cmp, const LevelFilesBrief& brief,
 
 static
 size_t FindFileInRangeTmpl(FallbackVirtCmp cmp, const LevelFilesBrief& brief,
-                           Slice key, size_t lo, size_t hi) {
+                           const ParsedInternalKey& key, size_t lo, size_t hi) {
   const FdWithKeyRange* a = brief.files;
   while (lo < hi) {
     size_t mid = (lo + hi) / 2;
@@ -157,7 +176,7 @@ template<class Cmp>
 static ROCKSDB_FLATTEN
 int FindFileInRangeInst(const InternalKeyComparator* icmp,
                         const LevelFilesBrief& brief,
-                        Slice key, size_t lo, size_t hi) {
+                        const ParsedInternalKey& key, size_t lo, size_t hi) {
   return (int)FindFileInRangeTmpl(Cmp{icmp}, brief, key, lo, hi);
 }
 
@@ -167,7 +186,7 @@ int FindFileInRangeInst(const InternalKeyComparator* icmp,
 __attribute_noinline__
 #endif
 int FindFileInRange(const InternalKeyComparator& icmp,
-                    const LevelFilesBrief& file_level, const Slice& key,
+                    const LevelFilesBrief& file_level, const ParsedInternalKey& key,
                     uint32_t left, uint32_t right) {
 #ifdef TOPLINGDB_NO_OPT_FindFileInRange
   #pragma message "TOPLINGDB_NO_OPT_FindFileInRange is defined, intended for benchmark baseline"
@@ -236,217 +255,6 @@ Status OverlapWithIterator(const Comparator* ucmp,
 // levels. Therefore we are guaranteed that if we find data
 // in a smaller level, later levels are irrelevant (unless we
 // are MergeInProgress).
-template<class UKCmp, class IKCmp>
-class FilePicker {
-  __always_inline
-  int FindFileInRange(const InternalKeyComparator& icmp,
-                      const LevelFilesBrief& file_level, const Slice& key,
-                      size_t left, size_t right) {
-    return (int)FindFileInRangeTmpl(IKCmp{&icmp}, file_level, key, left, right);
-  }
- public:
-  FilePicker(const Slice& user_key, const Slice& ikey,
-             autovector<LevelFilesBrief>* file_levels, unsigned int num_levels,
-             FileIndexer* file_indexer, const Comparator* user_comparator,
-             const InternalKeyComparator* internal_comparator)
-      : num_levels_(num_levels),
-        curr_level_(static_cast<unsigned int>(-1)),
-        returned_file_level_(static_cast<unsigned int>(-1)),
-        hit_file_level_(static_cast<unsigned int>(-1)),
-        search_left_bound_(0),
-        search_right_bound_(FileIndexer::kLevelMaxIndex),
-        level_files_brief_(file_levels),
-        is_hit_file_last_in_level_(false),
-        curr_file_level_(nullptr),
-        user_key_(user_key),
-        ikey_(ikey),
-        file_indexer_(file_indexer),
-        user_comparator_(user_comparator),
-        internal_comparator_(internal_comparator) {
-    // Setup member variables to search first level.
-    search_ended_ = !PrepareNextLevel();
-    if (!search_ended_) {
-      // Prefetch Level 0 table data to avoid cache miss if possible.
-      for (unsigned int i = 0; i < (*level_files_brief_)[0].num_files; ++i) {
-        auto* r = (*level_files_brief_)[0].files[i].fd.table_reader;
-        if (r) {
-          r->Prepare(ikey);
-        }
-      }
-    }
-  }
-
-  int GetCurrentLevel() const { return curr_level_; }
-
-  FdWithKeyRange* GetNextFile() {
-    UKCmp cmp{user_comparator_};
-    while (!search_ended_) {  // Loops over different levels.
-      while (curr_index_in_curr_level_ < curr_file_level_->num_files) {
-        // Loops over all files in current level.
-        FdWithKeyRange* f = &curr_file_level_->files[curr_index_in_curr_level_];
-        hit_file_level_ = curr_level_;
-        is_hit_file_last_in_level_ =
-            curr_index_in_curr_level_ == curr_file_level_->num_files - 1;
-        int cmp_largest = -1;
-
-        // Do key range filtering of files or/and fractional cascading if:
-        // (1) not all the files are in level 0, or
-        // (2) there are more than 3 current level files
-        // If there are only 3 or less current level files in the system, we
-        // skip the key range filtering. In this case, more likely, the system
-        // is highly tuned to minimize number of tables queried by each query,
-        // so it is unlikely that key range filtering is more efficient than
-        // querying the files.
-        if (num_levels_ > 1 || curr_file_level_->num_files > 3) {
-          // Check if key is within a file's range. If search left bound and
-          // right bound point to the same find, we are sure key falls in
-          // range.
-          assert(curr_level_ == 0 ||
-                 curr_index_in_curr_level_ == start_index_in_curr_level_ ||
-                 cmp(user_key_, ExtractUserKey(f->smallest_key)) <= 0);
-
-          int cmp_smallest = cmp(user_key_, ExtractUserKey(f->smallest_key));
-          if (cmp_smallest >= 0) {
-            cmp_largest = cmp(user_key_, ExtractUserKey(f->largest_key));
-          }
-
-          // Setup file search bound for the next level based on the
-          // comparison results
-          if (curr_level_ > 0) {
-            file_indexer_->GetNextLevelIndex(
-                curr_level_, curr_index_in_curr_level_, cmp_smallest,
-                cmp_largest, &search_left_bound_, &search_right_bound_);
-          }
-          // Key falls out of current file's range
-          if (cmp_smallest < 0 || cmp_largest > 0) {
-            if (curr_level_ == 0) {
-              ++curr_index_in_curr_level_;
-              continue;
-            } else {
-              // Search next level.
-              break;
-            }
-          }
-        }
-
-        returned_file_level_ = curr_level_;
-        if (curr_level_ > 0 && cmp_largest < 0) {
-          // No more files to search in this level.
-          search_ended_ = !PrepareNextLevel();
-        } else {
-          ++curr_index_in_curr_level_;
-        }
-        return f;
-      }
-      // Start searching next level.
-      search_ended_ = !PrepareNextLevel();
-    }
-    // Search ended.
-    return nullptr;
-  }
-
-  // getter for current file level
-  // for GET_HIT_L0, GET_HIT_L1 & GET_HIT_L2_AND_UP counts
-  unsigned int GetHitFileLevel() { return hit_file_level_; }
-
-  // Returns true if the most recent "hit file" (i.e., one returned by
-  // GetNextFile()) is at the last index in its level.
-  bool IsHitFileLastInLevel() { return is_hit_file_last_in_level_; }
-
- private:
-  unsigned int num_levels_;
-  unsigned int curr_level_;
-  unsigned int returned_file_level_;
-  unsigned int hit_file_level_;
-  int32_t search_left_bound_;
-  int32_t search_right_bound_;
-  autovector<LevelFilesBrief>* level_files_brief_;
-  bool search_ended_;
-  bool is_hit_file_last_in_level_;
-  LevelFilesBrief* curr_file_level_;
-  unsigned int curr_index_in_curr_level_;
-  unsigned int start_index_in_curr_level_;
-  Slice user_key_;
-  Slice ikey_;
-  FileIndexer* file_indexer_;
-  const Comparator* user_comparator_;
-  const InternalKeyComparator* internal_comparator_;
-
-  // Setup local variables to search next level.
-  // Returns false if there are no more levels to search.
-  bool PrepareNextLevel() {
-    curr_level_++;
-    while (curr_level_ < num_levels_) {
-      curr_file_level_ = &(*level_files_brief_)[curr_level_];
-      if (curr_file_level_->num_files == 0) {
-        // When current level is empty, the search bound generated from upper
-        // level must be [0, -1] or [0, FileIndexer::kLevelMaxIndex] if it is
-        // also empty.
-        assert(search_left_bound_ == 0);
-        assert(search_right_bound_ == -1 ||
-               search_right_bound_ == FileIndexer::kLevelMaxIndex);
-        // Since current level is empty, it will need to search all files in
-        // the next level
-        search_left_bound_ = 0;
-        search_right_bound_ = FileIndexer::kLevelMaxIndex;
-        curr_level_++;
-        continue;
-      }
-
-      // Some files may overlap each other. We find
-      // all files that overlap user_key and process them in order from
-      // newest to oldest. In the context of merge-operator, this can occur at
-      // any level. Otherwise, it only occurs at Level-0 (since Put/Deletes
-      // are always compacted into a single entry).
-      int32_t start_index;
-      if (curr_level_ == 0) {
-        // On Level-0, we read through all files to check for overlap.
-        start_index = 0;
-      } else {
-        // On Level-n (n>=1), files are sorted. Binary search to find the
-        // earliest file whose largest key >= ikey. Search left bound and
-        // right bound are used to narrow the range.
-        if (search_left_bound_ <= search_right_bound_) {
-          if (search_right_bound_ == FileIndexer::kLevelMaxIndex) {
-            search_right_bound_ =
-                static_cast<int32_t>(curr_file_level_->num_files) - 1;
-          }
-          // `search_right_bound_` is an inclusive upper-bound, but since it was
-          // determined based on user key, it is still possible the lookup key
-          // falls to the right of `search_right_bound_`'s corresponding file.
-          // So, pass a limit one higher, which allows us to detect this case.
-          start_index =
-              FindFileInRange(*internal_comparator_, *curr_file_level_, ikey_,
-                              static_cast<uint32_t>(search_left_bound_),
-                              static_cast<uint32_t>(search_right_bound_) + 1);
-          if (start_index == search_right_bound_ + 1) {
-            // `ikey_` comes after `search_right_bound_`. The lookup key does
-            // not exist on this level, so let's skip this level and do a full
-            // binary search on the next level.
-            search_left_bound_ = 0;
-            search_right_bound_ = FileIndexer::kLevelMaxIndex;
-            curr_level_++;
-            continue;
-          }
-        } else {
-          // search_left_bound > search_right_bound, key does not exist in
-          // this level. Since no comparison is done in this level, it will
-          // need to search all files in the next level.
-          search_left_bound_ = 0;
-          search_right_bound_ = FileIndexer::kLevelMaxIndex;
-          curr_level_++;
-          continue;
-        }
-      }
-      start_index_in_curr_level_ = start_index;
-      curr_index_in_curr_level_ = start_index;
-
-      return true;
-    }
-    // curr_level_ = num_levels_. So, no more levels to search.
-    return false;
-  }
-};
 }  // anonymous namespace
 
 class FilePickerMultiGet {
@@ -494,7 +302,7 @@ class FilePickerMultiGet {
         auto* r = (*level_files_brief_)[0].files[i].fd.table_reader;
         if (r) {
           for (auto iter = range_.begin(); iter != range_.end(); ++iter) {
-            r->Prepare(iter->ikey);
+            r->PreparePIK(iter->ikey);
           }
         }
       }
@@ -877,7 +685,7 @@ class FilePickerMultiGet {
             // key falls to the right of `search_right_bound_`'s corresponding
             // file. So, pass a limit one higher, which allows us to detect this
             // case.
-            Slice& ikey = mget_iter->ikey;
+            auto& ikey = mget_iter->ikey;
             start_index = FindFileInRange(
                 *internal_comparator_, *curr_file_level_, ikey,
                 static_cast<uint32_t>(fp_ctx.search_left_bound),
@@ -947,6 +755,12 @@ Version::~Version() {
 
 int FindFile(const InternalKeyComparator& icmp,
              const LevelFilesBrief& file_level, const Slice& key) {
+  return FindFileInRange(icmp, file_level, ParsedInternalKey(key), 0,
+                         static_cast<uint32_t>(file_level.num_files));
+}
+
+int FindFile(const InternalKeyComparator& icmp,
+             const LevelFilesBrief& file_level, const ParsedInternalKey& key) {
   return FindFileInRange(icmp, file_level, key, 0,
                          static_cast<uint32_t>(file_level.num_files));
 }
@@ -1209,12 +1023,11 @@ class LevelIterator final : public InternalIterator {
       iw->prepare_and_get_value_ = ForgeFuncPtr(this,
                                      &LevelIterator::PrepareAndGetValue);
     } else {
-      iw->work_iter_ = file_iter_.iter();
-      iw->value_iter_ = file_iter_.iter();
-      iw->next_and_get_result_ = ForgeFuncPtr(file_iter_.iter(),
-                                  &InternalIterator::NextAndGetResult);
-      iw->prepare_and_get_value_ = ForgeFuncPtr(file_iter_.iter(),
-                                  &InternalIterator::PrepareAndGetValue);
+      auto fi = file_iter_.iter();
+      iw->work_iter_ = fi;
+      iw->value_iter_ = fi;
+      iw->next_and_get_result_ = ForgeFuncPtr(fi, &InternalIterator::NextAndGetResult);
+      iw->prepare_and_get_value_ = ForgeFuncPtr(fi, &InternalIterator::PrepareAndGetValue);
     }
     retry_already_goes_invalid_ = false;
   }
@@ -2518,14 +2331,19 @@ Version::Version(ColumnFamilyData* column_family_data, VersionSet* vset,
     if (IsForwardBytewiseComparator(user_comparator())) {
       m_get = ExtractFuncPtr<GetFP>(this, &Version::GetInst
         <ForwardBytewiseCompareUserKeyNoTS, BytewiseCompareInternalKey>);
+      m_get_no_watch = ExtractFuncPtr<GetFP>(this, &Version::GetInst
+        <ForwardBytewiseCompareUserKeyNoTS, BytewiseCompareInternalKey, FakePerfStepTimer, FakeStopWatch>);
     }
     else if (IsReverseBytewiseComparator(user_comparator())) {
       m_get = ExtractFuncPtr<GetFP>(this, &Version::GetInst
         <ReverseBytewiseCompareUserKeyNoTS, RevBytewiseCompareInternalKey>);
+      m_get_no_watch = ExtractFuncPtr<GetFP>(this, &Version::GetInst
+        <ReverseBytewiseCompareUserKeyNoTS, RevBytewiseCompareInternalKey, FakePerfStepTimer, FakeStopWatch>);
     }
     else {
       m_get = ExtractFuncPtr<GetFP>(this, &Version::GetInst
         <VirtualFunctionCompareUserKeyNoTS, FallbackVirtCmp>);
+      m_get_no_watch = m_get; // do not instantiate more
     }
   }
 }
@@ -2659,9 +2477,9 @@ void Version::MultiGetBlob(
   }
 }
 
-template<class UKCmp, class IKCmp>
+template<class UKCmp, class IKCmp, class PerfStepTimer, class StopWatchNano>
 ROCKSDB_FLATTEN
-void Version::GetInst(const ReadOptions& read_options, const LookupKey& k,
+void Version::GetInst(const ReadOptions& read_options, const ParsedInternalKey& ikey,
                   PinnableSlice* value, PinnableWideColumns* columns,
                   std::string* timestamp, Status* status,
                   MergeContext* merge_context,
@@ -2669,8 +2487,7 @@ void Version::GetInst(const ReadOptions& read_options, const LookupKey& k,
                   PinnedIteratorsManager* pinned_iters_mgr, bool* value_found,
                   bool* key_exists, SequenceNumber* seq, ReadCallback* callback,
                   bool* is_blob, bool do_merge) {
-  Slice ikey = k.internal_key();
-  Slice user_key = k.user_key();
+  const Slice& user_key = ikey.user_key;
 
   assert(status->ok() || status->IsMergeInProgress());
 
@@ -2680,10 +2497,18 @@ void Version::GetInst(const ReadOptions& read_options, const LookupKey& k,
   }
 
   uint64_t tracing_get_id = BlockCacheTraceHelper::kReservedGetId;
+#if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
   if (vset_ && vset_->block_cache_tracer_ &&
       vset_->block_cache_tracer_->is_tracing_enabled()) {
     tracing_get_id = vset_->block_cache_tracer_->NextGetId();
   }
+#endif
+#if !defined(TOPLINGDB_WITH_TIMESTAMP)
+  timestamp = nullptr; // tell compiler it is always null
+#endif
+#if !defined(TOPLINGDB_WITH_WIDE_COLUMNS)
+  columns = nullptr; // tell compiler it is always null
+#endif
 
   // Note: the old StackableDB-based BlobDB passes in
   // GetImplOptions::is_blob_index; for the integrated BlobDB implementation, we
@@ -2707,45 +2532,172 @@ void Version::GetInst(const ReadOptions& read_options, const LookupKey& k,
     pinned_iters_mgr->StartPinning();
   }
 
-  FilePicker<UKCmp, IKCmp> fp(user_key, ikey, &storage_info_.level_files_brief_,
-                storage_info_.num_non_empty_levels_,
-                &storage_info_.file_indexer_, user_comparator(),
-                internal_comparator());
-  FdWithKeyRange* f = fp.GetNextFile();
+// FilePicker is a negative optimization, revert it!
 
-  while (f != nullptr) {
+#if defined(ROCKSDB_UNIT_TEST)
+// Prefetch Level 0 table data to avoid cache miss if possible.
+if (storage_info_.num_non_empty_levels_ > 0 &&
+    storage_info_.level_files_brief_[0].num_files > 0) {
+  for (size_t i = 0; i < storage_info_.level_files_brief_[0].num_files; ++i) {
+    if (auto r = storage_info_.level_files_brief_[0].files[i].fd.table_reader) {
+      r->PreparePIK(ikey);
+    }
+  }
+}
+#endif
+int32_t search_left_bound = 0;
+int32_t search_right_bound = FileIndexer::kLevelMaxIndex;
+for (int curr_level = 0; curr_level < storage_info_.num_non_empty_levels_; curr_level++) {
+  LevelFilesBrief* curr_file_level = &storage_info_.level_files_brief_[curr_level];
+  if (curr_file_level->num_files == 0) {
+    // When current level is empty, the search bound generated from upper
+    // level must be [0, -1] or [0, FileIndexer::kLevelMaxIndex] if it is
+    // also empty.
+    assert(search_left_bound == 0);
+    assert(search_right_bound == -1 ||
+           search_right_bound == FileIndexer::kLevelMaxIndex);
+    // Since current level is empty, it will need to search all files in
+    // the next level
+    search_left_bound = 0;
+    search_right_bound = FileIndexer::kLevelMaxIndex;
+    continue;
+  }
+
+  // Some files may overlap each other. We find
+  // all files that overlap user_key and process them in order from
+  // newest to oldest. In the context of merge-operator, this can occur at
+  // any level. Otherwise, it only occurs at Level-0 (since Put/Deletes
+  // are always compacted into a single entry).
+  int32_t start_index;
+  if (curr_level == 0) {
+    // On Level-0, we read through all files to check for overlap.
+      start_index = 0;
+  } else {
+    // On Level-n (n>=1), files are sorted. Binary search to find the
+    // earliest file whose largest key >= ikey. Search left bound and
+    // right bound are used to narrow the range.
+    if (search_left_bound <= search_right_bound) {
+      if (search_right_bound == FileIndexer::kLevelMaxIndex) {
+        search_right_bound =
+            static_cast<int32_t>(curr_file_level->num_files) - 1;
+      }
+      // `search_right_bound` is an inclusive upper-bound, but since it was
+      // determined based on user key, it is still possible the lookup key
+      // falls to the right of `search_right_bound`'s corresponding file.
+      // So, pass a limit one higher, which allows us to detect this case.
+      start_index = static_cast<int32_t>(FindFileInRangeTmpl(
+            IKCmp{internal_comparator()}, *curr_file_level, ikey,
+            static_cast<uint32_t>(search_left_bound),
+            static_cast<uint32_t>(search_right_bound) + 1));
+      if (start_index == search_right_bound + 1) {
+        // `ikey` comes after `search_right_bound`. The lookup key does
+        // not exist on this level, so let's skip this level and do a full
+        // binary search on the next level.
+        search_left_bound = 0;
+        search_right_bound = FileIndexer::kLevelMaxIndex;
+        continue;
+      }
+    } else {
+      // search_left_bound > search_right_bound, key does not exist in
+      // this level. Since no comparison is done in this level, it will
+      // need to search all files in the next level.
+      search_left_bound = 0;
+      search_right_bound = FileIndexer::kLevelMaxIndex;
+      continue;
+    }
+  }
+  unsigned int start_index_in_curr_level __attribute__((unused)) = start_index;
+  unsigned int curr_index_in_curr_level = start_index;
+  while (curr_index_in_curr_level < curr_file_level->num_files) {
+    FdWithKeyRange* f = &curr_file_level->files[curr_index_in_curr_level];
+    int hit_file_level = curr_level;
+    bool is_hit_file_last_in_level =
+        curr_index_in_curr_level == curr_file_level->num_files - 1;
+    (void)is_hit_file_last_in_level;
+    int cmp_largest = -1;
+
+    // Do key range filtering of files or/and fractional cascading if:
+    // (1) not all the files are in level 0, or
+    // (2) there are more than 3 current level files
+    // If there are only 3 or less current level files in the system, we
+    // skip the key range filtering. In this case, more likely, the system
+    // is highly tuned to minimize number of tables queried by each query,
+    // so it is unlikely that key range filtering is more efficient than
+    // querying the files.
+    if (storage_info_.num_non_empty_levels_ > 1 || curr_file_level->num_files > 3) {
+      // Check if key is within a file's range. If search left bound and
+      // right bound point to the same find, we are sure key falls in
+      // range.
+      UKCmp ucmp{user_comparator()};
+      assert(curr_level == 0 ||
+              curr_index_in_curr_level == start_index_in_curr_level ||
+              ucmp(ikey.user_key, ExtractUserKey(f->smallest_key)) <= 0);
+
+      int cmp_smallest = ucmp(ikey.user_key, ExtractUserKey(f->smallest_key));
+      if (cmp_smallest >= 0) {
+        cmp_largest = ucmp(ikey.user_key, ExtractUserKey(f->largest_key));
+      }
+
+      // Setup file search bound for the next level based on the
+      // comparison results
+      if (curr_level > 0) {
+        storage_info_.file_indexer_.GetNextLevelIndex(
+            curr_level, curr_index_in_curr_level, cmp_smallest,
+            cmp_largest, &search_left_bound, &search_right_bound);
+      }
+      // Key falls out of current file's range
+      if (cmp_smallest < 0 || cmp_largest > 0) {
+        if (curr_level == 0) {
+          ++curr_index_in_curr_level;
+          continue;
+        } else {
+          // Search next level.
+          break;
+        }
+      }
+    }
+
+    // File passed filtering, process it
     if (*max_covering_tombstone_seq > 0) {
       // The remaining files we look at will only contain covered keys, so we
       // stop here.
-      break;
+      goto search_complete;
     }
     if (get_context.sample()) {
       sample_file_read_inc(f->file_metadata);
     }
 
     bool timer_enabled =
+        !std::is_same_v<PerfStepTimer, FakePerfStepTimer> &&
         perf_level >= PerfLevel::kEnableTimeExceptForMutex &&
         get_perf_context()->per_level_perf_context_enabled;
     StopWatchNano timer(clock_, timer_enabled /* auto_start */);
-    *status = table_cache_->Get(
+    Status s2 = table_cache_->Get(
         read_options, *internal_comparator(), *f->file_metadata, ikey,
         &get_context, mutable_cf_options_.block_protection_bytes_per_key,
         mutable_cf_options_.prefix_extractor,
-        cfd_->internal_stats()->GetFileReadHist(fp.GetHitFileLevel()),
-        IsFilterSkipped(static_cast<int>(fp.GetHitFileLevel()),
-                        fp.IsHitFileLastInLevel()),
-        fp.GetHitFileLevel(), max_file_size_for_l0_meta_pin_);
+      #if defined(TOPLINGDB_WITH_FABRICATED_COMPLEXITY)
+        cfd_->internal_stats()->GetFileReadHist(hit_file_level),
+        IsFilterSkipped(static_cast<int>(hit_file_level),
+                        is_hit_file_last_in_level),
+      #else
+        nullptr,
+        false,
+      #endif
+        hit_file_level, max_file_size_for_l0_meta_pin_);
     // TODO: examine the behavior for corrupted key
     if (timer_enabled) {
       PERF_COUNTER_BY_LEVEL_ADD(get_from_table_nanos, timer.ElapsedNanos(),
-                                fp.GetHitFileLevel());
+                                hit_file_level);
     }
-    if (!status->ok()) {
+    if (UNLIKELY(!s2.ok())) {
+      *status = std::move(s2);
       if (db_statistics_ != nullptr) {
         get_context.ReportCounters();
       }
       return;
     }
+    status->SetAsOK();
 
     // report the counters before returning
     if (get_context.State() != GetContext::kNotFound &&
@@ -2761,16 +2713,16 @@ void Version::GetInst(const ReadOptions& read_options, const LookupKey& k,
         // TODO: update per-level perfcontext user_key_return_count for kMerge
         break;
       case GetContext::kFound:
-        if (fp.GetHitFileLevel() == 0) {
+        if (hit_file_level == 0) {
           RecordTick(db_statistics_, GET_HIT_L0);
-        } else if (fp.GetHitFileLevel() == 1) {
+        } else if (hit_file_level == 1) {
           RecordTick(db_statistics_, GET_HIT_L1);
-        } else if (fp.GetHitFileLevel() >= 2) {
+        } else if (hit_file_level >= 2) {
           RecordTick(db_statistics_, GET_HIT_L2_AND_UP);
         }
 
         PERF_COUNTER_BY_LEVEL_ADD(user_key_return_count, 1,
-                                  fp.GetHitFileLevel());
+                                  hit_file_level);
 
         if (is_blob_index && do_merge && (value || columns)) {
           Slice blob_index =
@@ -2821,8 +2773,16 @@ void Version::GetInst(const ReadOptions& read_options, const LookupKey& k,
         *status = Status::Corruption(Status::SubCode::kMergeOperatorFailed);
         return;
     }
-    f = fp.GetNextFile();
+
+    // Move to next file or level
+    if (curr_level > 0 && cmp_largest < 0) {
+      // No more files to search in this level.
+      break;
+    }
+    ++curr_index_in_curr_level;
   }
+}
+search_complete:
   if (db_statistics_ != nullptr) {
     get_context.ReportCounters();
   }
@@ -3071,7 +3031,7 @@ void Version::MultiGet(const ReadOptions& read_options, MultiGetRange* range,
   for (auto iter = range->begin(); s.ok() && iter != range->end(); ++iter) {
     GetContext& get_context = *iter->get_context;
     Status* status = iter->s;
-    Slice user_key = iter->lkey->user_key();
+    const Slice& user_key = iter->ikey.user_key;
 
     if (db_statistics_ != nullptr) {
       get_context.ReportCounters();
@@ -4901,7 +4861,7 @@ uint64_t VersionStorageInfo::NumLevelRawKV(int level) const {
 int VersionStorageInfo::FindFileInRange(int level, const Slice& key,
                                         uint32_t left, uint32_t right) const {
   return ROCKSDB_NAMESPACE::FindFileInRange(*internal_comparator_,
-            level_files_brief_[level], key, left, right);
+            level_files_brief_[level], ParsedInternalKey(key), left, right);
 }
 
 const char* VersionStorageInfo::LevelSummary(
@@ -7125,7 +7085,7 @@ VersionSet::ApproximateSizeTmpl(const SizeApproximationOptions& options,
 
     // identify the file position for start key
     const int idx_start =
-        (int)FindFileInRangeTmpl(cmp, files_brief, start, 0,
+        (int)FindFileInRangeTmpl(cmp, files_brief, ParsedInternalKey(start), 0,
                             static_cast<uint32_t>(files_brief.num_files - 1));
     assert(static_cast<size_t>(idx_start) < files_brief.num_files);
 
@@ -7133,7 +7093,7 @@ VersionSet::ApproximateSizeTmpl(const SizeApproximationOptions& options,
     int idx_end = idx_start;
     if (cmp(files_brief.files[idx_end].largest_key, end)) {
       idx_end =
-          (int)FindFileInRangeTmpl(cmp, files_brief, end, idx_start,
+          (int)FindFileInRangeTmpl(cmp, files_brief, ParsedInternalKey(end), idx_start,
                               static_cast<uint32_t>(files_brief.num_files - 1));
     }
     assert(idx_end >= idx_start &&

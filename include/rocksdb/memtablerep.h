@@ -83,6 +83,14 @@ class MemTableRep : public CacheAlignedNewDelete {
     virtual int operator()(const char* prefix_len_key,
                            const Slice& key) const = 0;
 
+    // Compare prefix_len_key (encoded internal key) with user_key + tag
+    virtual int operator()(const char* prefix_len_key,
+                           const struct ParsedInternalKey&) const = 0;
+
+    // Compare user_key + tag with prefix_len_key (encoded internal key)
+    virtual int operator()(const struct ParsedInternalKey&,
+                           const char* prefix_len_key) const = 0;
+
     virtual const InternalKeyComparator* icomparator() const = 0;
 
     virtual ~KeyComparator() {}
@@ -241,6 +249,10 @@ class MemTableRep : public CacheAlignedNewDelete {
   virtual void Get(const struct ReadOptions&,
                    const LookupKey&, void* callback_args,
                    bool (*callback_func)(void* arg, const KeyValuePair&)) = 0;
+
+  virtual void GetPIK(const struct ReadOptions&,
+                      const struct ParsedInternalKey&, void* callback_args,
+                      bool (*callback_func)(void* arg, const KeyValuePair&));
 
   virtual uint64_t ApproximateNumEntries(const Slice& /*start_ikey*/,
                                          const Slice& /*end_key*/) {

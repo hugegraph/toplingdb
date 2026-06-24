@@ -67,6 +67,7 @@ extern "C" {
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* Exported types */
 
@@ -143,6 +144,7 @@ typedef struct rocksdb_statistics_histogram_data_t
     rocksdb_statistics_histogram_data_t;
 typedef struct rocksdb_wait_for_compact_options_t
     rocksdb_wait_for_compact_options_t;
+typedef struct rocksdb_stdstr_t rocksdb_stdstr_t;
 
 #if !defined(ROCKSDB_C_API_IMPLEMENTATION)
 struct rocksdb_slice_t {
@@ -1941,6 +1943,8 @@ extern ROCKSDB_LIBRARY_API_WEAK void rocksdb_readoptions_start_pin(
     rocksdb_readoptions_t*);
 extern ROCKSDB_LIBRARY_API_WEAK void rocksdb_readoptions_finish_pin(
     rocksdb_readoptions_t*);
+extern ROCKSDB_LIBRARY_API_WEAK unsigned char
+rocksdb_readoptions_is_in_pinning_section(rocksdb_readoptions_t*);
 extern ROCKSDB_LIBRARY_API_WEAK void rocksdb_readoptions_set_async_queue_depth(
     rocksdb_readoptions_t*, size_t);
 extern ROCKSDB_LIBRARY_API_WEAK size_t rocksdb_readoptions_get_async_queue_depth(
@@ -2970,6 +2974,9 @@ extern ROCKSDB_LIBRARY_API void rocksdb_pinnableslice_destroy(
 extern ROCKSDB_LIBRARY_API const char* rocksdb_pinnableslice_value(
     const rocksdb_pinnableslice_t* t, size_t* vlen);
 
+extern ROCKSDB_LIBRARY_API rocksdb_stdstr_t* rocksdb_stdstr_create(const char* str, size_t len);
+extern ROCKSDB_LIBRARY_API void rocksdb_stdstr_destroy(rocksdb_stdstr_t* v);
+
 extern ROCKSDB_LIBRARY_API rocksdb_memory_consumers_t*
 rocksdb_memory_consumers_create(void);
 extern ROCKSDB_LIBRARY_API void rocksdb_memory_consumers_add_db(
@@ -3083,6 +3090,9 @@ extern ROCKSDB_LIBRARY_API_WEAK side_plugin_repo_t* side_plugin_repo_create(void
 extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_import_auto_file
 (side_plugin_repo_t*, const char* fname, char** errptr);
 
+extern ROCKSDB_LIBRARY_API_WEAK void
+side_plugin_repo_import(side_plugin_repo_t*, const char* json_str, char** errptr);
+
 extern ROCKSDB_LIBRARY_API_WEAK rocksdb_t*
 side_plugin_repo_open(side_plugin_repo_t*, rocksdb_column_family_handle_t***,
                       size_t* num_cf, char** errptr);
@@ -3102,9 +3112,119 @@ side_plugin_repo_get_cf_options(side_plugin_repo_t*, const char* name, char** er
 extern ROCKSDB_LIBRARY_API_WEAK void
 side_plugin_repo_put_cf_options(side_plugin_repo_t*, const char* name, rocksdb_options_t*);
 
+extern ROCKSDB_LIBRARY_API_WEAK bool
+side_plugin_db_options_update_from(rocksdb_options_t*, const side_plugin_repo_t*, const char* name);
+
+extern ROCKSDB_LIBRARY_API_WEAK bool
+side_plugin_cf_options_update_from(rocksdb_options_t*, const side_plugin_repo_t*, const char* name);
+
 extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_close_all(side_plugin_repo_t*);
 
+extern ROCKSDB_LIBRARY_API_WEAK void side_plugin_repo_forget_db(side_plugin_repo_t*, rocksdb_t*);
+
 extern ROCKSDB_LIBRARY_API_WEAK const char* rocksdb_get_name(rocksdb_t*);
+
+struct side_plugin_ex_vtab_t {
+    // serialize_request == NULL means serde(all the 4) are not supported
+    void (*  serialize_request )(FILE*, const void* obj);
+    void (*deserialize_request )(FILE*,       void* obj);
+    void (*  serialize_response)(FILE*, const void* obj);
+    void (*deserialize_response)(FILE*,       void* obj);
+
+    // web_view   == NULL means web view and update are not supported
+    // web_update == NULL means web only     update is  not supported
+    rocksdb_stdstr_t* (*web_view)(const void* obj, const char* dump_options_json, const side_plugin_repo_t*);
+    void (*web_update)(void* obj, const char* dump_options_json, const char* body_json, const side_plugin_repo_t*);
+};
+#if !defined(__cplusplus)
+typedef struct side_plugin_ex_vtab_t side_plugin_ex_vtab_t;
+#endif
+
+typedef const rocksdb_comparator_t*
+(*rocksdb_comparator_creator_t)
+(const char* strjson, const side_plugin_repo_t* repo);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_register_comparator
+(const char* name, rocksdb_comparator_creator_t, const side_plugin_ex_vtab_t*);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_unregister_comparator(const char* name);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void* side_plugin_comparator_get_state(const rocksdb_comparator_t*);
+
+typedef rocksdb_mergeoperator_t*
+(*rocksdb_mergeoperator_creator_t)
+(const char* strjson, const side_plugin_repo_t* repo);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_register_merge_operator
+(const char* name, rocksdb_mergeoperator_creator_t, const side_plugin_ex_vtab_t*);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_unregister_merge_operator(const char* name);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void* side_plugin_mergeoperator_get_state(const rocksdb_mergeoperator_t*);
+
+typedef rocksdb_compactionfilterfactory_t*
+(*rocksdb_compactionfilterfactory_creator_t)
+(const char* strjson, const side_plugin_repo_t* repo);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_register_compaction_filter_factory
+(const char* name, rocksdb_compactionfilterfactory_creator_t, const side_plugin_ex_vtab_t*);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_unregister_compaction_filter_factory(const char* name);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void* side_plugin_compactionfilterfactory_get_state(const rocksdb_compactionfilterfactory_t*);
+
+typedef rocksdb_slicetransform_t*
+(*rocksdb_slicetransform_creator_t)
+(const char* strjson, const side_plugin_repo_t* repo);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_register_slicetransform
+(const char* name, rocksdb_slicetransform_creator_t, const side_plugin_ex_vtab_t*);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_unregister_slicetransform(const char* name);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void* side_plugin_slicetransform_get_state(const rocksdb_slicetransform_t*);
+
+typedef rocksdb_filterpolicy_t*
+(*rocksdb_filterpolicy_creator_t)
+(const char* strjson, const side_plugin_repo_t* repo);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_register_filterpolicy
+(const char* name, rocksdb_filterpolicy_creator_t, const side_plugin_ex_vtab_t*);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_unregister_filterpolicy(const char* name);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void* side_plugin_filterpolicy_get_state(const rocksdb_filterpolicy_t*);
+
+#if 0 // rocksdb c api does not support custom rate limiter
+typedef rocksdb_ratelimiter_t*
+(*rocksdb_ratelimiter_creator_t)
+(const char* strjson, const side_plugin_repo_t* repo);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_register_ratelimiter
+(const char* name, rocksdb_ratelimiter_creator_t, const side_plugin_ex_vtab_t*);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void side_plugin_unregister_ratelimiter(const char* name);
+
+extern ROCKSDB_LIBRARY_API_WEAK
+void* side_plugin_ratelimiter_get_state(const rocksdb_ratelimiter_t*);
+#endif
 
 #ifdef __cplusplus
 } /* end extern "C" */

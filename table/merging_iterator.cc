@@ -150,14 +150,7 @@ private:
   const InternalKeyComparator* comparator_;
 };
 
-#if defined(_MSC_VER) /* Visual Studio */
-#define FORCE_INLINE __forceinline
-#define __bswap_64 _byteswap_uint64
-#elif defined(__GNUC__)
-#define FORCE_INLINE inline __attribute__((always_inline))
-#else
-#define FORCE_INLINE inline
-#endif
+#define FORCE_INLINE terark_forceinline
 
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
   // can be defined as 23 or 16
@@ -272,6 +265,7 @@ struct UintPrefix {
   unsigned char data[MERGE_ITER_PREFIX_LEN] = {0};
   UintPrefix(int=0) {}
 };
+static_assert(sizeof(UintPrefix) == MERGE_ITER_PREFIX_LEN);
 
 #endif // MERGE_ITER_PREFIX_LEN
 
@@ -437,7 +431,7 @@ class MinHeapBytewiseComp {
     __m256i   b256 = _mm256_maskz_loadu_epi8(mask, &b.key_prefix); \
     __mmask32 cneq = _mm256_cmpneq_epi8_mask(a256, b256);          \
     if (LIKELY(cneq != 0)) {                                       \
-      __mmask32 cmp = _mm256_cmp##cmp##_epi8_mask(a256, b256);     \
+      __mmask32 cmp = _mm256_cmp##cmp##_epu8_mask(a256, b256);     \
       return (cmp & -cneq) != 0;                                   \
     }
 //-------------------------------------------------------------------
@@ -1617,7 +1611,7 @@ MergingIterMethod(void)SeekForPrevImpl(const Slice& target,
     PERF_TIMER_GUARD(seek_max_heap_time);
     AddToMaxHeapOrCheckStatus(&children_[level]);
   }
-  if (!range_tombstone_iters_.empty()) {
+  if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
     // Add range tombstones before starting_level.
     for (size_t level = 0; level < starting_level; ++level) {
       if (range_tombstone_iters_[level] &&
@@ -1878,7 +1872,7 @@ MergingIterMethod(void)SwitchToForward() {
   // Previous direction is backward, so range tombstone iter may point to a
   // tombstone before current_. If there is no such tombstone, then the range
   // tombstone iter is !Valid(). Need to reseek here to make it valid again.
-  if (!range_tombstone_iters_.empty()) {
+  if (!RangeTombstoneStaticEmpty && !range_tombstone_iters_.empty()) {
     ParsedInternalKey pik(target);
     for (size_t i = 0; i < range_tombstone_iters_.size(); ++i) {
       auto iter = range_tombstone_iters_[i];

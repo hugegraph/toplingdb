@@ -1167,6 +1167,15 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       logFileDropped();
       continue;
     }
+    bool wal_memtable_format = immutable_db_options_.memtable_as_log_index;
+    if (immutable_db_options_.check_wal_format) {
+      if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
+                   (*fs_, fname, &wal_memtable_format); !ios.ok()) {
+        auto info_log = immutable_db_options_.info_log.get();
+        ROCKS_LOG_WARN(info_log, "%s: %s", fname.c_str(), *ios.ToSSO());
+        return Status(ios);
+      }
+    }
 
     std::unique_ptr<SequentialFileReader> file_reader;
     {
@@ -1207,7 +1216,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
     log::Reader reader(immutable_db_options_.info_log, std::move(file_reader),
                        &reporter, true /*checksum*/, wal_number);
     boost::intrusive_ptr<ReadonlyFileMmap> fmap;
-    if (immutable_db_options_.memtable_as_log_index) {
+    if (wal_memtable_format) {
       reader.InitSetMemTableAsLogIndex(*fs_);
       IOStatus ios = ReadonlyFileMmap::New(&fmap, *fs_, wal_number, fname);
       if (!ios.ok() && ios.ToString() != "Invalid argument: Empty File")
@@ -1255,7 +1264,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       if (!status.ok()) {
         return status;
       }
-      if (new_batch && immutable_db_options_.memtable_as_log_index) {
+      if (new_batch && wal_memtable_format) {
         return Status::NotSupported("memtable_as_log_index",
                                     "WriteBatchTimestampSizeDifference");
       }
@@ -1980,6 +1989,12 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
                     const std::vector<ColumnFamilyDescriptor>& column_families,
                     std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
                     const bool seq_per_batch, const bool batch_per_txn) {
+  MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
+      const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
+      dbname);
+  *dbptr = nullptr;
+  ROCKSDB_SCOPE_EXIT(MaybeRetainDB(*dbptr, *handles));
+
   Status s = ValidateOptionsByTable(db_options, column_families);
   if (!s.ok()) {
     return s;

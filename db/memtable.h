@@ -9,8 +9,6 @@
 
 #pragma once
 #include <atomic>
-#include <deque>
-#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -23,15 +21,12 @@
 #include "db/version_edit.h"
 #include "memory/allocator.h"
 #include "memory/concurrent_arena.h"
-#include "monitoring/instrumented_mutex.h"
 #include "options/cf_options.h"
 #include "rocksdb/db.h"
 #include "rocksdb/memtablerep.h"
 #include "table/internal_iterator.h"
 #include "table/multiget_context.h"
 #include "util/dynamic_bloom.h"
-#include "util/hash.h"
-#include "util/hash_containers.h"
 
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
 #include <terark/sso.hpp>
@@ -139,6 +134,10 @@ class MemTable : public CacheAlignedNewDelete {
                            const char* prefix_len_key2) const override;
     virtual int operator()(const char* prefix_len_key,
                            const DecodedType& key) const override;
+    virtual int operator()(const char* prefix_len_key,
+                           const ParsedInternalKey&) const override;
+    virtual int operator()(const ParsedInternalKey&,
+                           const char* prefix_len_key) const override;
     virtual const InternalKeyComparator* icomparator() const override;
   };
 
@@ -306,7 +305,7 @@ class MemTable : public CacheAlignedNewDelete {
   // @param immutable_memtable Whether this memtable is immutable. Used
   // internally by NewRangeTombstoneIterator(). See comment above
   // NewRangeTombstoneIterator() for more detail.
-  bool Get(const LookupKey& key, PinnableSlice* value,
+  bool Get(const ParsedInternalKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq, SequenceNumber* seq,
@@ -314,7 +313,7 @@ class MemTable : public CacheAlignedNewDelete {
            ReadCallback* callback = nullptr, bool* is_blob_index = nullptr,
            bool do_merge = true);
 
-  bool Get(const LookupKey& key, PinnableSlice* value,
+  bool Get(const ParsedInternalKey& key, PinnableSlice* value,
            PinnableWideColumns* columns, std::string* timestamp, Status* s,
            MergeContext* merge_context,
            SequenceNumber* max_covering_tombstone_seq,
@@ -698,7 +697,8 @@ class MemTable : public CacheAlignedNewDelete {
   const SliceTransform* insert_with_hint_prefix_extractor_;
 
   // Insert hints for each prefix.
-  UnorderedMapH<Slice, void*, SliceHasher32> insert_hints_;
+  // UnorderedMapH<Slice, void*, SliceHasher32> insert_hints_;
+  terark::hash_strmap<void*> insert_hints_;
 
   // Timestamp of oldest key
   std::atomic<uint64_t> oldest_key_time_;

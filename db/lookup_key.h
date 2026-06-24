@@ -14,6 +14,7 @@
 #include "rocksdb/slice.h"
 #include "rocksdb/types.h"
 #include "port/likely.h"
+#include "dbformat.h"
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -60,6 +61,10 @@ class LookupKey {
       return Slice(space_, klength_ - 8);
     else
       return Slice(longstart_, klength_ - 8);
+  }
+
+  operator ParsedInternalKey() const {
+    return ParsedInternalKey(internal_key());
   }
 
  private:

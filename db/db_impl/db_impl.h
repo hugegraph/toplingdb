@@ -448,7 +448,7 @@ class DBImpl : public DB {
   virtual Status LockWAL() override;
   virtual Status UnlockWAL() override;
 
-  virtual SequenceNumber GetLatestSequenceNumber() const override;
+  virtual SequenceNumber GetLatestSequenceNumber() const override final;
 
   // IncreaseFullHistoryTsLow(ColumnFamilyHandle*, std::string) will acquire
   // and release db_mutex
@@ -466,7 +466,7 @@ class DBImpl : public DB {
 
   virtual Status GetDbSessionId(std::string& session_id) const override;
 
-  ColumnFamilyHandle* DefaultColumnFamily() const override;
+  ColumnFamilyHandle* DefaultColumnFamily() const override final;
 
   ColumnFamilyHandle* PersistentStatsColumnFamily() const;
 
@@ -677,7 +677,7 @@ class DBImpl : public DB {
                                       bool expose_blob_index = false,
                                       bool allow_refresh = true);
 
-  virtual SequenceNumber GetLastPublishedSequence() const {
+  virtual SequenceNumber GetLastPublishedSequence() const final {
     if (last_seq_same_as_publish_seq_) {
       return versions_->LastSequence();
     } else {
@@ -687,7 +687,7 @@ class DBImpl : public DB {
 
   // REQUIRES: joined the main write queue if two_write_queues is disabled, and
   // the second write queue otherwise.
-  virtual void SetLastPublishedSequence(SequenceNumber seq);
+  virtual void SetLastPublishedSequence(SequenceNumber seq) final;
   // Returns LastSequence in last_seq_same_as_publish_seq_
   // mode and LastAllocatedSequence otherwise. This is useful when visiblility
   // depends also on data written to the WAL but not to the memtable.
@@ -2241,6 +2241,8 @@ public:
   SnapshotImpl* GetSnapshotImpl(SequenceNumber snapshot_seq,
                                 bool is_write_conflict_boundary,
                                 bool lock = true);
+  ColumnFamilyHandle* persist_stats_cf_handle() const { return persist_stats_cf_handle_; }
+
 protected:
 
   // If snapshot_seq != kMaxSequenceNumber, then this function can only be
@@ -2804,6 +2806,15 @@ class GetWithTimestampReadCallback : public ReadCallback {
     return seq <= max_visible_seq_;
   }
 };
+
+extern bool MaybeCFOptionsUpdateFrom
+(ColumnFamilyOptions*, const std::string& cfname, const std::string& dbpath);
+extern bool MaybeOptionsUpdateFrom
+(DBOptions*, std::vector<ColumnFamilyDescriptor>*, const std::string& dbpath);
+extern void MaybeRetainDB(DB*, const std::vector<ColumnFamilyHandle*>&);
+extern void MaybeForgetDB(DB*);
+extern void MaybeRetainCF(DB*, ColumnFamilyHandle*);
+extern void MaybeForgetCF(DB*, ColumnFamilyHandle*);
 
 extern Options SanitizeOptions(const std::string& db, const Options& src,
                                bool read_only = false,

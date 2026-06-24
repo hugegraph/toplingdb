@@ -25,11 +25,25 @@ class GetContext;
 class PinnableWideColumns;
 
 struct KeyContext {
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   const Slice* key;
   LookupKey* lkey;
-  Slice ukey_with_ts;
+  union {
+    ParsedInternalKey ikey;
+    Slice ukey_with_ts; // at ikey.user_key
+  };
   Slice ukey_without_ts;
-  Slice ikey;
+  // long live & fast
+  auto InternalKeyBuf() const { return lkey->internal_key(); }
+#else
+  union {
+    ParsedInternalKey ikey;
+    Slice ukey_with_ts;    // at ikey.user_key
+    Slice ukey_without_ts; // at ikey.user_key
+  };
+  // temporary & slow
+  auto InternalKeyBuf() const { return ikey.MakeInternalKeyBuf(); }
+#endif
   ColumnFamilyHandle* column_family;
   Status* s;
   MergeContext merge_context;
@@ -45,8 +59,13 @@ struct KeyContext {
   KeyContext(ColumnFamilyHandle* col_family, const Slice& user_key,
              PinnableSlice* val, PinnableWideColumns* cols, std::string* ts,
              Status* stat)
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
       : key(&user_key),
         lkey(nullptr),
+        ukey_without_ts(user_key), // must init
+#else
+      : ukey_without_ts(user_key), // keep ikey.tag raw mem
+#endif
         column_family(col_family),
         s(stat),
         max_covering_tombstone_seq(0),
@@ -113,8 +132,11 @@ class MultiGetContext {
                   Statistics* stats)
       : num_keys_(num_keys),
         value_mask_(0),
-        value_size_(0),
+        value_size_(0)
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
+        ,
         lookup_key_ptr_(reinterpret_cast<LookupKey*>(lookup_key_stack_buf))
+#endif
 #if USE_COROUTINES
         ,
         reader_(fs, stats),
@@ -124,41 +146,44 @@ class MultiGetContext {
     (void)fs;
     (void)stats;
     assert(num_keys <= MAX_BATCH_SIZE);
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
     if (num_keys > MAX_LOOKUP_KEYS_ON_STACK) {
       lookup_key_heap_buf.reset(new char[sizeof(LookupKey) * num_keys]);
       lookup_key_ptr_ = reinterpret_cast<LookupKey*>(lookup_key_heap_buf.get());
     }
+#endif
 
+    ROCKSDB_ASSERT_LE(begin + num_keys, sorted_keys->size());
     for (size_t iter = 0; iter != num_keys_; ++iter) {
       // autovector may not be contiguous storage, so make a copy
       sorted_keys_[iter] = (*sorted_keys)[begin + iter];
+     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       sorted_keys_[iter]->lkey = new (&lookup_key_ptr_[iter])
           LookupKey(*sorted_keys_[iter]->key, snapshot, read_opts.timestamp);
       sorted_keys_[iter]->ukey_with_ts = sorted_keys_[iter]->lkey->user_key();
 
-     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       sorted_keys_[iter]->ukey_without_ts = StripTimestampFromUserKey(
           sorted_keys_[iter]->lkey->user_key(),
           read_opts.timestamp == nullptr ? 0 : read_opts.timestamp->size());
-     #else
-      sorted_keys_[iter]->ukey_without_ts = sorted_keys_[iter]->lkey->user_key();
-     #endif
-
-      sorted_keys_[iter]->ikey = sorted_keys_[iter]->lkey->internal_key();
-
-     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       sorted_keys_[iter]->timestamp = (*sorted_keys)[begin + iter]->timestamp;
+     #else
+      static_assert(offsetof(KeyContext, ikey.user_key) == offsetof(KeyContext, ukey_without_ts));
      #endif
+      static_assert(offsetof(KeyContext, ikey.user_key) == offsetof(KeyContext, ukey_with_ts));
+      sorted_keys_[iter]->ikey.sequence = snapshot;
+      sorted_keys_[iter]->ikey.type = kValueTypeForSeek;
       sorted_keys_[iter]->get_context =
           (*sorted_keys)[begin + iter]->get_context;
     }
   }
 
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   ~MultiGetContext() {
     for (size_t i = 0; i < num_keys_; ++i) {
       lookup_key_ptr_[i].~LookupKey();
     }
   }
+#endif
 
 #if USE_COROUTINES
   SingleThreadExecutor& executor() { return executor_; }
@@ -168,15 +193,19 @@ class MultiGetContext {
 
  private:
   static const int MAX_LOOKUP_KEYS_ON_STACK = 16;
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   alignas(
       alignof(LookupKey)) char lookup_key_stack_buf[sizeof(LookupKey) *
                                                     MAX_LOOKUP_KEYS_ON_STACK];
+#endif
   std::array<KeyContext*, MAX_BATCH_SIZE> sorted_keys_;
   size_t num_keys_;
   Mask value_mask_;
   uint64_t value_size_;
+#if defined(TOPLINGDB_WITH_TIMESTAMP)
   std::unique_ptr<char[]> lookup_key_heap_buf;
   LookupKey* lookup_key_ptr_;
+#endif
 #if USE_COROUTINES
   AsyncFileReader reader_;
   SingleThreadExecutor executor_;

@@ -401,7 +401,16 @@ class Repairer {
     std::string scratch;
     Slice record;
     WriteBatch batch;
-    if (db_options_.memtable_as_log_index) {
+    bool wal_memtable_format = db_options_.memtable_as_log_index;
+    if (db_options_.check_wal_format) {
+      if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
+                         (*fs, logname, &wal_memtable_format); !ios.ok()) {
+        ROCKS_LOG_WARN(db_options_.info_log, "%s: %s",
+                       logname.c_str(), *ios.ToSSO());
+        return Status(ios);
+      }
+    }
+    if (wal_memtable_format) {
       reader.InitSetMemTableAsLogIndex(*fs);
       auto [fmap, ios] = ReadonlyFileMmap::New(*fs, log, logname);
       if (!ios.ok() && ios.ToString() != "Invalid argument: Empty File")

@@ -2749,9 +2749,23 @@ void DumpWalFile(Options options, std::string wal_file, bool print_header,
       // bogus input, carry on as best we can
       log_number = 0;
     }
+    bool wal_memtable_format = options.memtable_as_log_index;
+    if (options.check_wal_format) {
+      if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
+                   (*fs, wal_file, &wal_memtable_format); !ios.ok()) {
+        if (exec_state) {
+          *exec_state = LDBCommandExecuteResult::Failed(
+              "Failed to detect WAL format " + ios.ToString());
+        } else {
+          std::cerr << "Error: Failed to detect WAL format "
+                    << ios.ToString() << std::endl;
+        }
+        return;
+      }
+    }
     log::Reader reader(options.info_log, std::move(wal_file_reader), &reporter,
                        true /* checksum */, log_number);
-    if (options.memtable_as_log_index) {
+    if (wal_memtable_format) {
       reader.InitSetMemTableAsLogIndex(*fs);
     }
     std::string scratch;

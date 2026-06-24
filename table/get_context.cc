@@ -61,6 +61,9 @@ GetContext::GetContext(
   if (seq) {
     *seq = kMaxSequenceNumber;
   }
+  if (statistics) {
+    new(&get_context_stats_)GetContextStats();
+  }
   switch (g_how_sampling) {
   case GetContextSampleRead::kAlways: sample_ = true;  break;
   case GetContextSampleRead::kNone  : sample_ = false; break;
@@ -133,6 +136,9 @@ void GetContext::SaveValue(const Slice& value, SequenceNumber /*seq*/) {
 }
 
 void GetContext::ReportCounters() {
+  if (!statistics_) {
+    return;
+  }
   if (get_context_stats_.num_cache_hit > 0) {
     RecordTick(statistics_, BLOCK_CACHE_HIT, get_context_stats_.num_cache_hit);
   }

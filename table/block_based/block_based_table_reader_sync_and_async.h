@@ -408,8 +408,9 @@ DEFINE_SYNC_AND_ASYNC(void, BlockBasedTable::MultiGet)
 
         for (auto miter = data_block_range.begin();
              miter != data_block_range.end(); ++miter) {
-          const Slice& key = miter->ikey;
-          iiter->Seek(miter->ikey);
+          const auto ikbuf = miter->InternalKeyBuf();
+          const Slice key = ikbuf;
+          iiter->Seek(key);
 
           IndexValue v;
           if (iiter->Valid()) {
@@ -580,7 +581,8 @@ DEFINE_SYNC_AND_ASYNC(void, BlockBasedTable::MultiGet)
          ++miter) {
       Status s;
       GetContext* get_context = miter->get_context;
-      const Slice& key = miter->ikey;
+      const auto ikbuf = miter->InternalKeyBuf();
+      const Slice key = ikbuf;
       bool matched = false;  // if such user key matched a key in SST
       bool done = false;
       bool first_block = true;

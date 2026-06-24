@@ -550,11 +550,12 @@ struct BytewiseCmpNoTS {
     // return x < y;
     ROCKSDB_ASSERT_EQ(x.size(), y.size());
     ROCKSDB_ASSERT_LE(x.size(), 64);
+    ROCKSDB_ASSERT_GT(x.size(), 0);
     __mmask64 msk = _bzhi_u64(-1, x.size());
     __m512i   xxx = _mm512_maskz_loadu_epi8(msk, x.data());
     __m512i   yyy = _mm512_maskz_loadu_epi8(msk, y.data());
     __mmask64 neq = _mm512_cmpneq_epi8_mask(xxx, yyy);
-    __mmask64 lt  = _mm512_cmplt_epi8_mask (xxx, yyy);
+    __mmask64 lt  = _mm512_cmplt_epu8_mask (xxx, yyy);
     return (lt & -neq) != 0;
   }
  #endif
@@ -595,7 +596,7 @@ struct VirtualCmpNoTS {
 template<size_t UserKeyLen>
 __always_inline
 void DBIter::FastIterKey::SetUK(const Slice& uk_slice) {
-  static_assert(UserKeyLen < sizeof(key));
+  static_assert(UserKeyLen + 8 < sizeof(key));
   auto uk_ptr = uk_slice.data();
   auto uk_len = uk_slice.size();
   if constexpr (UserKeyLen == 0) {
@@ -612,8 +613,9 @@ void DBIter::FastIterKey::SetUK(const Slice& uk_slice) {
       _mm512_mask_storeu_epi8(buf, mask, r512);
       // do not write last 8 bytes(seq + value_type)
     });
-   #elif defined(__clang__) || !defined(__GNUC__) || __GNUC__ >= 13
-    static_assert(false, "UserKeyLen == 64 should not on non-avx512");
+   #else
+    // (UserKeyLen != 64) == false here, for workardound
+    static_assert(UserKeyLen != 64, "UserKeyLen == 64 should not on non-avx512");
    #endif
   } else {
     ROCKSDB_ASSERT_EQ(uk_len, UserKeyLen);
@@ -2007,9 +2009,9 @@ void DBIter::Seek(const Slice& target) {
   if (statistics_ != nullptr) {
     // Decrement since we don't want to count this key as skipped
     RecordTick(statistics_, NUMBER_DB_SEEK_FOUND);
-    RecordTick(statistics_, ITER_BYTES_READ, key().size() + value().size());
+    RecordTick(statistics_, ITER_BYTES_READ, key().size());
   }
-  PERF_COUNTER_ADD(iter_read_bytes, key().size() + value().size());
+  PERF_COUNTER_ADD(iter_read_bytes, key().size());
   //local_stats_.BumpGlobalStatistics(statistics_);
 }
 

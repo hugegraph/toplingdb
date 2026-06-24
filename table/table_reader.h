@@ -113,6 +113,9 @@ class TableReader : public CacheAlignedNewDelete {
 
   // Prepare work that can be done before the real Get()
   virtual void Prepare(const Slice& /*target*/) {}
+  virtual void PreparePIK(const ParsedInternalKey& pik) {
+    Prepare(pik.MakeInternalKeyBuf());
+  }
 
   // Report an approximation of how much memory has been used.
   virtual size_t ApproximateMemoryUsage() const = 0;
@@ -133,6 +136,14 @@ class TableReader : public CacheAlignedNewDelete {
                      const SliceTransform* prefix_extractor,
                      bool skip_filters = false) = 0;
 
+  virtual Status GetPIK(const ReadOptions& ro, const ParsedInternalKey& pik,
+                     GetContext* get_context,
+                     const SliceTransform* prefix_extractor,
+                     bool skip_filters = false) {
+    auto ikbuf = pik.MakeInternalKeyBuf();
+    return Get(ro, ikbuf, get_context, prefix_extractor, skip_filters);
+  }
+
   // Use bloom filters in the table file, if present, to filter out keys. The
   // mget_range will be updated to skip keys that get a negative result from
   // the filter lookup.
@@ -147,7 +158,7 @@ class TableReader : public CacheAlignedNewDelete {
                         const SliceTransform* prefix_extractor,
                         bool skip_filters = false) {
     for (auto iter = mget_range->begin(); iter != mget_range->end(); ++iter) {
-      *iter->s = Get(readOptions, iter->ikey, iter->get_context,
+      *iter->s = GetPIK(readOptions, iter->ikey, iter->get_context,
                      prefix_extractor, skip_filters);
     }
   }

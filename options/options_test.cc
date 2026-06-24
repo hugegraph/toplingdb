@@ -170,6 +170,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
       {"stats_persist_period_sec", "57"},
       {"persist_stats_to_disk", "false"},
       {"memtable_as_log_index", "false"},
+      {"check_wal_format", "false"},
       {"stats_history_buffer_size", "69"},
       {"advise_random_on_open", "true"},
       {"use_adaptive_mutex", "false"},
@@ -354,6 +355,7 @@ TEST_F(OptionsTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_db_opt.stats_persist_period_sec, 57U);
   ASSERT_EQ(new_db_opt.persist_stats_to_disk, false);
   ASSERT_EQ(new_db_opt.memtable_as_log_index, false);
+  ASSERT_EQ(new_db_opt.check_wal_format, false);
   ASSERT_EQ(new_db_opt.stats_history_buffer_size, 69U);
   ASSERT_EQ(new_db_opt.advise_random_on_open, true);
   ASSERT_EQ(new_db_opt.use_adaptive_mutex, false);
@@ -2392,6 +2394,7 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
       {"stats_persist_period_sec", "57"},
       {"persist_stats_to_disk", "false"},
       {"memtable_as_log_index", "false"},
+      {"check_wal_format", "false"},
       {"stats_history_buffer_size", "69"},
       {"advise_random_on_open", "true"},
       {"use_adaptive_mutex", "false"},
@@ -2578,6 +2581,7 @@ TEST_F(OptionsOldApiTest, GetOptionsFromMapTest) {
   ASSERT_EQ(new_db_opt.stats_persist_period_sec, 57U);
   ASSERT_EQ(new_db_opt.persist_stats_to_disk, false);
   ASSERT_EQ(new_db_opt.memtable_as_log_index, false);
+  ASSERT_EQ(new_db_opt.check_wal_format, false);
   ASSERT_EQ(new_db_opt.stats_history_buffer_size, 69U);
   ASSERT_EQ(new_db_opt.advise_random_on_open, true);
   ASSERT_EQ(new_db_opt.use_adaptive_mutex, false);

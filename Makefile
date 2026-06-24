@@ -61,8 +61,8 @@ quoted_perl_command = $(subst ','\'',$(perl_command))
 # `make install-shared`, `make static_lib`, `make install-static` or
 # `make install`
 
-# Set the default DEBUG_LEVEL to 1
-DEBUG_LEVEL?=1
+# Set the default DEBUG_LEVEL to 2
+DEBUG_LEVEL?=2
 
 # OBJ_DIR is where the object files reside.  Default to the current directory
 OBJ_DIR?=.
@@ -120,7 +120,7 @@ endif
 ifeq (${DISABLE_JEMALLOC},1)
   ifeq  (${ROCKSDB_DISABLE_JEMALLOC},)
     export_ROCKSDB_DISABLE_JEMALLOC := export ROCKSDB_DISABLE_JEMALLOC=1;
-	export ROCKSDB_DISABLE_JEMALLOC = 1
+    export ROCKSDB_DISABLE_JEMALLOC = 1
   endif
 endif
 
@@ -244,9 +244,15 @@ endif
 # interfaces/internal abstractions, like in the iterator hierarchy. It works
 # better when combined with profile-guided optimizations (not currently
 # supported natively in Makefile).
+OPTION_jemalloc := jemalloc-$(if $(filter 1,${DISABLE_JEMALLOC}),0,1)
+OPTION_dyna_tls := dyna_tls-$(if $(filter 1,${TOPLING_USE_DYNAMIC_TLS}),1,0)
+OPTION_lto := lto-0
 ifeq ($(USE_LTO), 1)
-	CXXFLAGS += -flto
-	LDFLAGS += -flto=auto -fuse-linker-plugin
+	ifeq (${DEBUG_LEVEL},0)
+		CXXFLAGS += -flto
+		LDFLAGS += -flto=auto -fuse-linker-plugin
+		OPTION_lto := lto-$(if $(filter 1,${USE_LTO}),1,0)
+	endif
 endif
 
 # `COERCE_CONTEXT_SWITCH=1` will inject spurious wakeup and
@@ -389,7 +395,7 @@ endif
 TOPLING_LIB_OBJECTS = $(addprefix ${TOPLING_CORE_DIR}/, ${TOPLING_LIB_OBJ_LIST_VAR})
 LDFLAGS += ${TOPLING_CORE_LD_LIBS_EXTRA}
 
-ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test %_test2 jtest, $(MAKECMDGOALS)),)
+ifneq ($(filter auto_all_tests check check_0 watch-log gen_parallel_tests %_test %_test2 jtest %_test.o %_test2.o, $(MAKECMDGOALS)),)
   MAKE_UNIT_TEST ?= 1
 endif
 ifeq (${MAKE_UNIT_TEST},1)
@@ -405,6 +411,15 @@ endif
 #BUILD_PREFIX ?=
 ORIG_OBJ_DIR := ${OBJ_DIR}
 OBJ_DIR := ${BUILD_PREFIX}${OBJ_DIR}/v${ROCKSDB_FULL_VERSION}
+
+# COMPILER is in ignored
+TRIAL_urldir := toplingdb/gpl-trial/${OPTION_lto}-${OPTION_jemalloc}-${OPTION_dyna_tls}/${UNAME_MachineSystem}-bmi2-${WITH_BMI2}/${BUILD_TYPE_SIG}
+ifeq (${PLATFORM},OS_LINUX)
+LINUX_NAME := $(shell source /etc/os-release; echo $$ID)
+ifeq (${LINUX_NAME},centos)
+TRIAL_urldir := ${TRIAL_urldir}/$(shell source /etc/os-release; echo $$ID$$VERSION_ID)
+endif
+endif
 
 # 1. we define ROCKSDB_DISABLE_ZSTD=1 on build_detect_platform.
 # 2. zstd lib is included in libterark-zbs
@@ -432,33 +447,26 @@ ifndef WITH_TOPLING_ROCKS
       cd topling-rocks; \
       git submodule update --init --recursive \
     )
-  endif
-  ifeq (,$(wildcard sideplugin/topling-rocks))
-    WITH_TOPLING_ROCKS := 0
   else
-    WITH_TOPLING_ROCKS := 1
+    ifeq (,$(wildcard sideplugin/topling-rocks/src/table/top_patent_algo.cc))
+      dummy := $(shell rm -rf sideplugin/topling-rocks)
+      dummy := $(shell rm -rf sideplugin/cspp-memtable/cspp_memtable.cc)
+               # check with topling-rocks, not graceful, just works
+    endif
   endif
+  # default 1
+  WITH_TOPLING_ROCKS := 1
 endif
 
 ifeq (${WITH_TOPLING_ROCKS},1)
-ifeq (,$(wildcard sideplugin/topling-rocks))
-  # topling specific: just for people who has permission to topling-rocks
-  dummy := $(shell set -e -x; \
-    cd sideplugin; \
-    git clone ${GIT_TOPLING_ROCKS}; \
-    cd topling-rocks; \
-    git submodule update --init --recursive \
-  )
-else
+ifneq (,$(wildcard sideplugin/topling-rocks))
   ifneq (${UPDATE_REPO},0)
    ifeq (${MAKE_RESTARTS},)
     dummy := $(shell set -ex; cd sideplugin/topling-rocks && git pull)
    endif
   endif
 endif
-ifeq (,$(wildcard sideplugin/topling-rocks/src/table/top_zip_table_builder.cc))
-  $(error WITH_TOPLING_ROCKS=1 but repo sideplugin/topling-rocks is broken)
-endif
+CXXFLAGS += -DHAS_TOPLING_ROCKS
 endif
 
 ifeq (,$(wildcard sideplugin/cspp-memtable))
@@ -489,14 +497,35 @@ else
   endif
 endif
 
-ifneq (,$(wildcard sideplugin/cspp-memtable))
-  # now we have cspp-memtable
-  CXXFLAGS   += -DHAS_TOPLING_CSPP_MEMTABLE
-  CSPP_MEMTABLE_GIT_VER_SRC = ${BUILD_ROOT}/git-version-cspp_memtable.cc
-  EXTRA_LIB_SOURCES += sideplugin/cspp-memtable/cspp_memtable.cc \
-                       sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}
+WITH_CSPP_MEMTABLE ?= 1 # allow override by env or cmd line
+
+ifeq (${WITH_CSPP_MEMTABLE}${WITH_TOPLING_ROCKS},10)
+  $(error "When WITH_CSPP_MEMTABLE is 1, WITH_TOPLING_ROCKS must be 1 also")
+endif
+
+ifneq (,$(wildcard sideplugin/cspp-memtable/cspp_memtable.cc))
+  ifeq (${WITH_CSPP_MEMTABLE},0)
+    $(warning cspp-memtable exists but intentional disabled)
+  else
+    # now we have cspp-memtable
+    CXXFLAGS   += -DHAS_TOPLING_CSPP_MEMTABLE
+    CSPP_MEMTABLE_GIT_VER_SRC = ${BUILD_ROOT}/git-version-cspp_memtable.cc
+    ifeq (,${TOPLING_ZIP_TABLE_TRIAL_DAYS})
+      EXTRA_LIB_SOURCES += sideplugin/cspp-memtable/cspp_memtable.cc \
+                           sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}
+    else
+      # no CSPP_MEMTABLE_GIT_VER_SRC
+      EXTRA_LIB_SOURCES += sideplugin/topling-zip_table_reader/cspp_memtable.cc
+    endif
+  endif
 else
-  $(warning NotFound sideplugin/cspp-memtable, this is ok, only Topling CSPP MemTab is disabled)
+  ifeq (${WITH_CSPP_MEMTABLE},0)
+    $(warning cspp-memtable does not exist, intentional disabled, not use trial)
+  else
+    # use dir topling-zip_table_reader, not graceful, just works
+    # this file does not exist, just for generating filepath cspp_memtable.o
+    EXTRA_LIB_SOURCES += sideplugin/topling-zip_table_reader/cspp_memtable.cc
+  endif
 endif
 
 ifneq (,$(wildcard sideplugin/cspp-wbwi))
@@ -611,13 +640,14 @@ endif # WITH_TOPLING_DCOMPACT
 ifeq (${WITH_TOPLING_ROCKS},1)
 ifneq (,$(wildcard sideplugin/topling-rocks))
   CXXFLAGS   +=  -Isideplugin/topling-rocks/src
-  CXXFLAGS   +=  -DHAS_TOPLING_ROCKS
   TOPLING_ROCKS_GIT_VER_SRC = ${BUILD_ROOT}/git-version-topling_rocks.cc
-  EXTRA_LIB_SOURCES += \
-    $(wildcard sideplugin/topling-rocks/src/table/*.cc) \
-    sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
-else
-  $(warning NotFound sideplugin/topling-rocks, this is ok, only ToplingZipTable is disabled)
+  ifeq (,${TOPLING_ZIP_TABLE_TRIAL_DAYS})
+    EXTRA_LIB_SOURCES += $(wildcard sideplugin/topling-rocks/src/table/*.cc)
+    EXTRA_LIB_SOURCES += sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
+  else
+    # no TOPLING_ROCKS_GIT_VER_SRC
+    EXTRA_LIB_SOURCES += sideplugin/topling-zip_table_reader/top_zip_table_builder.cc
+  endif
 endif
 endif
 
@@ -785,7 +815,7 @@ endif
 
 ifeq ($(LIB_MODE),shared)
 # So that binaries are executable from build location, in addition to install location
-EXEC_LDFLAGS += -Wl,-rpath -Wl,'$$ORIGIN'
+EXEC_LDFLAGS += -Wl,-rpath -Wl,'$$ORIGIN:$$ORIGIN/../lib'
 endif
 
 ifeq ($(PLATFORM), OS_MACOSX)
@@ -1033,6 +1063,9 @@ endif
 # topling specific WARNING_FLAGS
 WARNING_FLAGS := -Wall -Wno-shadow
 ifeq "$(shell a=${COMPILER};echo $${a:0:5})" "clang"
+  CXXFLAGS := $(patsubst -flto, -flto=thin, ${CXXFLAGS})
+  LLD_LTO_FLAGS := -fuse-ld=lld -flto=thin -Wl,--thinlto-jobs=all
+  LDFLAGS := $(patsubst -flto=auto, ${LLD_LTO_FLAGS}, ${LDFLAGS})
   LDFLAGS += -latomic
   #$(error LDFLAGS = ${LDFLAGS})
   WARNING_FLAGS += -Wno-deprecated-builtins
@@ -1098,6 +1131,12 @@ ifneq ($(PPC_LIBC_IS_GNU),0)
   # add to LIB_SOURCES to generate *.cc.d dependency rules
   LIB_SOURCES += ${RANGE_TREE_SOURCES}
   LIB_OBJECTS += $(patsubst %.cc, $(OBJ_DIR)/%.o, $(RANGE_TREE_SOURCES))
+endif
+
+ifeq (${WITH_TOPLING_ROCKS},1)
+  ifeq (,$(wildcard sideplugin/topling-rocks))
+    LIB_OBJECTS += $(OBJ_DIR)/sideplugin/topling-zip_table_reader/top_zip_table_builder.o
+  endif
 endif
 
 GTEST = $(OBJ_DIR)/$(GTEST_DIR)/gtest/gtest-all.o
@@ -2592,39 +2631,44 @@ install-headers: gen-pc
 	install -d $(INSTALL_LIBDIR)
 	install -d $(INSTALL_LIBDIR)/pkgconfig
 	for header_dir in `$(FIND) "include/rocksdb" -type d`; do \
-		install -d $(DESTDIR)/$(PREFIX)/$$header_dir; \
+		install -d $(DESTDIR)$(PREFIX)/$$header_dir; \
 	done
 	for header in `$(FIND) "include/rocksdb" -type f -name *.h`; do \
-		install -C -m 644 $$header $(DESTDIR)/$(PREFIX)/$$header; \
+		install -C -m 644 $$header $(DESTDIR)$(PREFIX)/$$header; \
 	done
 	for header in $(ROCKSDB_PLUGIN_HEADERS); do \
-		install -d $(DESTDIR)/$(PREFIX)/include/rocksdb/`dirname $$header`; \
-		install -C -m 644 $$header $(DESTDIR)/$(PREFIX)/include/rocksdb/$$header; \
+		install -d $(DESTDIR)$(PREFIX)/include/rocksdb/`dirname $$header`; \
+		install -C -m 644 $$header $(DESTDIR)$(PREFIX)/include/rocksdb/$$header; \
 	done
-	install -d                                  $(DESTDIR)/$(PREFIX)/include/topling
-	install -C -m 644 sideplugin/rockside/src/topling/json.h     $(DESTDIR)/$(PREFIX)/include/topling
-	install -C -m 644 sideplugin/rockside/src/topling/json_fwd.h $(DESTDIR)/$(PREFIX)/include/topling
-	install -C -m 644 sideplugin/rockside/src/topling/builtin_table_factory.h $(DESTDIR)/$(PREFIX)/include/topling
-	install -C -m 644 sideplugin/rockside/src/topling/side_plugin_repo.h      $(DESTDIR)/$(PREFIX)/include/topling
-	install -C -m 644 sideplugin/rockside/src/topling/side_plugin_factory.h   $(DESTDIR)/$(PREFIX)/include/topling
-	install -d $(DESTDIR)/$(PREFIX)/include/terark
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/io
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/succinct
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/thread
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/util
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/fsa
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/fsa/ppi
-	install -d $(DESTDIR)/$(PREFIX)/include/terark/zbs
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/*.hpp          $(DESTDIR)/$(PREFIX)/include/terark
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/io/*.hpp       $(DESTDIR)/$(PREFIX)/include/terark/io
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/succinct/*.hpp $(DESTDIR)/$(PREFIX)/include/terark/succinct
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/thread/*.hpp   $(DESTDIR)/$(PREFIX)/include/terark/thread
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/util/*.hpp     $(DESTDIR)/$(PREFIX)/include/terark/util
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/*.hpp      $(DESTDIR)/$(PREFIX)/include/terark/fsa
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/*.inl      $(DESTDIR)/$(PREFIX)/include/terark/fsa
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/ppi/*.hpp  $(DESTDIR)/$(PREFIX)/include/terark/fsa/ppi
-	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/zbs/*.hpp      $(DESTDIR)/$(PREFIX)/include/terark/zbs
-	cp -ar ${TOPLING_CORE_DIR}/boost-include/boost  $(DESTDIR)/$(PREFIX)/include
+	install -d                                  $(DESTDIR)$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/json.h     $(DESTDIR)$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/json_fwd.h $(DESTDIR)$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/builtin_table_factory.h $(DESTDIR)$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/side_plugin_repo.h      $(DESTDIR)$(PREFIX)/include/topling
+	install -C -m 644 sideplugin/rockside/src/topling/side_plugin_factory.h   $(DESTDIR)$(PREFIX)/include/topling
+	install -d $(DESTDIR)$(PREFIX)/include/terark
+	install -d $(DESTDIR)$(PREFIX)/include/terark/io
+	install -d $(DESTDIR)$(PREFIX)/include/terark/succinct
+	install -d $(DESTDIR)$(PREFIX)/include/terark/thread
+	install -d $(DESTDIR)$(PREFIX)/include/terark/util
+	install -d $(DESTDIR)$(PREFIX)/include/terark/fsa
+	install -d $(DESTDIR)$(PREFIX)/include/terark/fsa/ppi
+	install -d $(DESTDIR)$(PREFIX)/include/terark/zbs
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/*.hpp          $(DESTDIR)$(PREFIX)/include/terark
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/io/*.hpp       $(DESTDIR)$(PREFIX)/include/terark/io
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/succinct/*.hpp $(DESTDIR)$(PREFIX)/include/terark/succinct
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/thread/*.hpp   $(DESTDIR)$(PREFIX)/include/terark/thread
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/util/*.hpp     $(DESTDIR)$(PREFIX)/include/terark/util
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/*.hpp      $(DESTDIR)$(PREFIX)/include/terark/fsa
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/*.inl      $(DESTDIR)$(PREFIX)/include/terark/fsa
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/fsa/ppi/*.hpp  $(DESTDIR)$(PREFIX)/include/terark/fsa/ppi
+	install -C -m 644 ${TOPLING_CORE_DIR}/src/terark/zbs/*.hpp      $(DESTDIR)$(PREFIX)/include/terark/zbs
+	cp -ar ${TOPLING_CORE_DIR}/boost-include/boost  $(DESTDIR)$(PREFIX)/include
+	install -d $(DESTDIR)$(PREFIX)/site
+	install -d $(DESTDIR)$(PREFIX)/toplingdb-conf
+	install -C -m 644 sideplugin/rockside/src/topling/web/index.html $(DESTDIR)$(PREFIX)/site
+	install -C -m 644 sideplugin/rockside/src/topling/web/style.css  $(DESTDIR)$(PREFIX)/site
+	install -C -m 644 sideplugin/rockside/sample-conf/db_bench_enterprise.yaml $(DESTDIR)$(PREFIX)/toplingdb-conf
 	install -C -m 644 rocksdb.pc $(INSTALL_LIBDIR)/pkgconfig/rocksdb.pc
 
 install-static: $(LIBRARY) static_lib
@@ -2634,6 +2678,9 @@ install-static: $(LIBRARY) static_lib
 install-shared: $(SHARED4) shared_lib
 	install -d $(INSTALL_LIBDIR)
 	install -C -m 755 $(SHARED4) $(INSTALL_LIBDIR)
+ifeq ($(STRIP_DEBUG_INFO),1)
+	$(STRIP_CMD) $(INSTALL_LIBDIR)/$(SHARED4)
+endif
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED3)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED2)
 	ln -fs $(SHARED4) $(INSTALL_LIBDIR)/$(SHARED1)
@@ -2643,10 +2690,22 @@ install: install-${LIB_MODE}
 install-dev-static: install-headers install-static
 install-dev-shared: install-headers install-shared
 install-dev: install-dev-${LIB_MODE}
+upload-trial: \
+  ${OBJ_DIR}/sideplugin/topling-zip_table_reader/top_zip_table_builder.o \
+  ${OBJ_DIR}/sideplugin/topling-zip_table_reader/cspp_memtable.o
+	ossutil cp --region=cn-qingdao -f \
+		$(OBJ_DIR)/sideplugin/topling-zip_table_reader/top_zip_table_builder.o \
+		oss://topling-tools/${TRIAL_urldir}/
+	ossutil cp --region=cn-qingdao -f \
+		$(OBJ_DIR)/sideplugin/topling-zip_table_reader/cspp_memtable.o \
+		oss://topling-tools/${TRIAL_urldir}/
 
 install-dcompact: install dcompact_worker
 	install -d $(DESTDIR)$(PREFIX)/bin
 	install -C -m 755 sideplugin/topling-dcompact/tools/dcompact/${ORIG_OBJ_DIR}/dcompact_worker.exe $(DESTDIR)$(PREFIX)/bin
+ifeq ($(STRIP_DEBUG_INFO),1)
+	$(STRIP_CMD) $(DESTDIR)$(PREFIX)/bin/dcompact_worker.exe
+endif
 
 install-tools: install tools
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
@@ -3284,18 +3343,41 @@ ${BUILD_ROOT}/lib_static/libterark-zbs-${COMPILER}-${BUILD_TYPE_SIG}.a:
 	+make -C ${TOPLING_CORE_DIR} core fsa zbs
 
 ifeq (${WITH_TOPLING_ROCKS},1)
-ifneq (,$(wildcard sideplugin/topling-rocks))
+ifneq (,$(wildcard sideplugin/topling-rocks/src/table/top_patent_algo.cc))
 sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}: \
+  sideplugin/topling-rocks/Makefile \
   $(shell find sideplugin/topling-rocks/{src,tools} -name '*.cc' -o -name '*.h')
 	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC}
+sideplugin/topling-zip_table_reader/top_zip_table_builder.cc: \
+ sideplugin/topling-rocks/src/table/top_zip_table_builder.cc \
+ sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
+	@rm -f sideplugin/topling-rocks/${TOPLING_ROCKS_GIT_VER_SRC}
+	+make -C sideplugin/topling-rocks ${TOPLING_ROCKS_GIT_VER_SRC}
+else
+${OBJ_DIR}/sideplugin/topling-zip_table_reader/top_zip_table_builder.o:
+	@mkdir -p $(dir $@)
+	@cd $(dir $@) && \
+	 wget https://topling-tools.oss-cn-qingdao.aliyuncs.com/${TRIAL_urldir}/top_zip_table_builder.o || \
+	 echo 'Download top_zip_table_builder fail, add WITH_TOPLING_ROCKS=0 to make command and try again'
 endif
 endif
 
-ifneq (,$(wildcard sideplugin/cspp-memtable))
+ifneq (,$(wildcard sideplugin/cspp-memtable/cspp_memtable.cc))
 sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}: \
   sideplugin/cspp-memtable/cspp_memtable.cc \
   sideplugin/cspp-memtable/Makefile
 	+make -C sideplugin/cspp-memtable ${CSPP_MEMTABLE_GIT_VER_SRC}
+sideplugin/topling-zip_table_reader/cspp_memtable.cc: \
+  sideplugin/cspp-memtable/cspp_memtable.cc \
+  sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}
+	@rm -f sideplugin/cspp-memtable/${CSPP_MEMTABLE_GIT_VER_SRC}
+	+make -C sideplugin/cspp-memtable ${CSPP_MEMTABLE_GIT_VER_SRC}
+else
+${OBJ_DIR}/sideplugin/topling-zip_table_reader/cspp_memtable.o:
+	@mkdir -p $(dir $@)
+	@cd $(dir $@) && \
+	 wget https://topling-tools.oss-cn-qingdao.aliyuncs.com/${TRIAL_urldir}/cspp_memtable.o || \
+	 echo 'Download cspp_memtable fail, add WITH_CSPP_MEMTABLE=0 to make command and try again'
 endif
 ifneq (,$(wildcard sideplugin/cspp-wbwi))
 sideplugin/cspp-wbwi/${CSPP_WBWI_GIT_VER_SRC}: \

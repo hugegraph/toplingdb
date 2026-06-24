@@ -278,19 +278,6 @@ std::string ReplacePrefix(Slice Old, Slice New, Slice str) {
               int(str.size()), str.data(), int(Old.size()), Old.data());
 }
 
-void ReplaceAll(std::string& str, Slice from, Slice to) {
-  if (from.empty()) return;
-  size_t start_pos = 0;
-  while ((start_pos = str.find(from.data(), start_pos)) != std::string::npos) {
-    str.replace(start_pos, from.size(), to.data(), to.size());
-    start_pos += to.size();
-  }
-}
-std::string ReplaceAll(Slice str, Slice from, Slice to) {
-  std::string tmp(str.data(), str.size());
-  ReplaceAll(tmp, from, to);
-  return tmp;
-}
 std::string MakePath(std::string dir, Slice sub) {
   while (!dir.empty() && '/' == dir.back()) {
     dir.pop_back();

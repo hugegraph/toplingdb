@@ -167,11 +167,21 @@ Status DBImplSecondary::MaybeInitLogReader(
           io_tracer_));
     }
 
+    bool wal_memtable_format = immutable_db_options_.memtable_as_log_index;
+    if (immutable_db_options_.check_wal_format) {
+      if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
+                   (*fs_, fname, &wal_memtable_format); !ios.ok()) {
+        auto info_log = immutable_db_options_.info_log.get();
+        ROCKS_LOG_WARN(info_log, "%s: %s", fname.c_str(), *ios.ToSSO());
+        return Status(ios);
+      }
+    }
+
     // Create the log reader.
     LogReaderContainer* log_reader_container = new LogReaderContainer(
         env_, immutable_db_options_.info_log, fname,
         std::move(file_reader), log_number);
-    if (immutable_db_options_.memtable_as_log_index) {
+    if (wal_memtable_format) {
       // will tailing log Reader, so must preserve mmap size
       auto mmap_size = GetMaxTotalWalSize() + 8*1024*1024;
       if (mmap_size > (1ull << 40)) {
@@ -424,7 +434,7 @@ Status DBImplSecondary::GetImpl(const ReadOptions& read_options,
 #if defined(TOPLINGDB_WITH_TIMESTAMP)
   LookupKey lkey(key, snapshot, read_options.timestamp);
 #else
-  LookupKey lkey(key, snapshot);
+  ParsedInternalKey lkey(key, snapshot, kValueTypeForSeek);
 #endif
   PERF_TIMER_STOP(get_snapshot_time);
   bool done = false;
@@ -801,6 +811,10 @@ Status DB::OpenAsSecondary(
   *dbptr = nullptr;
 
   DBOptions tmp_opts(db_options);
+  MaybeOptionsUpdateFrom(&tmp_opts,
+      const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
+      dbname);
+  ROCKSDB_SCOPE_EXIT(MaybeRetainDB(*dbptr, *handles));
   Status s;
   if (nullptr == tmp_opts.info_log) {
     s = CreateLoggerFromOptions(secondary_path, tmp_opts, &tmp_opts.info_log);

@@ -94,10 +94,12 @@ Status DBImplReadOnly::GetImpl(const ReadOptions& read_options,
       return s;
     }
   }
+  LookupKey lkey(key, snapshot, read_options.timestamp);
+ #else
+  ParsedInternalKey lkey(key, snapshot, kValueTypeForSeek);
  #endif
   MergeContext merge_context;
   SequenceNumber max_covering_tombstone_seq = 0;
-  LookupKey lkey(key, snapshot, read_options.timestamp);
   PERF_TIMER_STOP(get_snapshot_time);
 
   // Look up starts here
@@ -344,6 +346,11 @@ Status DBImplReadOnly::OpenForReadOnlyWithoutCheck(
     bool error_if_wal_file_exists) {
   *dbptr = nullptr;
   handles->clear();
+
+  MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
+      const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
+      dbname);
+  ROCKSDB_SCOPE_EXIT(MaybeRetainDB(*dbptr, *handles));
 
   SuperVersionContext sv_context(/* create_superversion */ true);
   DBImplReadOnly* impl = new DBImplReadOnly(db_options, dbname);
