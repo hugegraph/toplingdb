@@ -18,7 +18,7 @@ dir=${BUILD_PREFIX}build/${BUILD_NAME}/dbg/v${ROCKSDB_VERSION}
 dir_ut=${BUILD_PREFIX}build-ut/${BUILD_NAME}/dbg/v${ROCKSDB_VERSION}
 DEBUG_LEVEL=2
 function map() {
-    if [[ $1 == *test*.o ]]; then
+    if [[ $1 == *test*.o || $1 == *_test ]]; then
         echo $dir_ut/$1
     elif [[ $1 == *.o ]]; then
         echo $dir/$1
