@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       build_run_id:
-        description: Build workflow run id whose artifact to download
+        description: db_bench-build run id (downloads db_bench-plain-*.tgz)
         required: true
         type: string
       value_size:
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VARIANT: plain
-      ARTIFACT_NAME: db_bench-bin-plain
+      BUILD_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.build_run_id || github.event.workflow_run.id }}
       VALUE_SIZE: ${{ inputs.value_size || '50' }}
       NUM: ${{ inputs.num || '50000000' }}
       MAX_BACKGROUND_COMPACTIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_background_compactions || 'auto' }}
@@ -77,21 +77,27 @@ jobs:
             .github/scripts/run_sample_statm_fdcache.sh
           .github/scripts/ensure_sample_statm_fdcache.sh
 
-      - name: Download build artifact
+      - name: Download engine tarballs
         uses: actions/download-artifact@v4
         with:
-          name: ${{ env.ARTIFACT_NAME }}
-          run-id: ${{ github.event_name == 'workflow_dispatch' && inputs.build_run_id || github.event.workflow_run.id }}
+          pattern: db_bench-plain-*
+          merge-multiple: true
+          run-id: ${{ env.BUILD_RUN_ID }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: _artifact
 
-      - name: Unpack bench bundle
+      - name: Unpack engine tarballs
         run: |
           set -xe
           RUN_PREFIX="$PWD/_run_prefix"
           rm -rf "$RUN_PREFIX" logs
           mkdir -p "$RUN_PREFIX" logs
-          tar -C "$RUN_PREFIX" -xzf _artifact/bench-prefix.tgz
+          test -f _artifact/topling.tgz
+          test -f _artifact/rocksdb-v8.10.tgz
+          test -f _artifact/rocksdb-master.tgz
+          tar -C "$RUN_PREFIX" -xzf _artifact/topling.tgz
+          tar -C "$RUN_PREFIX" -xzf _artifact/rocksdb-v8.10.tgz
+          tar -C "$RUN_PREFIX" -xzf _artifact/rocksdb-master.tgz
           test -d "$RUN_PREFIX/topling"
           test -d "$RUN_PREFIX/rocksdb-v8.10"
           test -d "$RUN_PREFIX/rocksdb-master"

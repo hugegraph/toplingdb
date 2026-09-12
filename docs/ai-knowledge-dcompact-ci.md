@@ -80,7 +80,7 @@ Topling 扩展语义（非上游 RocksDB 默认行为）：
 | 阶段 | 文件 | 要点 |
 |------|------|------|
 | build | `db_bench-build.yml` | Compile 含 `dcompact_worker`；`PATCH_COMPACTION_SERVICE=1` 编 RocksDB broker/worker；`stage_dcompact_worker.sh` |
-| run | `db_bench-dcompact-run.yml` | 只 `workflow_dispatch`（首跑验收前）；消费 `db_bench-bin-plain`；`CPU_QUOTA` 入参 |
+| run | `db_bench-dcompact-run.yml` | 只 `workflow_dispatch`（首跑验收前）；消费 `db_bench-plain-*` 三个 tarball；`CPU_QUOTA` 入参 |
 | pages | `bench_dcompact_pages.py` | 完全自含；`dcompact/index.html`；共享 `history.json`/`runs/`；**不改** `bench_logs_to_pages.py` |
 
 上游 RocksDB 源码：`build_upstream_rocksdb.sh` 有 `facebook` remote 时 worktree，否则 clone。

@@ -1,6 +1,7 @@
 # Replaces the old db_bench.yml (compile+run monolith).
 # Builds ToplingDB + upstream RocksDB v8.10 + RocksDB master for comparison.
-# db_bench-run.yml executes benches and publishes Pages.
+# ToplingDB and the two RocksDB versions compile in parallel and each upload
+# an independent tarball. Run workflows download the three artifacts themselves.
 name: "db_bench-build"
 
 on:
@@ -83,11 +84,48 @@ jobs:
           rm -rf "$STAGE"
           chmod +x .github/scripts/stage_dcompact_worker.sh
           .github/scripts/stage_dcompact_worker.sh "$BUNDLE/topling"
-          echo "BUNDLE=$BUNDLE" >> "$GITHUB_ENV"
-        env:
-          USE_CLANG: ${{ inputs.use_clang }}
 
-      - name: Build upstream RocksDB v8.10 and master
+      - name: Pack ToplingDB tarball
+        run: |
+          set -xe
+          tar -C _bench_bundle -czf topling.tgz topling
+          tar -tzf topling.tgz | head -40
+
+      - name: Upload ToplingDB tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: db_bench-plain-topling
+          path: topling.tgz
+          retention-days: 14
+
+  build-rocksdb:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ref: v8.10.2
+            dest: rocksdb-v8.10
+          - ref: master
+            dest: rocksdb-master
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install Prerequisites
+        run: |
+          set -xe
+          sudo apt-get update -y && sudo apt-get install -y \
+            libjemalloc-dev libaio-dev libgflags-dev zlib1g-dev \
+            libbz2-dev libcurl4-openssl-dev liburing-dev \
+            libsnappy-dev libbz2-dev liblz4-dev libzstd-dev
+
+      - name: Build upstream RocksDB
         run: |
           set -xe
           chmod +x .github/scripts/build_upstream_rocksdb.sh
@@ -95,47 +133,24 @@ jobs:
             export CXX=clang++
             export CC=clang
           fi
-          # Script removes each clone tree after staging that engine.
+          BUNDLE="$PWD/_bench_bundle"
+          rm -rf "$BUNDLE"
+          mkdir -p "$BUNDLE"
           # Phase 2: patch CompactionService + build broker/worker into bundle.
           export PATCH_COMPACTION_SERVICE=1
-          .github/scripts/build_upstream_rocksdb.sh v8.10.2 "$BUNDLE/rocksdb-v8.10"
-          df -h
-          .github/scripts/build_upstream_rocksdb.sh master "$BUNDLE/rocksdb-master"
-          test -x "$BUNDLE/rocksdb-v8.10/bin/db_bench"
-          test -x "$BUNDLE/rocksdb-master/bin/db_bench"
-          df -h
+          .github/scripts/build_upstream_rocksdb.sh "${{ matrix.ref }}" \
+            "$BUNDLE/${{ matrix.dest }}"
+          test -x "$BUNDLE/${{ matrix.dest }}/bin/db_bench"
 
-      - name: Pack bench bundle artifact
+      - name: Pack RocksDB tarball
         run: |
           set -xe
-          python3 - <<'PY'
-          import json, os
-          from datetime import datetime, timezone
-          from pathlib import Path
-          bundle = Path(os.environ["BUNDLE"])
-          meta = {
-              "git_sha": os.environ.get("GITHUB_SHA", ""),
-              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
-              "variant": "plain",
-              "use_clang": os.environ.get("USE_CLANG", "false"),
-              "timestamp": datetime.now(timezone.utc).isoformat(),
-              "engines": ["topling", "rocksdb-v8.10", "rocksdb-master"],
-          }
-          (bundle / "build-meta.json").write_text(
-              json.dumps(meta, indent=2) + "\n", encoding="utf-8"
-          )
-          PY
-          tar -C "$BUNDLE" -czf bench-prefix.tgz .
-          tar -tzf bench-prefix.tgz | head -40
-          # Keep only the tarball for upload.
-          rm -rf "$BUNDLE"
-          df -h
-        env:
-          USE_CLANG: ${{ inputs.use_clang }}
+          tar -C _bench_bundle -czf "${{ matrix.dest }}.tgz" "${{ matrix.dest }}"
+          tar -tzf "${{ matrix.dest }}.tgz" | head -20
 
-      - name: Upload bench prefix artifact
+      - name: Upload RocksDB tarball
         uses: actions/upload-artifact@v4
         with:
-          name: db_bench-bin-plain
-          path: bench-prefix.tgz
+          name: db_bench-plain-${{ matrix.dest }}
+          path: ${{ matrix.dest }}.tgz
           retention-days: 14
