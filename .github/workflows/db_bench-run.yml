@@ -556,6 +556,35 @@ jobs:
           done
           rm -rf "$DB_PATH"
 
+      - name: Dump bench diagnostics on failure
+        if: failure()
+        run: |
+          set +e
+          echo "===== free ====="
+          free -h
+          echo "===== df ====="
+          df -h /dev/shm /tmp "$RUNNER_TEMP" .
+          echo "===== logs ====="
+          if [ -d logs ]; then
+            find logs -type f | sort
+            for f in logs/*/db_bench*.log logs/*/time-*.txt logs/*/statm_series-*.txt; do
+              [ -f "$f" ] || continue
+              echo "----- $f -----"
+              tail -n 200 "$f"
+            done
+          fi
+          echo "===== dmesg ====="
+          sudo dmesg -T 2>/dev/null | tail -n 80
+
+      - name: Upload bench logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-bench-logs-failure-${{ env.VARIANT }}
+          path: logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload DB INFO LOGs and bench yamls (Actions artifact)
         uses: actions/upload-artifact@v4
         with:
