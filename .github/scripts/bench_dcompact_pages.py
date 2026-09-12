@@ -1063,7 +1063,7 @@ def _render_dcompact_section(
   <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses per-level compression (L0 none, L1-L5 Snappy, L6 Zstd), corresponding to the ToplingDB zipkeyvalue variant's level_writers (lightweight upper levels, heavyweight L6). compact row shows operations/time. {_color_sign()}.</p>
   {fr_compare}
   <h3>Comparison: db_bench fillseq suite (perf)</h3>
-  <p class="meta">Same as fillrandom. RocksDB fillseq benefits from shortcuts: <code>trivial_move</code> on non-overlapping SSTs; <code>refit level</code> skips zstd on L6: faster, larger size. Seqno-zeroing compact still runs.</p>
+  <p class="meta">Same as fillrandom, except ToplingDB fillseq uses OffsetSkipList (fillrandom still uses CSPP). RocksDB fillseq benefits from shortcuts: <code>trivial_move</code> on non-overlapping SSTs; <code>refit level</code> skips zstd on L6: faster, larger size. Seqno-zeroing compact still runs.</p>
   {db_compare_fs}
 """
 

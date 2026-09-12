@@ -89,6 +89,14 @@ MemTableRepFactory:
     class: SkipList
     params:
       lookahead: 0
+  offset_skiplist:
+    class: OffsetSkipList
+    params:
+      mem_cap: 3G
+      lookahead: 0
+      token_use_idle: true
+      convert_to_sst: kFileMmap
+      sync_sst_file: false
 FilterPolicy:
   bloom:
     class: BloomFilter
@@ -161,6 +169,9 @@ TableFactory:
   cspp_memtab_sst:
     class: CSPPMemTabTable
     params: # empty params
+  offset_skiplist_sst:
+    class: OffsetSkipListTable
+    params: # empty params
   dispatch:
     class: DispatcherTable
     params:
@@ -171,6 +182,7 @@ TableFactory:
         ToplingZipTable: zipkeyvalue
         BlockBasedTable: bb
         CSPPMemTabTable: cspp_memtab_sst
+        OffsetSkipListTable: offset_skiplist_sst
       level_writers: [simple, simple, zipkeyonly, zipkeyonly, zipkeyonly, zipkeyonly, zipkeyonly]
 WriteBufferManager:
   wbm:

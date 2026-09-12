@@ -8,6 +8,7 @@ machine- or per-pass fields:
   --worker-port / --hoster-http-url / --write-buffer-size(--bytes)
   --target-file-size-base / --target-file-size-multiplier
   --prefix-level-writers / --fill-level-writers / --rewrite-level-writer
+  --memtable-factory
 """
 from __future__ import annotations
 
@@ -181,6 +182,10 @@ def main() -> None:
         help="Set the first COUNT slots to VALUE (keeps the rest)",
     )
     parser.add_argument(
+        "--memtable-factory",
+        help='Set CFOptions memtable_factory, e.g. "${offset_skiplist}"',
+    )
+    parser.add_argument(
         "--out",
         type=Path,
         help="Output path (default: overwrite yaml)",
@@ -207,6 +212,7 @@ def main() -> None:
         or args.target_file_size_multiplier is not None
         or args.worker_port is not None
         or args.hoster_http_url is not None
+        or args.memtable_factory is not None
     )
     lw_ops = (
         args.rewrite_level_writer is not None
@@ -219,7 +225,7 @@ def main() -> None:
             "--worker-port, --hoster-http-url, --write-buffer-size[--bytes], "
             "--target-file-size-base, --target-file-size-multiplier, "
             "--prefix-level-writers, --fill-level-writers, "
-            "--rewrite-level-writer"
+            "--rewrite-level-writer, --memtable-factory"
         )
 
     out = args.out if args.out is not None else yaml_path
@@ -263,6 +269,10 @@ def main() -> None:
     if args.hoster_http_url is not None:
         text = _set_hoster_http_url(text, args.hoster_http_url)
         actions.append(f"hoster_http_url={args.hoster_http_url}")
+
+    if args.memtable_factory is not None:
+        text = _replace_scalar(text, "memtable_factory", args.memtable_factory)
+        actions.append(f"memtable_factory={args.memtable_factory}")
 
     if args.rewrite_level_writer is not None:
         fro, to = args.rewrite_level_writer

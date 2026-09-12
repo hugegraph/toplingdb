@@ -195,6 +195,9 @@ run_memtablerep_if_requested() {
   "$ROOT/memtablerep_bench" "${mt[@]}" \
     -memtablerep='cspp:{"mem_cap":"16G","use_hugepage":false}' \
     2>&1 | tee "${logdir}/memtablerep_bench-cspp.log"
+  "$ROOT/memtablerep_bench" "${mt[@]}" \
+    -memtablerep='OffsetSkipList:{"mem_cap":"16G"}' \
+    2>&1 | tee "${logdir}/memtablerep_bench-OffsetSkipList.log"
 }
 
 # Mirror db_bench-run.yml run_topling_suite (no RocksDB).
@@ -266,6 +269,7 @@ run_topling_suite() {
     --prefix-level-writers 6 zipkeyonly \
     --target-file-size-base 128M \
     --target-file-size-multiplier 1 \
+    --memtable-factory '"${offset_skiplist}"' \
     --out "$yaml_fs" \
     "$yaml"
   local args_fs=(

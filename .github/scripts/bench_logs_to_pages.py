@@ -767,48 +767,61 @@ _CSPP_METRICS_LOW = (
 )
 
 
-def build_cspp_memtable_compare(
+def build_memtablerep_compare(
     cspp_rows: List[Dict[str, str]],
     skiplist_topling: List[Dict[str, str]],
     skiplist_v810: List[Dict[str, str]],
+    offset_skiplist_rows: Optional[List[Dict[str, str]]] = None,
 ) -> str:
-    """Highlight CSPPMemTable vs skiplist; RocksDB v8.10 skiplist is baseline."""
+    """Highlight OffsetSkipList / CSPP vs skiplist; v8.10 skiplist is baseline."""
+    offset_skiplist = _metric_map(offset_skiplist_rows or [])
     cspp = _metric_map(cspp_rows)
     skip_t = _metric_map(skiplist_topling)
     skip_r = _metric_map(skiplist_v810)
     interesting = set(_CSPP_METRICS_HIGH) | set(_CSPP_METRICS_LOW)
     keys = sorted(
         k
-        for k in set(cspp) | set(skip_t) | set(skip_r)
+        for k in set(offset_skiplist) | set(cspp) | set(skip_t) | set(skip_r)
         if k.split("|", 1)[-1] in interesting
     )
     headers = [
         "benchmark",
         "metric",
+        "OffsetSkipList (ToplingDB)",
         "CSPP (ToplingDB)",
         "skiplist (ToplingDB)",
         "skiplist (RocksDB v8.10)",
+        "OffsetSkipList / v8.10",
         "CSPP / v8.10",
     ]
     rows_html = []
     for key in keys:
         bench, metric = key.split("|", 1)
+        o_raw = offset_skiplist.get(key, "—")
         c_raw = cspp.get(key, "—")
         t_raw = skip_t.get(key, "—")
         r_raw = skip_r.get(key, "—")
-        c_n, r_n = _metric_number(c_raw), _metric_number(r_raw)
+        o_n, c_n, r_n = (
+            _metric_number(o_raw),
+            _metric_number(c_raw),
+            _metric_number(r_raw),
+        )
         if metric in _CSPP_METRICS_HIGH:
-            ratio_html = _throughput_ratio_cell(r_n, c_n)
+            offset_skiplist_ratio = _throughput_ratio_cell(r_n, o_n)
+            cspp_ratio = _throughput_ratio_cell(r_n, c_n)
         else:
-            ratio_html = _cost_ratio_cell(r_n, c_n)
+            offset_skiplist_ratio = _cost_ratio_cell(r_n, o_n)
+            cspp_ratio = _cost_ratio_cell(r_n, c_n)
         rows_html.append(
             "<tr>"
             f"<td>{html.escape(bench)}</td>"
             f"<td>{html.escape(metric)}</td>"
+            f"<td>{html.escape(o_raw)}</td>"
             f"<td>{html.escape(c_raw)}</td>"
             f"<td>{html.escape(t_raw)}</td>"
             f"<td>{html.escape(r_raw)}</td>"
-            f"<td>{ratio_html}</td>"
+            f"<td>{offset_skiplist_ratio}</td>"
+            f"<td>{cspp_ratio}</td>"
             "</tr>"
         )
     if not rows_html:
@@ -833,6 +846,7 @@ def _load_engine_logs(log_root: Path) -> Dict[str, Dict[str, Any]]:
         db_path = eng_dir / "db_bench.log"
         skip_path = eng_dir / "memtablerep_bench-skiplist.log"
         cspp_path = eng_dir / "memtablerep_bench-cspp.log"
+        offset_skiplist_path = eng_dir / "memtablerep_bench-OffsetSkipList.log"
         if not db_path.is_file():
             continue
         db_rows = parse_db_bench(
@@ -863,6 +877,7 @@ def _load_engine_logs(log_root: Path) -> Dict[str, Dict[str, Any]]:
                 )
         skiplist_rows: List[Dict[str, str]] = []
         cspp_rows: List[Dict[str, str]] = []
+        offset_skiplist_rows: List[Dict[str, str]] = []
         if skip_path.is_file():
             skiplist_rows = parse_memtablerep(
                 skip_path.read_text(encoding="utf-8", errors="replace")
@@ -871,6 +886,10 @@ def _load_engine_logs(log_root: Path) -> Dict[str, Dict[str, Any]]:
             cspp_rows = parse_memtablerep(
                 cspp_path.read_text(encoding="utf-8", errors="replace")
             )
+        if offset_skiplist_path.is_file():
+            offset_skiplist_rows = parse_memtablerep(
+                offset_skiplist_path.read_text(encoding="utf-8", errors="replace")
+            )
         result[eng] = {
             "db_bench": db_rows,
             "db_bench_fillrandom": fr_rows,
@@ -878,6 +897,7 @@ def _load_engine_logs(log_root: Path) -> Dict[str, Dict[str, Any]]:
             "db_bench_omit_fillseq": omit_fs_rows,
             "memtablerep_skiplist": skiplist_rows,
             "memtablerep_cspp": cspp_rows,
+            "memtablerep_OffsetSkipList": offset_skiplist_rows,
             "shm_usage": load_shm_usages(eng_dir),
             "rss_usage": load_rss_usages(eng_dir),
             "bench_settings": load_bench_settings(eng_dir),
@@ -1138,6 +1158,17 @@ def _build_per_engine_details(engines_data: Dict[str, Any]) -> str:
                     ["benchmark", "metric", "value"],
                 )
             )
+        if data.get("memtablerep_OffsetSkipList"):
+            detail_parts.append(
+                "<h4>memtablerep_bench (OffsetSkipList, ToplingDB only)</h4>"
+            )
+            detail_parts.append(
+                _table(
+                    ["benchmark", "metric", "value"],
+                    data["memtablerep_OffsetSkipList"],
+                    ["benchmark", "metric", "value"],
+                )
+            )
     return "".join(detail_parts)
 
 
@@ -1179,6 +1210,7 @@ def emit(args: argparse.Namespace) -> None:
             "db_bench-fillseq-omit.log",
             "memtablerep_bench-skiplist.log",
             "memtablerep_bench-cspp.log",
+            "memtablerep_bench-OffsetSkipList.log",
             "shm_usage.txt",
             "shm_usage-fillrandom.txt",
             "shm_usage-fillseq.txt",
@@ -1322,6 +1354,9 @@ def emit(args: argparse.Namespace) -> None:
                 "memtablerep_cspp": engines_data.get(eng, {}).get(
                     "memtablerep_cspp", []
                 ),
+                "memtablerep_OffsetSkipList": engines_data.get(eng, {}).get(
+                    "memtablerep_OffsetSkipList", []
+                ),
                 "db_bench_fillrandom": engines_data.get(eng, {}).get(
                     "db_bench_fillrandom", []
                 ),
@@ -1348,6 +1383,9 @@ def emit(args: argparse.Namespace) -> None:
         ),
         "memtablerep_cspp": engines_data.get("zipkeyonly", {}).get(
             "memtablerep_cspp", []
+        ),
+        "memtablerep_OffsetSkipList": engines_data.get("zipkeyonly", {}).get(
+            "memtablerep_OffsetSkipList", []
         ),
     }
     (out / "run-meta.json").write_text(
@@ -1376,6 +1414,7 @@ def _render_latest_section(
             "db_bench": entry.get("db_bench", []),
             "memtablerep_skiplist": entry.get("memtablerep_skiplist", []),
             "memtablerep_cspp": entry.get("memtablerep_cspp", []),
+            "memtablerep_OffsetSkipList": entry.get("memtablerep_OffsetSkipList", []),
         }
     }
 
@@ -1448,10 +1487,11 @@ def _render_latest_section(
 
     t_eng = engines.get("zipkeyonly") or {}
     r_eng = engines.get("rocksdb-v8.10") or {}
-    cspp_compare = build_cspp_memtable_compare(
+    memtablerep_compare = build_memtablerep_compare(
         t_eng.get("memtablerep_cspp") or [],
         t_eng.get("memtablerep_skiplist") or [],
         r_eng.get("memtablerep_skiplist") or [],
+        t_eng.get("memtablerep_OffsetSkipList") or [],
     )
 
     cache_meta = (
@@ -1491,7 +1531,7 @@ def _render_latest_section(
   <p class="meta">Benchmarks: fillrandom, flush, compact, readseq×3, readrandom. RocksDB uses per-level compression (L0 none, L1-L5 Snappy, L6 Zstd), corresponding to the ToplingDB zipkeyvalue variant's level_writers (lightweight upper levels, heavyweight L6). compact row shows operations/time. {_color_sign()}.</p>
   {fr_compare}
   <h3>Comparison: db_bench fillseq suite (perf)</h3>
-  <p class="meta">Same as fillrandom. RocksDB fillseq benefits from shortcuts: <code>trivial_move</code> on non-overlapping SSTs; <code>refit level</code> skips zstd on L6: faster, larger size. Seqno-zeroing compact still runs.</p>
+  <p class="meta">Same as fillrandom, except ToplingDB fillseq uses OffsetSkipList (fillrandom still uses CSPP). RocksDB fillseq benefits from shortcuts: <code>trivial_move</code> on non-overlapping SSTs; <code>refit level</code> skips zstd on L6: faster, larger size. Seqno-zeroing compact still runs.</p>
   {db_compare_fs}
   <h3>Lazy load demo (scan; RocksDB v8.10 baseline)</h3>
   <p class="meta">zipkey* needs an extra omit pass: scan_omit_key/value enables lazy value load (no real value load). RocksDB has no lazy load, so the baseline is readseq×3 already present in the main fill* suite (no extra pass). RocksDB nextwithkey cells are =readseq. master omitted here (v8.10 is the stronger RocksDB baseline). {_color_sign()}.</p>
@@ -1499,9 +1539,9 @@ def _render_latest_section(
   {omit_fr_table}
   <h4>scan-omit-value on data from fillseq</h4>
   {omit_fs_table}
-  <h3>memtablerep_bench: CSPPMemTable advantage</h3>
-  <p class="meta">Focus: {_hl('CSPP (ToplingDB)', 'faster')} vs skiplist. Baseline = RocksDB v8.10 skiplist. {_color_sign()}.</p>
-  {cspp_compare}
+  <h3>memtablerep_bench: OffsetSkipList and CSPP vs skiplist</h3>
+  <p class="meta">Focus: {_hl('OffsetSkipList / CSPP (ToplingDB)', 'faster')} vs skiplist. Baseline = RocksDB v8.10 skiplist. {_color_sign()}.</p>
+  {memtablerep_compare}
 """
 
 
@@ -1575,6 +1615,7 @@ def merge(args: argparse.Namespace) -> None:
         "db_bench": meta.get("db_bench", []),
         "memtablerep_skiplist": meta.get("memtablerep_skiplist", []),
         "memtablerep_cspp": meta.get("memtablerep_cspp", []),
+        "memtablerep_OffsetSkipList": meta.get("memtablerep_OffsetSkipList", []),
     }
     history.insert(0, history_entry)
     history_path.write_text(json.dumps(history, indent=2) + "\n", encoding="utf-8")

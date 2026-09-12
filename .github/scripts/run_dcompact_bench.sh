@@ -371,6 +371,7 @@ run_engine_suite() {
     --prefix-level-writers 6 zipkeyonly \
     --target-file-size-base 128M \
     --target-file-size-multiplier 1 \
+    --memtable-factory '"${offset_skiplist}"' \
     --out "$yaml_fs" \
     "$yaml"
   local args_fs=(
