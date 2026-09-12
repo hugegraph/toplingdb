@@ -68,7 +68,8 @@ def patch(path: str) -> None:
 
     compact_all_fn = re.search(
         r'(void CompactAll\(\) \{.*?'
-        r'cro\.max_subcompactions = static_cast<uint32_t>\(FLAGS_subcompactions\);\n)',
+        r'cro\.max_subcompactions = '
+        r'(?:static_cast<uint32_t>\(FLAGS_subcompactions\)|max_subcompactions);\n)',
         src,
         re.DOTALL,
     )
