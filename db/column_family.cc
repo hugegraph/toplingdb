@@ -215,7 +215,7 @@ const uint64_t kDefaultTtl = 0xfffffffffffffffe;
 const uint64_t kDefaultPeriodicCompSecs = 0xfffffffffffffffe;
 }  // anonymous namespace
 
-extern MemTableRepFactory* NewCSPPMemTabForPlain(const std::string&);
+std::shared_ptr<MemTableRepFactory> EasyNewMemTableRep(Slice cls, Slice js);
 
 ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
                                     const ColumnFamilyOptions& src) {
@@ -456,8 +456,14 @@ ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
   if (result.comparator->IsBytewise() &&
         Slice(result.memtable_factory->Name()) == "SkipListFactory") {
     const char* memtab_opt = getenv("MemTableRepFactory");
-    if (memtab_opt && strncmp(memtab_opt, "cspp:", 5) == 0) {
-      result.memtable_factory.reset(NewCSPPMemTabForPlain(memtab_opt + 5));
+    if (memtab_opt) {
+      const char* colon = strchr(memtab_opt, ':');
+      if (colon && colon[1] == '{') {
+#if defined(HAS_TOPLING_SST)
+        result.memtable_factory = EasyNewMemTableRep(
+            Slice(memtab_opt, colon - memtab_opt), Slice(colon + 1));
+#endif
+      }
     }
   }
 #endif

@@ -63,7 +63,10 @@ DEFINE_string(memtablerep, "skiplist",
               "\tvector              -- backed by an std::vector\n"
               "\thashskiplist        -- backed by a hash skip list\n"
               "\thashlinklist        -- backed by a hash linked list\n"
-              "\tcuckoo              -- backed by a cuckoo hash table");
+              "\tcuckoo              -- backed by a cuckoo hash table\n"
+              "\tName:{json}         -- SidePlugin factory, e.g.\n"
+              "\t                      cspp:{\"mem_cap\":\"16G\"} or\n"
+              "\t                      OffsetSkipList:{\"mem_cap\":\"16G\"}");
 
 DEFINE_int64(bucket_count, 1000000,
              "bucket_count parameter to pass into NewHashSkiplistRepFactory or "
@@ -126,7 +129,7 @@ DEFINE_int64(seed, 0,
              "Seed base for random number generators. "
              "When 0 it is deterministic.");
 
-bool g_is_cspp = false;
+bool g_is_topling_memtab = false;
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -241,7 +244,7 @@ class FillBenchmarkThread : public BenchmarkThread {
                         num_ops, read_hits) {}
 
   void FillOne() {
-    if (g_is_cspp) {
+    if (g_is_topling_memtab) {
       auto internal_key_size = 16;
       uint64_t key = key_gen_->Next();
       char key_buf[8]; // user key
@@ -615,9 +618,10 @@ void PrintWarnings() {
 #endif
 }
 
-#ifdef HAS_TOPLING_CSPP_MEMTABLE
+#if defined(HAS_TOPLING_SST)
 namespace ROCKSDB_NAMESPACE {
-  extern MemTableRepFactory* NewCSPPMemTabForPlain(const std::string&);
+  extern std::shared_ptr<MemTableRepFactory>
+  EasyNewMemTableRep(Slice class_name, Slice params);
 }
 #endif
 int main(int argc, char** argv) {
@@ -630,14 +634,17 @@ int main(int argc, char** argv) {
 
   ROCKSDB_NAMESPACE::Options options;
 
-  std::unique_ptr<ROCKSDB_NAMESPACE::MemTableRepFactory> factory;
+  std::shared_ptr<ROCKSDB_NAMESPACE::MemTableRepFactory> factory;
   if (FLAGS_memtablerep == "skiplist") {
     factory.reset(new ROCKSDB_NAMESPACE::SkipListFactory);
-#ifdef HAS_TOPLING_CSPP_MEMTABLE
-  } else if (FLAGS_memtablerep.substr(0, 5) == "cspp:") {
-    std::string jstr = FLAGS_memtablerep.substr(5);
-    factory.reset(ROCKSDB_NAMESPACE::NewCSPPMemTabForPlain(jstr));
-    g_is_cspp = true;
+#if defined(HAS_TOPLING_SST)
+  } else if (auto colon = FLAGS_memtablerep.find(':');
+             colon != std::string::npos &&
+             colon + 1 < FLAGS_memtablerep.size() &&
+             FLAGS_memtablerep[colon + 1] == '{') {
+    factory = ROCKSDB_NAMESPACE::EasyNewMemTableRep(
+        FLAGS_memtablerep.substr(0, colon), FLAGS_memtablerep.substr(colon + 1));
+    g_is_topling_memtab = true;
 #endif
   } else if (FLAGS_memtablerep == "vector") {
     factory.reset(new ROCKSDB_NAMESPACE::VectorRepFactory);
