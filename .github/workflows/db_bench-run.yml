@@ -1,11 +1,8 @@
-# Triggered after db_bench-build. Runs ToplingDB + RocksDB v8.10 + RocksDB master,
+# Manual only. Runs ToplingDB + RocksDB v8.10 + RocksDB master,
 # emits comparison tables, publishes Pages.
 name: "db_bench-run"
 
 on:
-  workflow_run:
-    workflows: ["db_bench-build"]
-    types: [completed]
   workflow_dispatch:
     inputs:
       build_run_id:
@@ -18,9 +15,9 @@ on:
         default: "50"
         type: string
       num:
-        description: db_bench -num keys per pass (default 50000000)
+        description: db_bench -num keys per pass (default 200000000)
         required: false
-        default: "50000000"
+        default: "200000000"
         type: string
       max_background_compactions:
         description: >-
@@ -49,21 +46,19 @@ permissions:
 
 jobs:
   bench-and-publish:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     env:
       VARIANT: plain
-      BUILD_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.build_run_id || github.event.workflow_run.id }}
+      BUILD_RUN_ID: ${{ inputs.build_run_id }}
       VALUE_SIZE: ${{ inputs.value_size || '50' }}
-      NUM: ${{ inputs.num || '50000000' }}
-      MAX_BACKGROUND_COMPACTIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_background_compactions || 'auto' }}
-      CACHED_PAGES_USE_SYS: ${{ github.event_name == 'workflow_dispatch' && inputs.cached_pages_use_sys || false }}
+      NUM: ${{ inputs.num || '200000000' }}
+      MAX_BACKGROUND_COMPACTIONS: ${{ inputs.max_background_compactions || 'auto' }}
+      CACHED_PAGES_USE_SYS: ${{ inputs.cached_pages_use_sys || false }}
     steps:
       - name: Checkout build commit
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Install runtime dependencies
         run: |
