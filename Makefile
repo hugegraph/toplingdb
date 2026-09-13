@@ -451,6 +451,9 @@ ifndef WITH_TOPLING_ROCKS
   # default 1
   WITH_TOPLING_ROCKS := 1
 endif
+ifeq ($(filter 0,${DEBUG_LEVEL})$(wildcard sideplugin/topling-rocks/src/table/top_patent_algo.cc),)
+  override WITH_TOPLING_ROCKS := 0
+endif
 
 ifeq (${WITH_TOPLING_ROCKS},1)
 ifneq (,$(wildcard sideplugin/topling-rocks))
@@ -493,6 +496,9 @@ endif
 
 # allow override by env or cmd line
 WITH_CSPP_MEMTABLE ?= 1
+ifeq ($(filter 0,${DEBUG_LEVEL})$(wildcard sideplugin/cspp-memtable/cspp_memtable.cc),)
+  override WITH_CSPP_MEMTABLE := 0
+endif
 
 ifeq (${WITH_CSPP_MEMTABLE}${WITH_TOPLING_ROCKS},10)
   $(error "When WITH_CSPP_MEMTABLE is 1, WITH_TOPLING_ROCKS must be 1 also")
