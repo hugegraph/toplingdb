@@ -7,6 +7,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 #include <cinttypes>
+#ifndef _MSC_VER
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+#if defined(__AVX__)
+#include <immintrin.h>
+#endif
 
 #include "db/builder.h"
 #include "db/db_impl/db_impl.h"
@@ -25,6 +32,9 @@
 #include "rocksdb/wal_filter.h"
 #include "test_util/sync_point.h"
 #include "util/rate_limiter_impl.h"
+#include <terark/util/atomic.hpp>
+#include <terark/util/nolocks_localtime.hpp>
+#include <terark/util/mmap.hpp>
 #include "util/string_util.h"
 #include "util/udt_util.h"
 
@@ -47,9 +57,25 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
     result.env = Env::Default();
   }
 
-  if (result.memtable_as_log_index) {
+  if (read_only && result.memtable_crash_safe_recover) {
+    result.memtable_crash_safe_recover = false;
+    const char* warning =
+        "memtable_crash_safe_recover is disabled for read-only Open; full WAL "
+        "replay may be very slow because using much larger MemTables than in "
+        "typical RocksDB configurations is encouraged in crash-safe mode";
+    if (result.info_log) {
+      ROCKS_LOG_WARN(result.info_log, "%s", warning);
+    } else {
+      fprintf(stderr, "%s WARNING: %s\n", terark::StrDateTimeNow(), warning);
+    }
+  }
+
+  if (result.memtable_as_log_index || result.memtable_crash_safe_recover) {
     result.recycle_log_file_num = 0;
     result.manual_wal_flush = false;
+    result.wal_compression = kNoCompression;
+  }
+  if (result.memtable_as_log_index) {
 #if !defined(ROCKSDB_UNIT_TEST)
     // avoid infrequent CFs reference too many WALs when frequent CFs
     // writing many data
@@ -63,7 +89,9 @@ DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
     if (max_max_open_files == -1) {
       max_max_open_files = 0x400000;
     }
-    ClipToRange(&result.max_open_files, 20, max_max_open_files);
+    // Do not raise small limits: turning 0 into 20 would force SST preloading
+    // despite the caller's request for a cheap open.
+    terark::minimize(result.max_open_files, max_max_open_files);
     TEST_SYNC_POINT_CALLBACK("SanitizeOptions::AfterChangeMaxOpenFiles",
                              &result.max_open_files);
   }
@@ -424,11 +452,498 @@ IOStatus Directories::SetDirectories(FileSystem* fs, const std::string& dbname,
   return IOStatus::OK();
 }
 
+struct alignas(32) PublishedSeqRecord {
+  uint64_t pubseq = 0;
+  uint64_t wal_number = 0;
+  uint64_t wal_offset = 0;
+  uint64_t padding = 0;
+};
+
+struct alignas(CACHE_LINE_SIZE) PublishedSeqMmapHeader {
+  uint64_t magic = 0;
+  uint32_t version = 0;
+  uint32_t header_size = 0;
+  // 1 physical, 2 log-index. Written by Stamp, not by each publish.
+  uint32_t wal_offset_kind = 0;
+  // First WAL written under wal_offset_kind; 0 until that WAL exists.
+  // Older WALs predate this sidecar and have unknown format.
+  uint32_t kind_since_wal = 0;
+  uint64_t generation = 0;
+  PublishedSeqRecord rec;
+
+  void Stamp(bool memtable_as_log_index);
+};
+
+namespace {
+
+constexpr size_t   kPublishedSeqMmapSize = 4096;
+constexpr uint64_t kPublishedSeqMagic = 0x5145534255505343ULL; // 'CSPUBSEQ'
+constexpr uint32_t kPublishedSeqVersion = 1;
+
+enum class PublishedWalOffsetKind : uint32_t {
+  kNone = 0,
+  kPhysical = 1,
+  kLogIndex = 2,
+};
+
+static_assert(std::atomic<uint64_t>::is_always_lock_free);
+static_assert(sizeof(std::atomic<uint64_t>) == sizeof(uint64_t));
+static_assert(sizeof(PublishedSeqMmapHeader) == CACHE_LINE_SIZE);
+static_assert(alignof(PublishedSeqMmapHeader) == CACHE_LINE_SIZE);
+static_assert(sizeof(PublishedSeqMmapHeader) <= kPublishedSeqMmapSize);
+static_assert(sizeof(PublishedSeqRecord) == 32);
+static_assert(offsetof(PublishedSeqMmapHeader, rec) % 32 == 0);
+
+bool PublishedSeqHeaderValid(const PublishedSeqMmapHeader* hdr) {
+  return hdr->magic == kPublishedSeqMagic &&
+         hdr->version == kPublishedSeqVersion &&
+         hdr->header_size == sizeof(PublishedSeqMmapHeader) &&
+         (hdr->wal_offset_kind == 1 ||   // kPhysical
+          hdr->wal_offset_kind == 2);    // kLogIndex
+}
+
+uint64_t PublishedWalRecordStart(uint64_t offset, uint64_t kind) {
+  if (kind == 2) {  // PublishedWalOffsetKind::kLogIndex
+    return offset >= sizeof(log::RawRecHeader)
+               ? offset - sizeof(log::RawRecHeader)
+               : 0;
+  }
+  return offset;
+}
+
+bool ReadPublishedSeqRecord(const PublishedSeqMmapHeader* hdr,
+                            PublishedSeqRecord* out) {
+  if ((hdr->generation & 1) == 0) {
+    *out = hdr->rec;
+    return true;
+  } else {
+    return false;
+  }
+}
+
+bool PeekPublishedWalKind(const std::string& dbname, uint64_t* kind) {
+  const std::string path = CrashSafePubSeqFileName(dbname);
+  PublishedSeqMmapHeader hdr;
+  int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    return false;
+  }
+  auto sz = ::pread(fd, &hdr, sizeof(hdr), 0);
+  ::close(fd);
+  if (sz != static_cast<ssize_t>(sizeof(hdr))) {
+    return false;
+  }
+  // wal_offset_kind is written only by Stamp, so an odd generation from a
+  // crash mid-publish does not make it stale.
+  // A Stamp from an unfinished Open has not established a WAL format yet.
+  bool ok = PublishedSeqHeaderValid(&hdr) && hdr.kind_since_wal != 0;
+  if (ok) {
+    *kind = hdr.wal_offset_kind;
+  }
+  return ok;
+}
+
+void DestroyKindPrepDb(DB* db, std::vector<ColumnFamilyHandle*>* handles) {
+  for (auto* h : *handles) {
+    delete h;
+  }
+  handles->clear();
+  if (db != nullptr) {
+    db->Close().PermitUncheckedError();
+    delete db;
+  }
+}
+
+}  // namespace
+
+Status DBImpl::PrepareCrashSafeKindForOpen(
+    const DBOptions& db_options, const std::string& dbname,
+    const std::vector<ColumnFamilyDescriptor>& column_families,
+    bool seq_per_batch, bool batch_per_txn) {
+  if (!db_options.memtable_crash_safe_recover) {
+    return Status::OK();
+  }
+  uint64_t sidecar_kind = 0;
+  if (!PeekPublishedWalKind(dbname, &sidecar_kind) || sidecar_kind == 0) {
+    return Status::OK();
+  }
+  const uint64_t opt_kind = db_options.memtable_as_log_index ? 2 : 1;
+  if (sidecar_kind == opt_kind) {
+    return Status::OK();
+  }
+  DBOptions cheap = db_options;
+  cheap.memtable_as_log_index = sidecar_kind == 2;  // kLogIndex
+  cheap.memtable_crash_safe_recover = true;
+  cheap.max_open_files = 0;
+  cheap.persist_stats_to_disk = false;
+  std::vector<ColumnFamilyDescriptor> cheap_cfs = column_families;
+  for (auto& cf : cheap_cfs) {
+    cf.options.disable_auto_compactions = true;
+  }
+  std::vector<ColumnFamilyHandle*> handles;
+  DB* db = nullptr;
+  Status s = DBImpl::Open(cheap, dbname, cheap_cfs, &handles, &db,
+                          seq_per_batch, batch_per_txn,
+                          true /* options_already_updated */);
+  if (!s.ok()) {
+    return s;
+  }
+  TEST_SYNC_POINT("DBImpl::Open::KindPrep:AfterOpenBeforeFlush");
+  FlushOptions fo;
+  fo.wait = true;
+  s = db->Flush(fo, handles);
+  if (s.ok() && cheap.allow_2pc) {
+    s = static_cast<DBImpl*>(db)->RetireWalsForKindPrep();
+  }
+  if (!s.ok()) {
+    DestroyKindPrepDb(db, &handles);
+    return s;
+  }
+  TEST_SYNC_POINT("DBImpl::Open::KindPrep:AfterFlushBeforeClose");
+  for (auto* h : handles) {
+    delete h;
+  }
+  handles.clear();
+  s = db->Close();
+  delete db;
+  db = nullptr;
+  if (!s.ok()) {
+    return s;
+  }
+  TEST_SYNC_POINT("DBImpl::Open::KindPrep:AfterCloseBeforeDeleteSidecar");
+  Env* env = db_options.env != nullptr ? db_options.env : Env::Default();
+  s = env->DeleteFile(CrashSafePubSeqFileName(dbname));
+  if (!s.ok() && !s.IsNotFound()) {
+    return s;
+  }
+  return Status::OK();
+}
+
+Status DBImpl::RetireWalsForKindPrep() {
+  InstrumentedMutexLock l(&mutex_);
+  if (!recovered_transactions_.empty()) {
+    return Status::NotSupported(
+        "memtable_as_log_index change with prepared transactions",
+        "reopen with the previous memtable_as_log_index, commit or roll back "
+        "them, then switch");
+  }
+  const uint64_t min_log = versions_->MinLogNumberWithUnflushedData();
+  if (min_log <= versions_->min_log_number_to_keep()) {
+    return Status::OK();
+  }
+  VersionEdit edit;
+  if (immutable_db_options_.track_and_verify_wals_in_manifest) {
+    edit.DeleteWalsBefore(min_log);
+  }
+  edit.SetMinLogNumberToKeep(min_log);
+  auto* cfd = versions_->GetColumnFamilySet()->GetDefault();
+  const ReadOptions read_options(Env::IOActivity::kDBOpen);
+  return versions_->LogAndApply(cfd, *cfd->GetLatestMutableCFOptions(),
+                                read_options, &edit, &mutex_,
+                                directories_.GetDbDir());
+}
+
+void PublishedSeqMmapHeader::Stamp(bool memtable_as_log_index) {
+  magic = kPublishedSeqMagic;
+  version = kPublishedSeqVersion;
+  header_size = static_cast<uint32_t>(sizeof(PublishedSeqMmapHeader));
+  wal_offset_kind = memtable_as_log_index ? 2 : 1;  // kLogIndex : kPhysical
+  generation = 0;
+  rec = PublishedSeqRecord{};
+  kind_since_wal = 0;
+}
+
+Status DBImpl::MapPublishedSeqFile(uint64_t* probe_wal_below) {
+  *probe_wal_below = std::numeric_limits<uint64_t>::max();
+  if (!immutable_db_options_.memtable_crash_safe_recover) {
+    return Status::OK();
+  }
+  if (pubseq_mmap_ != nullptr) {
+    return Status::OK();
+  }
+  const std::string path = CrashSafePubSeqFileName(dbname_);
+  size_t sz = 0;  // new or empty file: 4K; existing file: mapped whole
+  intptr_t fd = -1;
+  void* p = nullptr;
+  try {
+    p = terark::mmap_write(path, &sz, &fd);
+    if (sz < kPublishedSeqMmapSize) {
+      terark::mmap_close(p, sz, fd);
+      sz = kPublishedSeqMmapSize;
+      p = terark::mmap_write(path, &sz, &fd);
+    }
+  } catch (const std::exception& ex) {
+    return Status::IOError(path, ex.what());
+  }
+  pubseq_mmap_ = static_cast<PublishedSeqMmapHeader*>(p);
+  pubseq_mmap_size_ = sz;
+  pubseq_fd_ = fd;
+  if (!PublishedSeqHeaderValid(pubseq_mmap_) ||
+      pubseq_mmap_->kind_since_wal == 0) {
+    TEST_SYNC_POINT("DBImpl::MapPublishedSeqFile:AfterMmapBeforeStamp");
+    pubseq_mmap_->Stamp(immutable_db_options_.memtable_as_log_index);
+    return Status::OK();
+  }
+  const uint32_t opt_kind = immutable_db_options_.memtable_as_log_index
+                                ? uint32_t(PublishedWalOffsetKind::kLogIndex)
+                                : uint32_t(PublishedWalOffsetKind::kPhysical);
+  if (pubseq_mmap_->wal_offset_kind != opt_kind) {
+    // DB::Open / TransactionDB::Open switch kind before getting here.
+    UnmapPublishedSeqFile();
+    return Status::InvalidArgument(
+        path, "wal_offset_kind differs from memtable_as_log_index");
+  }
+  if (pubseq_mmap_->kind_since_wal != 0) {
+    *probe_wal_below = pubseq_mmap_->kind_since_wal;
+  }
+  return Status::OK();
+}
+
+void DBImpl::UnmapPublishedSeqFile() {
+  if (pubseq_mmap_ != nullptr) {
+    terark::mmap_close(pubseq_mmap_, pubseq_mmap_size_, pubseq_fd_);
+    pubseq_mmap_ = nullptr;
+    pubseq_mmap_size_ = 0;
+    pubseq_fd_ = -1;
+  }
+}
+
+void DBImpl::PersistPublishedSequence(SequenceNumber seq, uint64_t wal_number,
+                                      uint64_t wal_offset) {
+  if (pubseq_mmap_ == nullptr) {
+    return;
+  }
+  auto* rec = &pubseq_mmap_->rec;
+  // DO NOT REWRITE. Do not split this back into
+  // `if (seq < pubseq) return; if (seq == pubseq) SameSeq;`.
+  // That form compares twice on the hot path. Here the hot path is one
+  // UNLIKELY(seq <= pubseq). seq == pubseq is not an error: it falls
+  // through and publishes. Only seq < pubseq logs and returns. Do not
+  // return on <=.
+  if (UNLIKELY(seq <= rec->pubseq)) {
+    if (UNLIKELY(seq < rec->pubseq)) {
+      ROCKS_LOG_ERROR(immutable_db_options_.info_log,
+                      "PersistPublishedSequence seq %" PRIu64
+                      " < published %" PRIu64 " wal #%" PRIu64
+                      " offset %" PRIu64,
+                      seq, rec->pubseq, wal_number, wal_offset);
+      return;
+    }
+    TEST_SYNC_POINT("DBImpl::PersistPublishedSequence:SameSeq");
+  }
+#if defined(__AVX__)
+  // One aligned 32-byte store. A process crash falls between instructions,
+  // so the record is all old or all new.
+  // PublishedSeqRecord next;
+  // next.pubseq = seq;
+  // next.wal_number = wal_number;
+  // next.wal_offset = wal_offset;
+  // next.padding = 0;
+  // _mm256_store_si256((__m256i*)rec, _mm256_load_si256((const __m256i*)&next));
+  // Lowest 64 bits are pubseq, matching PublishedSeqRecord field order.
+  __m256i packed = _mm256_set_epi64x(0, wal_offset, wal_number, seq);
+  // Clang/LLVM specifies that the backend must not split or merge target-legal
+  // volatile loads/stores. This keeps the AVX store a single 32-byte instruction.
+  // https://llvm.org/docs/LangRef.html#volatile-memory-accesses
+  *(volatile __m256i*)rec = packed;
+  pubseq_mmap_->generation += 2;
+#else
+  // Use the odd/even bracket also for files moved from an AVX host.
+  // A failed publication may leave an odd generation.
+  const uint64_t g = pubseq_mmap_->generation | 1;
+  // Keep generation odd throughout the field stores, even if already odd.
+  // Acquire keeps the field stores after this exchange; the release below
+  // keeps them before publication of the next even generation.
+  terark::as_atomic(pubseq_mmap_->generation)
+         .exchange(g, std::memory_order_acquire);
+  TEST_SYNC_POINT("DBImpl::PersistPublishedSequence:AfterOddGeneration");
+  rec->wal_number = wal_number;
+  rec->wal_offset = wal_offset;
+  rec->pubseq = seq;
+  terark::as_atomic(pubseq_mmap_->generation)
+         .store(g + 1, std::memory_order_release);
+#endif
+  TEST_SYNC_POINT("DBImpl::PersistPublishedSequence:AfterCommit");
+}
+
+void DBImpl::MaybePersistPublishedSequence(
+    SequenceNumber seq, const WriteThread::WriteGroup& write_group) {
+  if (pubseq_mmap_ == nullptr) {
+    return;
+  }
+  TEST_SYNC_POINT("DBImpl::WriteImpl:AfterWriteToWALBeforePublish");
+  PersistPublishedSequence(seq, write_group.wal_number, write_group.wal_offset);
+}
+
+void DBImpl::PersistStagedPublishedWal() {
+  if (pubseq_mmap_ == nullptr || !staged_pub_valid_) {
+    return;
+  }
+  if (pending_memtable_writes_.load(std::memory_order_acquire) != 0) {
+    return;
+  }
+  // A normal two-queue write may have already published a newer sequence.
+  if (staged_pub_seq_ >= pubseq_mmap_->rec.pubseq) {
+    PersistPublishedSequence(staged_pub_seq_, staged_pub_wal_number_,
+                             staged_pub_wal_offset_);
+  }
+  staged_pub_valid_ = false;
+}
+
+void DBImpl::StagePublishedWal(SequenceNumber seq, uint64_t wal_number,
+                               uint64_t wal_offset) {
+  PersistStagedPublishedWal();
+  staged_pub_seq_ = seq;
+  staged_pub_wal_number_ = wal_number;
+  staged_pub_wal_offset_ = wal_offset;
+  staged_pub_valid_ = true;
+}
+
+void DBImpl::AccountPendingMemtableWrites(size_t n) {
+  if (n == 0) {
+    return;
+  }
+  const size_t pending_cnt = pending_memtable_writes_.fetch_sub(n) - n;
+  if (pending_cnt == 0) {
+    std::lock_guard<std::mutex> lck(switch_mutex_);
+    switch_cv_.notify_all();
+  }
+}
+
+Status DBImpl::RegisterMemTableFiles(ColumnFamilyData* cfd) {
+  mutex_.AssertHeld();
+  VersionEdit edit;
+  cfd->AddMemTableFileEdits(&edit);
+  edit.SetColumnFamily(cfd->GetID());
+  TEST_SYNC_POINT("DBImpl::RegisterMemTableFile:BeforeLogAndApply");
+  Status s = versions_->LogAndApply(cfd, *cfd->GetLatestMutableCFOptions(),
+                                   ReadOptions(), &edit, &mutex_,
+                                   directories_.GetDbDir());
+  TEST_SYNC_POINT_CALLBACK("DBImpl::RegisterMemTableFile:AfterLogAndApply", &s);
+  if (s.ok()) {
+    cfd->PublishRegisteredMemTables();
+    TEST_SYNC_POINT("DBImpl::RegisterMemTableFile:BeforeInstall");
+  }
+  return s;
+}
+
+bool DBImpl::CanConvertLeftoverForCrashSafeRecover(
+    SequenceNumber mmap_pubseq, std::string* fail_reason) {
+  mutex_.AssertHeld();
+  auto fail = [&](const std::string& reason) {
+    *fail_reason = reason;
+    return false;
+  };
+  if (!versions_->HasMemTableFileTracking()) {
+    return fail("MANIFEST predates MemTable file tracking");
+  }
+  if (immutable_db_options_.wal_filter != nullptr) {
+    return fail("wal_filter requires full WAL replay");
+  }
+  if (!last_seq_same_as_publish_seq_) {
+    return fail("seq_per_batch && two_write_queues");
+  }
+  if (immutable_db_options_.best_efforts_recovery) {
+    return fail("best_efforts_recovery");
+  }
+  if (mmap_pubseq == 0) {
+    for (auto* cfd : *versions_->GetColumnFamilySet()) {
+      if (!cfd->GetMemTableFiles().empty()) {
+        return fail("CSPUBSEQ pubseq 0 with leftover present");
+      }
+    }
+  }
+  return true;
+}
+
+Status DBImpl::ConvertLeftoverMemtables(
+    SequenceNumber max_visible_seq, RecoveryContext* recovery_ctx) {
+  mutex_.AssertHeld();
+  struct ConvertedLeftover {
+    ColumnFamilyData* cfd;
+    FileMetaData meta;
+    std::vector<BlobFileAddition> blobs;
+  };
+  std::vector<ConvertedLeftover> converted;
+  // MANIFEST is the complete inventory, including empty, precreated tables.
+  // A directory scan cannot detect one missing file among several in a CF.
+  for (auto* cfd : *versions_->GetColumnFamilySet()) {
+    for (uint64_t file_num : cfd->GetMemTableFiles()) {
+      auto& one = converted.emplace_back();
+      one.cfd = cfd;
+      one.meta.fd = FileDescriptor(file_num, 0, 0);
+    }
+  }
+  if (converted.empty()) return Status::OK();
+  Status s;
+  mutex_.Unlock();
+  for (auto& one : converted) {
+    auto* cfd = one.cfd;
+    const uint64_t file_num = one.meta.fd.GetNumber();
+    const auto leftover_path = TableFileName(cfd->ioptions()->cf_paths, file_num, 0);
+    one.meta.fd.smallest_seqno = 0;
+    one.meta.fd.largest_seqno = max_visible_seq;
+    one.meta.epoch_number = cfd->NewEpochNumber();
+    const MutableCFOptions moptions = *cfd->GetLatestMutableCFOptions();
+    TableBuilderOptions tboptions(
+        *cfd->ioptions(), moptions, cfd->internal_comparator(),
+        cfd->int_tbl_prop_collector_factories(),
+        GetCompressionFlush(*cfd->ioptions(), moptions),
+        moptions.compression_opts, cfd->GetID(), cfd->GetName(), 0 /* level */,
+        false /* is_bottommost */, TableFileCreationReason::kRecovery,
+        0 /* oldest_key_time */, 0 /* file_creation_time */, db_id_,
+        db_session_id_, 0 /* target_file_size */, file_num);
+    tboptions.generate_file_no = [this]() { return versions_->NewFileNumber(); };
+    tboptions.add_blob_file = [&one](BlobFileAddition b) {
+      one.blobs.push_back(std::move(b));
+    };
+    s = cfd->ioptions()->memtable_factory->RecoverCrashSafeMemTableToSST(
+        leftover_path, &one.meta, tboptions);
+    if (!s.ok()) {
+      break;
+    }
+  }
+  mutex_.Lock();
+  if (!s.ok()) {
+    // Do not retire registered sources until full WAL recovery commits.
+    for (auto& one : converted) {
+      for (const auto& blob : one.blobs) {
+        env_->DeleteFile(BlobFileName(one.cfd->ioptions()->cf_paths.front().path,
+                                      blob.GetBlobFileNumber()))
+            .PermitUncheckedError();
+      }
+    }
+    return s;
+  }
+  for (auto& one : converted) {
+    VersionEdit edit;
+    edit.SetColumnFamily(one.cfd->GetID());
+    edit.DeleteMemTableFile(one.meta.fd.GetNumber());
+    if (one.meta.fd.GetFileSize() != 0) {
+      one.meta.marked_for_compaction = true;
+      edit.AddFile(0, one.meta);
+    }
+    for (const auto& blob : one.blobs) {
+      edit.AddBlobFile(blob);
+    }
+    recovery_ctx->UpdateVersionEdits(one.cfd, edit);
+  }
+  return Status::OK();
+}
+
 Status DBImpl::Recover(
     const std::vector<ColumnFamilyDescriptor>& column_families, bool read_only,
     bool error_if_wal_file_exists, bool error_if_data_exists_in_wals,
     uint64_t* recovered_seq, RecoveryContext* recovery_ctx) {
   mutex_.AssertHeld();
+  if (read_only) {
+    for (const auto& cf : column_families) {
+      if (cf.options.memtable_factory->SupportCrashSafe()) {
+        return Status::InvalidArgument(
+            "FileMmap memtable is not supported in read-only mode", cf.name);
+      }
+    }
+  }
 
   bool tmp_is_new_db = false;
   bool& is_new_db = recovery_ctx ? recovery_ctx->is_new_db_ : tmp_is_new_db;
@@ -556,6 +1071,25 @@ Status DBImpl::Recover(
   if (!s.ok()) {
     return s;
   }
+  if (!read_only && immutable_db_options_.memtable_crash_safe_recover) {
+    s = MapPublishedSeqFile(&recovery_ctx->crash_safe_probe_wal_below_);
+    if (!s.ok()) {
+      return s;
+    }
+  } else if (!read_only) {
+    // This session writes WALs without updating CSPUBSEQ, so an old
+    // one would misstate their format to a later crash-safe Open.
+    const std::string path = CrashSafePubSeqFileName(dbname_);
+    if (env_->FileExists(path).ok()) {
+      s = env_->DeleteFile(path);
+      if (!s.ok()) {
+        return s;
+      }
+      ROCKS_LOG_WARN(immutable_db_options_.info_log,
+                     "memtable_crash_safe_recover is off, deleted %s",
+                     path.c_str());
+    }
+  }
   if (s.ok() && !read_only) {
     for (auto cfd : *versions_->GetColumnFamilySet()) {
       // Try to trivially move files down the LSM tree to start from bottommost
@@ -656,10 +1190,60 @@ Status DBImpl::Recover(
   }
   s = SetupDBId(read_only, recovery_ctx);
   ROCKS_LOG_INFO(immutable_db_options_.info_log, "DB ID: %s\n", db_id_.c_str());
+  bool crash_safe_convert = false;
+  PublishedSeqRecord mmap_rec;
+  bool mmap_valid = false;
+  if (s.ok() && !read_only &&
+      immutable_db_options_.memtable_crash_safe_recover) {
+    mmap_valid = ReadPublishedSeqRecord(pubseq_mmap_, &mmap_rec);
+    std::string fail_reason;
+    if (mmap_valid) {
+      crash_safe_convert = CanConvertLeftoverForCrashSafeRecover(
+          mmap_rec.pubseq, &fail_reason);
+    } else {
+      fail_reason = "invalid CSPUBSEQ generation";
+    }
+    if (!crash_safe_convert) {
+      ROCKS_LOG_WARN(immutable_db_options_.info_log,
+                     "Crash-safe recover check failed (%s), fallback to full "
+                     "WAL RecoverLogFiles",
+                     fail_reason.c_str());
+    }
+  }
   if (s.ok() && !read_only) {
     s = DeleteUnreferencedSstFiles(recovery_ctx);
   }
-
+  if (s.ok()) { // CrashSafe needs to create an sst with next_file_number_.
+    // next_file_number_ must be restored before creating MemTables.
+    // WAL replay may contain sequences below LastSequence().
+    for (auto* cfd : *versions_->GetColumnFamilySet()) {
+      if (cfd->mem() == nullptr) {
+        assert(cfd->ioptions()->memtable_factory->SupportCrashSafe());
+        cfd->CreateNewMemtable(*cfd->GetLatestMutableCFOptions(), 0);
+      }
+    }
+  }
+  if (s.ok() && crash_safe_convert) {
+    const Status cs = ConvertLeftoverMemtables(mmap_rec.pubseq, recovery_ctx);
+    if (!cs.ok()) {
+      ROCKS_LOG_WARN(immutable_db_options_.info_log,
+                     "Crash-safe leftover Convert failed (%s), fallback to "
+                     "full WAL RecoverLogFiles",
+                     cs.ToString().c_str());
+      crash_safe_convert = false;
+    } else if (mmap_rec.wal_number != 0 || mmap_rec.wal_offset != 0) {
+      recovery_ctx->crash_safe_wal_tail_replay_ = true;
+      recovery_ctx->crash_safe_wal_number_ = mmap_rec.wal_number;
+      recovery_ctx->crash_safe_wal_offset_ = mmap_rec.wal_offset;
+      recovery_ctx->crash_safe_wal_offset_kind_ =
+          static_cast<uint8_t>(pubseq_mmap_->wal_offset_kind);
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "Crash-safe recover Convert leftover, WAL tail from "
+                     "#%" PRIu64 " offset %" PRIu64 " kind %u seq %" PRIu64,
+                     mmap_rec.wal_number, mmap_rec.wal_offset,
+                     pubseq_mmap_->wal_offset_kind, mmap_rec.pubseq);
+    }
+  }
   if (immutable_db_options_.paranoid_checks && s.ok()) {
     s = CheckConsistency();
   }
@@ -795,6 +1379,21 @@ Status DBImpl::Recover(
     }
   }
 
+  if (s.ok() && !read_only && !crash_safe_convert) {
+    // Retire the old inventory only together with the successful WAL recovery.
+    // Missing files are allowed here: their absence is what forced the replay.
+    for (auto* cfd : *versions_->GetColumnFamilySet()) {
+      const auto& files = cfd->GetMemTableFiles();
+      if (files.empty()) continue;
+      VersionEdit edit;
+      edit.SetColumnFamily(cfd->GetID());
+      for (uint64_t number : files) {
+        edit.DeleteMemTableFile(number);
+      }
+      recovery_ctx->UpdateVersionEdits(cfd, edit);
+    }
+  }
+
   if (read_only) {
     // If we are opening as read-only, we need to update options_file_number_
     // to reflect the most recent OPTIONS file. It does not matter for regular
@@ -832,6 +1431,14 @@ Status DBImpl::Recover(
                               &options_file_size);
       }
       versions_->options_file_size_ = options_file_size;
+    }
+  }
+  if (s.ok() && !read_only &&
+      immutable_db_options_.memtable_crash_safe_recover) {
+    if (mmap_valid && mmap_rec.pubseq > versions_->LastSequence()) {
+      versions_->SetLastAllocatedSequence(mmap_rec.pubseq);
+      versions_->SetLastPublishedSequence(mmap_rec.pubseq);
+      versions_->SetLastSequence(mmap_rec.pubseq);
     }
   }
   return s;
@@ -949,9 +1556,38 @@ Status DBImpl::LogAndApplyForRecovery(const RecoveryContext& recovery_ctx) {
   mutex_.AssertHeld();
   assert(versions_->descriptor_log_ == nullptr);
   const ReadOptions read_options(Env::IOActivity::kDBOpen);
+  // Recovery retires the old inventory and installs all recovered CFs at once.
+  // A truncated MANIFEST tail must not install just part of that transition.
+  uint32_t remaining = 0;
+  bool tracks_memtable_files = false;
+  for (const auto& edits : recovery_ctx.edit_lists_) {
+    remaining += static_cast<uint32_t>(edits.size());
+    for (const auto* edit : edits) {
+      tracks_memtable_files |= edit->HasMemTableFileTracking() ||
+          !edit->GetMemTableFileAdditions().empty() ||
+          !edit->GetMemTableFileDeletions().empty();
+    }
+  }
+  if (tracks_memtable_files && remaining > 1) {
+    for (const auto& edits : recovery_ctx.edit_lists_) {
+      for (auto* edit : edits) {
+        edit->MarkAtomicGroup(--remaining);
+      }
+    }
+  }
+  TEST_SYNC_POINT("DBImpl::RegisterMemTableFile:BeforeLogAndApply");
   Status s = versions_->LogAndApply(
       recovery_ctx.cfds_, recovery_ctx.mutable_cf_opts_, read_options,
       recovery_ctx.edit_lists_, &mutex_, directories_.GetDbDir());
+  TEST_SYNC_POINT_CALLBACK("DBImpl::RegisterMemTableFile:AfterLogAndApply", &s);
+  if (s.ok()) {
+    if (immutable_db_options_.memtable_crash_safe_recover) {
+      for (auto* cfd : *versions_->GetColumnFamilySet()) {
+        cfd->PublishRegisteredMemTables();
+      }
+    }
+    TEST_SYNC_POINT("DBImpl::RegisterMemTableFile:BeforeInstall");
+  }
   if (s.ok() && !(recovery_ctx.files_to_delete_.empty())) {
     mutex_.Unlock();
     for (const auto& stale_sst_file : recovery_ctx.files_to_delete_) {
@@ -964,6 +1600,12 @@ Status DBImpl::LogAndApplyForRecovery(const RecoveryContext& recovery_ctx) {
       }
     }
     mutex_.Lock();
+  }
+  if (s.ok() && pubseq_mmap_ != nullptr && (pubseq_mmap_->generation & 1)) {
+    // Discard a torn cursor before enabling publication.
+    pubseq_mmap_->rec = PublishedSeqRecord{};
+    terark::as_atomic(pubseq_mmap_->generation)
+           .store(0, std::memory_order_release);
   }
   return s;
 }
@@ -1131,6 +1773,16 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
   bool flushed = false;
   uint64_t corrupted_wal_number = kMaxSequenceNumber;
   uint64_t min_wal_number = MinLogNumberToKeep();
+  const bool crash_safe_wal_tail_replay =
+      recovery_ctx != nullptr && recovery_ctx->crash_safe_wal_tail_replay_;
+  const uint64_t crash_safe_wal_number =
+      crash_safe_wal_tail_replay ? recovery_ctx->crash_safe_wal_number_ : 0;
+  const uint64_t crash_safe_wal_offset =
+      crash_safe_wal_tail_replay ? recovery_ctx->crash_safe_wal_offset_ : 0;
+  const uint8_t crash_safe_wal_offset_kind =
+      crash_safe_wal_tail_replay ? recovery_ctx->crash_safe_wal_offset_kind_ : 0;
+  const uint64_t crash_safe_probe_wal_below =
+      recovery_ctx != nullptr ? recovery_ctx->crash_safe_probe_wal_below_ : 0;
   if (!allow_2pc()) {
     // In non-2pc mode, we skip WALs that do not back unflushed data.
     min_wal_number =
@@ -1148,6 +1800,14 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
     // records after allocating this log number.  So we manually
     // update the file number allocation counter in VersionSet.
     versions_->MarkFileNumberUsed(wal_number);
+    if (crash_safe_wal_tail_replay && !allow_2pc() &&
+        wal_number < crash_safe_wal_number) {
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "Skipping InsertInto for log #%" PRIu64
+                     " before crash-safe WAL cursor #%" PRIu64,
+                     wal_number, crash_safe_wal_number);
+      continue;
+    }
     // Open the log file
     std::string fname =
         LogFileName(immutable_db_options_.GetWalDir(), wal_number);
@@ -1168,7 +1828,8 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       continue;
     }
     bool wal_memtable_format = immutable_db_options_.memtable_as_log_index;
-    if (immutable_db_options_.check_wal_format) {
+    if (immutable_db_options_.check_wal_format || wal_number < crash_safe_probe_wal_below) {
+      TEST_SYNC_POINT_CALLBACK("DBImpl::RecoverLogFiles:ProbeWalFormat", &wal_number);
       if (IOStatus ios = log::Reader::IsMemTableAsLogIndexFile
                    (*fs_, fname, &wal_memtable_format); !ios.ok()) {
         auto info_log = immutable_db_options_.info_log.get();
@@ -1177,6 +1838,8 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       }
     }
 
+    bool prefix_compare = false;
+  reopen_wal:
     std::unique_ptr<SequentialFileReader> file_reader;
     {
       std::unique_ptr<FSSequentialFile> file;
@@ -1223,6 +1886,44 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
         return Status(ios);
       if (fmap)
         fmap->tail_pos = std::make_shared<uint64_t>(fmap->size_);
+    }
+
+    if (crash_safe_wal_tail_replay && !prefix_compare) {
+      const uint64_t cursor_wal = crash_safe_wal_number;
+      bool has_udt = false;
+      for (auto* cfd : *versions_->GetColumnFamilySet()) {
+        if (cfd->user_comparator()->timestamp_size() > 0) {
+          has_udt = true;
+          break;
+        }
+      }
+      if (allow_2pc()) {
+        prefix_compare = true;
+      } else if (wal_number == cursor_wal) {
+        if (has_udt) {
+          ROCKS_LOG_WARN(immutable_db_options_.info_log,
+                         "Crash-safe WAL Seek skipped (UDT), "
+                         "compare LastRecordOffset from start of log #%" PRIu64,
+                         wal_number);
+          prefix_compare = true;
+        } else {
+          const uint64_t record_start = PublishedWalRecordStart(
+              crash_safe_wal_offset, crash_safe_wal_offset_kind);
+          IOStatus seek_s = reader.SeekToFileOffset(record_start);
+          TEST_SYNC_POINT_CALLBACK(
+              "CrashSafeRecover::SeekToFileOffset:InjectStatus", &seek_s);
+          if (!seek_s.ok()) {
+            ROCKS_LOG_WARN(immutable_db_options_.info_log,
+                           "Crash-safe SeekToFileOffset(%" PRIu64
+                           ") failed (%s), compare LastRecordOffset from start",
+                           record_start, seek_s.ToString().c_str());
+            prefix_compare = true;
+            // A failed seek may have consumed bytes. Recreate both readers
+            // before replaying from the beginning of this WAL.
+            goto reopen_wal;
+          }
+        }
+      }
     }
 
     // Determine if we should tolerate incomplete records at the tail end of the
@@ -1325,11 +2026,26 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       if (fmap) {
         batch_to_use->SetWAL({fmap, wal_number, reader.LastRecordOffset()});
       }
+      column_family_memtables_->skip_memtable_data_ = false;
+      if (crash_safe_wal_tail_replay && prefix_compare) {
+        if (wal_number < crash_safe_wal_number) {
+          column_family_memtables_->skip_memtable_data_ = true;
+        } else if (wal_number == crash_safe_wal_number &&
+                   reader.LastRecordOffset() <
+                       PublishedWalRecordStart(crash_safe_wal_offset,
+                                              crash_safe_wal_offset_kind)) {
+          column_family_memtables_->skip_memtable_data_ = true;
+        }
+      }
       status = WriteBatchInternal::InsertInto(
           batch_to_use, column_family_memtables_.get(), &flush_scheduler_,
           &trim_history_scheduler_, true, wal_number, this,
           false /* concurrent_memtable_writes */, next_sequence,
           &has_valid_writes, seq_per_batch_, batch_per_txn_);
+      column_family_memtables_->skip_memtable_data_ = false;
+      if (status.IsNotSupported()) {
+        return status;
+      }
       MaybeIgnoreError(&status);
       if (!status.ok()) {
         // We are treating this as a failure while reading since we read valid
@@ -1849,12 +2565,23 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
 Status DB::Open(const DBOptions& db_options, const std::string& dbname,
                 const std::vector<ColumnFamilyDescriptor>& column_families,
                 std::vector<ColumnFamilyHandle*>* handles, DB** dbptr) {
+  *dbptr = nullptr;
+  MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
+      const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
+      dbname);
   const bool kSeqPerBatch = true;
   const bool kBatchPerTxn = true;
   ThreadStatusUtil::SetEnableTracking(db_options.enable_thread_tracking);
   ThreadStatusUtil::SetThreadOperation(ThreadStatus::OperationType::OP_DBOPEN);
+  Status s0 = DBImpl::PrepareCrashSafeKindForOpen(
+      db_options, dbname, column_families, !kSeqPerBatch, kBatchPerTxn);
+  if (!s0.ok()) {
+    ThreadStatusUtil::ResetThreadStatus();
+    return s0;
+  }
   Status s = DBImpl::Open(db_options, dbname, column_families, handles, dbptr,
-                          !kSeqPerBatch, kBatchPerTxn);
+                          !kSeqPerBatch, kBatchPerTxn,
+                          true /* options_already_updated */);
   ThreadStatusUtil::ResetThreadStatus();
   return s;
 }
@@ -1988,10 +2715,14 @@ IOStatus DBImpl::CreateWAL(uint64_t log_file_num, uint64_t recycle_log_number,
 Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
                     const std::vector<ColumnFamilyDescriptor>& column_families,
                     std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
-                    const bool seq_per_batch, const bool batch_per_txn) {
-  MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
-      const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
-      dbname);
+                    const bool seq_per_batch, const bool batch_per_txn,
+                    bool options_already_updated) {
+  // Kind-prep supplies the old WAL kind after applying the external config.
+  if (!options_already_updated) {
+    MaybeOptionsUpdateFrom(const_cast<DBOptions*>(&db_options),
+        const_cast<std::vector<ColumnFamilyDescriptor>*>(&column_families),
+        dbname);
+  }
   *dbptr = nullptr;
   ROCKSDB_SCOPE_EXIT(MaybeRetainDB(*dbptr, *handles));
 
@@ -2116,7 +2847,20 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
       }
     }
   }
+  if (s.ok() && impl->pubseq_mmap_ != nullptr &&
+      impl->pubseq_mmap_->kind_since_wal == 0) {
+    impl->pubseq_mmap_->kind_since_wal = impl->logfile_number_;
+  }
   if (s.ok()) {
+    if (impl->immutable_db_options_.memtable_crash_safe_recover) {
+      for (auto* cfd : *impl->versions_->GetColumnFamilySet()) {
+        VersionEdit edit;
+        edit.SetColumnFamily(cfd->GetID());
+        cfd->PrepareNewMemtableInBackground(*cfd->GetLatestMutableCFOptions());
+        cfd->AddMemTableFileEdits(&edit);
+        recovery_ctx.UpdateVersionEdits(cfd, edit);
+      }
+    }
     s = impl->LogAndApplyForRecovery(recovery_ctx);
   }
 

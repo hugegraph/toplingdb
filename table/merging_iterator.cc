@@ -10,6 +10,7 @@
 #include "table/merging_iterator.h"
 
 #include "db/arena_wrapped_db_iter.h"
+#include "test_util/sync_point.h"
 
 #if defined(__AVX512VL__) && defined(__AVX512BW__)
   #include <immintrin.h>
@@ -616,6 +617,7 @@ public:
     for (int i = 0; i < n; i++) {
       children_[i].level = i;
       children_[i].iter.Set(children[i]);
+      children[i]->SetParent(this);
     }
    #if !defined(_MSC_VER)
     static_assert( // Hot fields should lie in same cache line
@@ -635,6 +637,7 @@ public:
     if (pinned_iters_mgr_) {
       iter->SetPinnedItersMgr(pinned_iters_mgr_);
     }
+    iter->SetParent(this);
     // Invalidate to ensure `Seek*()` is called to construct the heaps before
     // use.
     current_ = nullptr;
@@ -933,10 +936,28 @@ public:
             ForgeFuncPtr(this, &MergingIterTmpl::PrepareAndGetValue);
     }
   }
+  // Bind dst's value funcs to the iterator src's wrapper is bound to. src is
+  // the wrapper of the current child, whose binding LevelIterator keeps up to
+  // date as it switches files, and which tells us about each switch by calling
+  // UpdateWrapper() below. Copying it here is two pointer stores, far cheaper
+  // than the extra call needed to reach the child other than through this
+  // cache.
   void CopyValueFunc(IteratorWrapper* dst, const IteratorWrapper* src) {
     if (dst && src) {
       dst->value_iter_ = src->value_iter_;
       dst->prepare_and_get_value_ = src->prepare_and_get_value_;
+    }
+  }
+  void UpdateWrapper(IteratorWrapper* child) override {
+    // The child we copied the value funcs from has moved on to another file, so
+    // the copy in my_wrapper_ points at an iterator it has already deleted.
+    // Only the wrapper we copied from can have gone stale: the binding of any
+    // other child is not used. Cold path: current_ rebinds on every file
+    // switch.
+    TEST_SYNC_POINT_CALLBACK("MergingIterator::UpdateWrapper", child);
+    if (child == current_) {
+      TEST_SYNC_POINT("MergingIterator::UpdateWrapper:RefreshCurrent");
+      UpdateScanFunc(my_wrapper_);
     }
   }
 

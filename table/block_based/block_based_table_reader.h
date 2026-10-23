@@ -105,6 +105,7 @@ class BlockBasedTable : public TableReader {
       const std::shared_ptr<const SliceTransform>& prefix_extractor = nullptr,
       bool prefetch_index_and_filter_in_cache = true, bool skip_filters = false,
       int level = -1, const bool immortal_table = false,
+      const SequenceNumber smallest_seqno = kMaxSequenceNumber,
       const SequenceNumber largest_seqno = 0,
       bool force_direct_prefetch = false,
       TailPrefetchStats* tail_prefetch_stats = nullptr,
@@ -489,6 +490,7 @@ class BlockBasedTable : public TableReader {
   Status ReadPropertiesBlock(const ReadOptions& ro,
                              FilePrefetchBuffer* prefetch_buffer,
                              InternalIterator* meta_iter,
+                             const SequenceNumber smallest_seqno,
                              const SequenceNumber largest_seqno);
   Status ReadRangeDelBlock(const ReadOptions& ro,
                            FilePrefetchBuffer* prefetch_buffer,

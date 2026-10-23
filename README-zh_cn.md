@@ -37,6 +37,11 @@ ToplingDB 兼容 RocksDB API 的同时，增加了很多非常重要的功能与
 1. 内置 Prometheus 指标的支持，这是在[内嵌 Http](https://github.com/topling/rockside/wiki/WebView) 中实现的
 1. 修复了很多 RocksDB 的 bug，我们已将其中易于合并到 RocksDB 的很多修复与改进给上游 RocksDB 发了 [Pull Request](https://github.com/facebook/rocksdb/pulls?q=is%3Apr+author%3Arockeet)
 
+## 进程崩溃后的恢复
+恢复机制、配置方式及适用边界见 [MemTable Crash-Safe Recovery](https://github.com/topling/rockside/wiki/Crash-Safe-Recovery)。
+底层数据结构为何同时支持读侧无等待与进程崩溃后的读取，见 [读侧无等待与 Crash-Safe 的同构性](https://github.com/topling/rockside/wiki/Wait-Free-Reads-and-Crash-Safe)。
+异常退出后 `DB::Open` 的耗时见 [crash_recover_bench.md](tools/crash_recover_bench.md)。
+
 ## ToplingDB 云原生数据库服务
 1. [MyTopling](https://github.com/topling/mytopling)(MySQL on ToplingDB), [阿里云上的 MyTopling](https://market.aliyun.com/products?k=mytopling)
 1. [Todis](https://github.com/topling/todis)(Redis on ToplingDB)

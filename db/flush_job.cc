@@ -209,7 +209,15 @@ void FlushJob::PickMemTable() {
   edit_->SetColumnFamily(cfd_->GetID());
 
   // path 0 for level 0 file.
-  meta_.fd = FileDescriptor(versions_->NewFileNumber(), 0, 0);
+  const uint64_t file_number = [&]() {
+    if (m->SupportCrashSafe()) {
+      ROCKSDB_ASSERT_EQ(mems_.size(), 1);
+      return m->GetFileNumber();
+    } else {
+      return versions_->NewFileNumber();
+    }
+  }();
+  meta_.fd = FileDescriptor(file_number, 0, 0);
   meta_.epoch_number = cfd_->NewEpochNumber();
 
   base_ = cfd_->current();
@@ -229,7 +237,8 @@ Status FlushJob::Run(LogsWithPrepTracker* prep_tracker, FileMetaData* file_meta,
   double mempurge_threshold =
       mutable_cf_options_.experimental_mempurge_threshold;
 
-  if (db_options_.memtable_as_log_index) {
+  if (db_options_.memtable_as_log_index ||
+      cfd_->ioptions()->memtable_factory->SupportCrashSafe()) {
     mempurge_threshold = 0; // not supported
   }
 
@@ -963,14 +972,17 @@ Status FlushJob::WriteLevel0Table() {
           TableFileCreationReason::kFlush, oldest_key_time, current_time,
           db_id_, db_session_id_, 0 /* target_file_size */,
           meta_.fd.GetNumber());
-    if (mems_.size() == 1 && mems_.front()->SupportConvertToSST()) {
+    if (mems_.front()->SupportConvertToSST()) {
+        ROCKSDB_ASSERT_EQ(mems_.size(), 1);
         // convert MemTable to sst
         MemTable* memtable = mems_.front();
         // pass these fields to ConvertToSST, to fill TableProperties
         meta_.num_entries = memtable->num_entries();
-        meta_.num_deletions = memtable->num_deletes();
+        // NOTE: MemTable's num_deletes() and TableProperties' num_deletions
+        // disagree: the former excludes range deletions, the latter includes
+        meta_.num_deletions = memtable->num_deletes() + memtable->num_range_deletes();
         meta_.num_merges = memtable->num_merges();
-        meta_.num_range_deletions = 0;
+        meta_.num_range_deletions = memtable->num_range_deletes();
         meta_.raw_key_size = memtable->raw_key_size();
         meta_.raw_value_size = memtable->raw_value_size();
         tboptions.generate_file_no = [this]() {
@@ -980,6 +992,7 @@ Status FlushJob::WriteLevel0Table() {
           blob_file_additions.push_back(std::move(b));
         };
         s = memtable->ConvertToSST(&meta_, tboptions);
+        TEST_SYNC_POINT_CALLBACK("FlushJob::ConvertToSST:Status", &s);
         if (!s.ok()) {
           ROCKS_LOG_BUFFER(log_buffer_,
                           "[%s] [JOB %d] Level-0 ConvertToSST #%" PRIu64 ": ApproximateMemoryUsage %" PRIu64
@@ -987,19 +1000,18 @@ Status FlushJob::WriteLevel0Table() {
                           cfd_->GetName().c_str(), job_context_->job_id,
                           meta_.fd.GetNumber(), memtable->ApproximateMemoryUsage(),
                           s.ToString().c_str());
-          goto UseBuildTable;
+        } else {
+          meta_.fd.smallest_seqno = std::min(memtable->GetEarliestSequenceNumber(),
+                                             memtable->GetFirstSequenceNumber());
+          meta_.fd.largest_seqno = memtable->largest_seqno();
+          meta_.marked_for_compaction = true;
         }
-        meta_.fd.smallest_seqno = std::min(memtable->GetEarliestSequenceNumber(),
-                                           memtable->GetFirstSequenceNumber());
-        meta_.fd.largest_seqno = memtable->largest_seqno();
-        meta_.marked_for_compaction = true;
         for (auto* p_iter : memtables) { // memtables is vec of memtab iters
           std::destroy_at(p_iter); // Attention!!! must!
         }
         memtables.clear();
     }
     else { // call BuildTable
-UseBuildTable:
       uint64_t num_input_entries = 0;
       uint64_t memtable_payload_bytes = 0;
       uint64_t memtable_garbage_bytes = 0;
@@ -1075,6 +1087,11 @@ UseBuildTable:
   // Note that if file_size is zero, the file has been deleted and
   // should not be added to the manifest.
   const bool has_output = meta_.fd.GetFileSize() > 0;
+
+  if (s.ok() && mems_.front()->IsFileRegistered()) {
+    ROCKSDB_ASSERT_EQ(mems_.size(), 1);
+    edit_->DeleteMemTableFile(mems_.front()->GetFileNumber());
+  }
 
   if (s.ok() && has_output) {
     TEST_SYNC_POINT("DBImpl::FlushJob:SSTFileCreated");

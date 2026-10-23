@@ -129,6 +129,7 @@ inline uint64_t HostPrefixCache(const ParsedInternalKey& ikey) {
 }
 
 template<class Cmp>
+__attribute__((always_inline))
 size_t FindFileInRangeTmpl(Cmp cmp, const LevelFilesBrief& brief,
                            const ParsedInternalKey& key, size_t lo, size_t hi) {
   const uint64_t* pxcache = brief.prefix_cache;
@@ -1014,6 +1015,7 @@ class LevelIterator final : public InternalIterator {
     my_wrapper_ = iw;
     UpdateScanFunc(iw);
   }
+  void SetParent(InternalIterator* parent) override { parent_ = parent; }
   void UpdateScanFunc(IteratorWrapper* iw) {
     if (to_return_sentinel_ || file_iter_.iter() == nullptr) {
       iw->work_iter_ = this;
@@ -1030,8 +1032,22 @@ class LevelIterator final : public InternalIterator {
       iw->prepare_and_get_value_ = ForgeFuncPtr(fi, &InternalIterator::PrepareAndGetValue);
     }
     retry_already_goes_invalid_ = false;
+    if (UNLIKELY(parent_ != nullptr)) {
+      // iw may now be bound to file_iter_.iter(), which SetFileIterator()
+      // deletes on the next file switch. The parent (merging iterator) copies
+      // this binding into its own wrapper rather than calling us, so it cannot
+      // see the switch by itself and has to be told. Cold path: one call per
+      // file.
+      parent_->UpdateWrapper(iw);
+    }
+    // iw is now bound to the file this iterator sits on (or to this iterator
+    // itself when it has none). Tests use this to see the binding a parent that
+    // was given iw has to follow.
+    TEST_SYNC_POINT_CALLBACK("LevelIterator::UpdateScanFunc:Rebound", iw);
   }
   IteratorWrapper* my_wrapper_ = nullptr;
+  // Owns this iterator, so it outlives every file switch below; never dangles.
+  InternalIterator* parent_ = nullptr;
 
   const Slice& file_smallest_key(size_t file_index) const {
     assert(file_index < flevel_->num_files);
@@ -1208,6 +1224,9 @@ void LevelIterator::TrySetDeleteRangeSentinel(const Slice& boundary_key) {
       file_iter_.status().ok()) {
     to_return_sentinel_ = true;
     sentinel_ = boundary_key;
+    // Tests use this to see that a file boundary was reported as a sentinel key
+    // rather than only by rebinding the wrapper the parent was given.
+    TEST_SYNC_POINT("LevelIterator::TrySetDeleteRangeSentinel");
   }
 }
 
@@ -5505,6 +5524,8 @@ void VersionSet::Reset() {
   obsolete_files_.clear();
   obsolete_manifests_.clear();
   wals_.Reset();
+  has_memtable_file_tracking_ = false;
+  replaying_manifest_ = true;
 }
 
 void VersionSet::AppendVersion(ColumnFamilyData* column_family_data,
@@ -5743,6 +5764,7 @@ Status VersionSet::ProcessManifestWrites(
   std::unordered_map<uint32_t, MutableCFState> curr_state;
   VersionEdit wal_additions;
   if (new_descriptor_log) {
+    if (has_memtable_file_tracking_) wal_additions.SetMemTableFileTracking();
     pending_manifest_file_number_ = NewFileNumber();
     batch_edits.back()->SetNextFile(next_file_number_.load());
 
@@ -5956,6 +5978,40 @@ Status VersionSet::ProcessManifestWrites(
 
   // Install the new versions
   if (s.ok()) {
+    // Only a committed live batch can retire backing files. MANIFEST replay
+    // applies registry edits without scheduling historical deletions.
+    std::map<uint64_t, std::string> retired_memtable_files;
+    for (const auto* edit : batch_edits) {
+      auto* cfd = column_family_set_->GetColumnFamily(edit->GetColumnFamily());
+      if (cfd != nullptr) {
+        const auto& files = cfd->GetMemTableFiles();
+        const auto& path = cfd->ioptions()->cf_paths[0].path;
+        if (edit->IsColumnFamilyDrop()) {
+          for (uint64_t number : files) {
+            retired_memtable_files.emplace(number, path);
+          }
+        } else {
+          for (uint64_t number : edit->GetMemTableFileDeletions()) {
+            assert(files.count(number));
+            retired_memtable_files.emplace(number, path);
+          }
+        }
+      }
+      ApplyMemTableFileEdit(*edit);
+    }
+    if (!retired_memtable_files.empty()) {
+      // In-place conversion transfers ownership to the installed SST version.
+      for (const auto* edit : batch_edits) {
+        for (const auto& file : edit->GetNewFiles()) {
+          retired_memtable_files.erase(file.second.fd.GetNumber());
+        }
+      }
+      for (const auto& file : retired_memtable_files) {
+        auto* metadata = new FileMetaData();
+        metadata->fd = FileDescriptor(file.first, 0, 0);
+        obsolete_files_.emplace_back(metadata, file.second);
+      }
+    }
     if (first_writer.edit_list.front()->IsColumnFamilyAdd()) {
       assert(batch_edits.size() == 1);
       assert(new_cf_options != nullptr);
@@ -6346,6 +6402,7 @@ Status VersionSet::Recover(
 
   if (s.ok()) {
     manifest_file_size_ = current_manifest_file_size;
+    replaying_manifest_ = false;
     ROCKS_LOG_INFO(
         db_options_->info_log,
         "Recovered from manifest file:%s succeeded,"
@@ -6515,6 +6572,7 @@ Status VersionSet::TryRecoverFromOneManifest(
   s = handler_pit.status();
   if (s.ok()) {
     RecoverEpochNumbers();
+    replaying_manifest_ = false;
   }
   return s;
 }
@@ -6850,7 +6908,8 @@ Status VersionSet::WriteCurrentStateToManifest(
   }
 
   // Save WALs.
-  if (!wal_additions.GetWalAdditions().empty()) {
+  if (!wal_additions.GetWalAdditions().empty() ||
+      wal_additions.HasMemTableFileTracking()) {
     TEST_SYNC_POINT_CALLBACK("VersionSet::WriteCurrentStateToManifest:SaveWal",
                              const_cast<VersionEdit*>(&wal_additions));
     std::string record;
@@ -6915,6 +6974,11 @@ Status VersionSet::WriteCurrentStateToManifest(
       // Save files
       VersionEdit edit;
       edit.SetColumnFamily(cfd->GetID());
+
+      // Only the serialized MANIFEST writer changes this registry.
+      for (uint64_t number : cfd->GetMemTableFiles()) {
+        edit.AddMemTableFile(number);
+      }
 
       const auto* current = cfd->current();
       assert(current);
@@ -7568,6 +7632,14 @@ uint64_t VersionSet::GetObsoleteSstFilesSize() const {
   return ret;
 }
 
+void VersionSet::ApplyMemTableFileEdit(const VersionEdit& edit) {
+  has_memtable_file_tracking_ |= edit.HasMemTableFileTracking();
+  // Recovery may skip CFs that were not requested.
+  if (auto* cfd = column_family_set_->GetColumnFamily(edit.GetColumnFamily())) {
+    cfd->ApplyMemTableFileEdit(edit);
+  }
+}
+
 ColumnFamilyData* VersionSet::CreateColumnFamily(
     const ColumnFamilyOptions& cf_options, const ReadOptions& read_options,
     const VersionEdit* edit) {
@@ -7593,10 +7665,12 @@ ColumnFamilyData* VersionSet::CreateColumnFamily(
                    update_stats);
 
   AppendVersion(new_cfd, v);
-  // GetLatestMutableCFOptions() is safe here without mutex since the
-  // cfd is not available to client
-  new_cfd->CreateNewMemtable(*new_cfd->GetLatestMutableCFOptions(),
-                             LastSequence());
+  if (!cf_options.memtable_factory->SupportCrashSafe() || !replaying_manifest_) {
+    // GetLatestMutableCFOptions() is safe here without mutex since the
+    // cfd is not available to client
+    new_cfd->CreateNewMemtable(*new_cfd->GetLatestMutableCFOptions(),
+                               LastSequence());
+  }
   new_cfd->SetLogNumber(edit->GetLogNumber());
   return new_cfd;
 }

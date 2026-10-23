@@ -28,6 +28,10 @@
 
 namespace ROCKSDB_NAMESPACE {
 
+#ifdef HAS_TOPLING_CSPP_MEMTABLE
+std::shared_ptr<MemTableRepFactory> EasyNewMemTableRep(Slice cls, Slice js);
+#endif
+
 class DBOptionsTest : public DBTestBase {
  public:
   DBOptionsTest() : DBTestBase("db_options_test", /*env_do_fsync=*/true) {}
@@ -79,6 +83,130 @@ class DBOptionsTest : public DBTestBase {
     return GetMutableDBOptionsMap(sanitized_options);
   }
 };
+
+TEST_F(DBOptionsTest, SanitizeManualWalFlushAndAtomicFlush) {
+  DBOptions src;
+  src.memtable_crash_safe_recover = true;
+  src.manual_wal_flush = true;
+  src.recycle_log_file_num = 2;
+  const DBOptions out = SanitizeOptions(dbname_, src);
+  ASSERT_FALSE(out.manual_wal_flush);
+  ASSERT_EQ(out.recycle_log_file_num, 0U);
+  ASSERT_FALSE(out.atomic_flush);
+  src.atomic_flush = true;
+  const DBOptions keep = SanitizeOptions(dbname_, src);
+  ASSERT_TRUE(keep.atomic_flush);
+}
+
+TEST_F(DBOptionsTest, CrashSafeOrLogIndexDisablesWalCompression) {
+  if (!StreamingCompressionTypeSupported(kZSTD)) {
+    return;
+  }
+  for (bool crash_safe : {false, true}) {
+    for (bool log_index : {false, true}) {
+      SCOPED_TRACE(crash_safe);
+      SCOPED_TRACE(log_index);
+      DBOptions src;
+      src.memtable_crash_safe_recover = crash_safe;
+      src.memtable_as_log_index = log_index;
+      src.wal_compression = kZSTD;
+      const DBOptions out = SanitizeOptions(dbname_, src);
+      ASSERT_EQ(out.wal_compression,
+                crash_safe || log_index ? kNoCompression : kZSTD);
+    }
+  }
+}
+
+TEST_F(DBOptionsTest, ReadOnlyDisablesCrashSafeAndWarns) {
+  for (bool use_logger : {false, true}) {
+    for (bool crash_safe : {false, true}) {
+      SCOPED_TRACE(use_logger);
+      SCOPED_TRACE(crash_safe);
+      DBOptions src;
+      src.memtable_crash_safe_recover = crash_safe;
+      src.manual_wal_flush = true;
+      src.recycle_log_file_num = 2;
+      src.wal_recovery_mode = WALRecoveryMode::kSkipAnyCorruptedRecords;
+      if (StreamingCompressionTypeSupported(kZSTD)) {
+        src.wal_compression = kZSTD;
+      }
+      const std::string log_path = dbname_ + "/readonly-warning.log";
+      if (use_logger) {
+        ASSERT_OK(env_->NewLogger(log_path, &src.info_log));
+        src.info_log->SetInfoLogLevel(InfoLogLevel::WARN_LEVEL);
+      }
+      testing::internal::CaptureStderr();
+      const DBOptions out = SanitizeOptions(dbname_, src, /*read_only=*/true);
+      const std::string stderr_output = testing::internal::GetCapturedStderr();
+      ASSERT_FALSE(out.memtable_crash_safe_recover);
+      ASSERT_EQ(out.info_log, src.info_log);
+      ASSERT_TRUE(out.manual_wal_flush);
+      ASSERT_EQ(out.recycle_log_file_num, 2U);
+      ASSERT_EQ(out.wal_compression, src.wal_compression);
+      std::string warning = stderr_output;
+      if (use_logger) {
+        ASSERT_TRUE(stderr_output.empty());
+        src.info_log->Flush();
+        ASSERT_OK(ReadFileToString(env_, log_path, &warning));
+      }
+      if (crash_safe) {
+        ASSERT_NE(warning.find("WARN"), std::string::npos);
+        ASSERT_NE(warning.find("disabled for read-only Open"), std::string::npos);
+        ASSERT_NE(warning.find("replay may be very slow"), std::string::npos);
+        ASSERT_NE(warning.find("much larger MemTables"), std::string::npos);
+      } else {
+        ASSERT_TRUE(warning.empty());
+      }
+    }
+  }
+}
+
+TEST_F(DBOptionsTest, ReadOnlyReplaysWalWithCrashSafeDisabled) {
+  Options options = CurrentOptions();
+  options.memtable_crash_safe_recover = false;
+  options.avoid_flush_during_shutdown = true;
+  DestroyAndReopen(options);
+  ASSERT_OK(Put("k", "v"));
+  Close();
+  options.memtable_crash_safe_recover = true;
+  DB* ro = nullptr;
+  ASSERT_OK(DB::OpenForReadOnly(options, dbname_, &ro));
+  std::unique_ptr<DB> read_only_db(ro);
+  ASSERT_FALSE(ro->GetDBOptions().memtable_crash_safe_recover);
+  std::string value;
+  ASSERT_OK(ro->Get(ReadOptions(), "k", &value));
+  ASSERT_EQ(value, "v");
+}
+
+TEST_F(DBOptionsTest, CrashSafeForcesWal) {
+  for (bool crash_safe : {false, true}) {
+    SCOPED_TRACE(crash_safe);
+    Options options = CurrentOptions();
+    if (crash_safe) {
+#ifdef HAS_TOPLING_CSPP_MEMTABLE
+      options.memtable_factory = EasyNewMemTableRep(
+          "CSPPMemTab", R"({"mem_cap":16777216,"convert_to_sst":"kFileMmap"})");
+      options.avoid_flush_during_shutdown = true;
+#else
+      continue;
+#endif
+    }
+    options.memtable_as_log_index = false;
+    options.memtable_crash_safe_recover = crash_safe;
+    options.statistics = CreateDBStatistics();
+    Reopen(options);
+    WriteOptions write;
+    write.disableWAL = true;
+    const uint64_t before = options.statistics->getTickerCount(WAL_FILE_BYTES);
+    ASSERT_OK(db_->Put(write, "k", "v"));
+    const uint64_t after = options.statistics->getTickerCount(WAL_FILE_BYTES);
+    if (crash_safe) {
+      ASSERT_GT(after, before);
+    } else {
+      ASSERT_EQ(after, before);
+    }
+  }
+}
 
 TEST_F(DBOptionsTest, ImmutableTrackAndVerifyWalsInManifest) {
   Options options;
@@ -874,6 +1002,39 @@ TEST_F(DBOptionsTest, MaxOpenFilesChange) {
   // examine the table cache (actual size should be 1014)
   ASSERT_GT(1500, tc->GetCapacity());
   Close();
+}
+
+TEST_F(DBOptionsTest, SmallMaxOpenFiles) {
+  Options options = CurrentOptions();
+  options.table_cache_numshardbits = 0;
+  options.statistics = CreateDBStatistics();
+  options.disable_auto_compactions = true;
+  options.skip_stats_update_on_db_open = true;
+  Reopen(options);
+  ASSERT_OK(Put("k", "v"));
+  ASSERT_OK(Flush());
+  Close();
+  for (int max_open_files : {0, 1, 9, 10, 11}) {
+    SCOPED_TRACE(max_open_files);
+    options.max_open_files = max_open_files;
+    options.statistics->getAndResetTickerCount(NO_FILE_OPENS);
+    Reopen(options);
+    ASSERT_EQ(options.statistics->getTickerCount(NO_FILE_OPENS), 0);
+    Cache* tc = dbfull()->TEST_table_cache();
+    const size_t capacity = std::max(0, max_open_files - 10);
+    ASSERT_EQ(db_->GetDBOptions().max_open_files, max_open_files);
+    ASSERT_EQ(tc->GetCapacity(), capacity);
+    ASSERT_OK(db_->SetDBOptions({{"max_background_jobs", "4"}}));
+    ASSERT_EQ(tc->GetCapacity(), capacity);
+    ASSERT_OK(db_->SetDBOptions({{"max_open_files", "1024"}}));
+    ASSERT_EQ(tc->GetCapacity(), 1014U);
+    ASSERT_OK(db_->SetDBOptions(
+        {{"max_open_files", std::to_string(max_open_files)}}));
+    ASSERT_EQ(tc->GetCapacity(), capacity);
+    ASSERT_EQ(Get("k"), "v");
+    ASSERT_GT(options.statistics->getTickerCount(NO_FILE_OPENS), 0);
+    Close();
+  }
 }
 
 TEST_F(DBOptionsTest, SanitizeDelayedWriteRate) {

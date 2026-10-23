@@ -154,7 +154,8 @@ class MemTable : public CacheAlignedNewDelete {
                     const ImmutableOptions& ioptions,
                     const MutableCFOptions& mutable_cf_options,
                     WriteBufferManager* write_buffer_manager,
-                    SequenceNumber earliest_seq, uint32_t column_family_id);
+                    SequenceNumber earliest_seq, uint32_t column_family_id,
+                    uint64_t file_number = 0);
   // No copying allowed
   MemTable(const MemTable&) = delete;
   MemTable& operator=(const MemTable&) = delete;
@@ -234,6 +235,9 @@ class MemTable : public CacheAlignedNewDelete {
                                                 std::memory_order_relaxed,
                                                 std::memory_order_relaxed);
   }
+
+  // Updates flush_state_ using ShouldFlushNow()
+  void UpdateFlushState();
 
   // Return an iterator that yields the contents of the memtable.
   //
@@ -547,7 +551,8 @@ class MemTable : public CacheAlignedNewDelete {
 
   void FinishHint(void* hint) const { table_->FinishHint(hint); }
   bool SupportConvertToSST() const {
-    return table_->SupportConvertToSST() && is_range_del_table_empty_;
+    // cspp & osl support range del with crash-safe
+    return support_convert_to_sst_;
   }
   Status ConvertToSST(struct FileMetaData*, const struct TableBuilderOptions&);
 
@@ -582,6 +587,9 @@ class MemTable : public CacheAlignedNewDelete {
   void SetFlushCompleted(bool completed) { flush_completed_ = completed; }
 
   uint64_t GetFileNumber() const { return file_number_; }
+  bool SupportCrashSafe() const { return table_->SupportCrashSafe(); }
+  bool IsFileRegistered() const { return file_registered_; }
+  void MarkFileRegistered() { file_registered_ = true; }
 
   void SetFileNumber(uint64_t file_num) { file_number_ = file_num; }
 
@@ -658,10 +666,11 @@ class MemTable : public CacheAlignedNewDelete {
   // These are used to manage memtable flushes to storage
   bool flush_in_progress_;  // started the flush
   bool flush_completed_;    // finished the flush
+  bool file_registered_;
   bool needs_user_key_cmp_in_get_;
   bool support_convert_to_sst_;
   bool reject_memtable_as_log_index_;
-  uint64_t file_number_;    // filled up after flush is complete
+  uint64_t file_number_;  // FileMmap backing file or flush output
 
   // The updates to be applied to the transaction log when this
   // memtable is flushed to storage.
@@ -737,9 +746,6 @@ class MemTable : public CacheAlignedNewDelete {
   // Otherwise, this field just contains an empty Slice.
   terark::minimal_sso<32> newest_udt_;
 #endif
-
-  // Updates flush_state_ using ShouldFlushNow()
-  void UpdateFlushState();
 
   void UpdateOldestKeyTime();
 

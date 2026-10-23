@@ -307,7 +307,6 @@ Slice DBIter::NextWithKey() {
   return Slice(nullptr, 0);
 }
 
-ROCKSDB_FLATTEN
 Slice DBIter::PrevWithKey() { return IterPrevWithKeyImpl(this); }
 
 bool DBIter::SetBlobValueIfNeeded(const Slice& user_key,
@@ -884,6 +883,13 @@ bool DBIter::FindNextUserEntryInternalTmpl(bool skipping_saved_key,
             } else {
               assert(ikey_.type == kTypeValue);
               SetValueAndColumnsFromPlain(iter_.value());
+              // A build without TOPLINGDB_WITH_WIDE_COLUMNS leaves the value
+              // for a reader to fetch instead, through the funcs the internal
+              // iterators copied, and that read is the one that aborted. A test
+              // asks for the same shape by clearing the flag here, and says so
+              // through the callback DBIter::value() consults before its
+              // assertion.
+              TEST_SYNC_POINT_CALLBACK("DBIter::ValuePrepared", &is_value_prepared_);
             }
 
             valid_ = true;
@@ -1166,6 +1172,7 @@ void DBIter::Prev() {
   }
 }
 
+terark_no_inline
 bool DBIter::ReverseToForward() {
   assert(iter_.status().ok());
 
@@ -1208,6 +1215,7 @@ bool DBIter::ReverseToForward() {
 }
 
 // Move iter_ to the key before saved_key_.
+terark_no_inline
 bool DBIter::ReverseToBackward() {
   assert(iter_.status().ok());
 
@@ -1939,7 +1947,6 @@ void DBIter::SetSavedKeyToSeekForPrevTarget(const Slice& target) {
   }
 }
 
-ROCKSDB_FLATTEN
 void DBIter::Seek(const Slice& target) {
   PERF_COUNTER_ADD(iter_seek_count, 1);
   PERF_CPU_TIMER_GUARD(iter_seek_cpu_nanos, clock_);

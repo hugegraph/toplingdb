@@ -381,9 +381,10 @@ DBImpl::DBImpl(const DBOptions& options, const std::string& dbname,
 
   // Reserve ten files or so for other uses and give the rest to TableCache.
   // Give a large number for setting of "infinite" open files.
+  // Small limits must not turn the 10-file reserve into a huge cache capacity.
   const int table_cache_size = (mutable_db_options_.max_open_files == -1)
                                    ? TableCache::kInfiniteCapacity
-                                   : mutable_db_options_.max_open_files - 10;
+                                   : std::max(0, mutable_db_options_.max_open_files - 10);
   LRUCacheOptions co;
   co.capacity = table_cache_size;
   co.num_shard_bits = immutable_db_options_.table_cache_numshardbits;
@@ -619,7 +620,8 @@ void DBImpl::CancelAllBackgroundWork(bool wait) {
 
   InstrumentedMutexLock l(&mutex_);
   if (!shutting_down_.load(std::memory_order_acquire) &&
-      has_unpersisted_data_.load(std::memory_order_relaxed) &&
+      (has_unpersisted_data_.load(std::memory_order_relaxed) ||
+       AllMemtablesSupportConvertToSST()) &&
       !mutable_db_options_.avoid_flush_during_shutdown) {
     s = DBImpl::FlushAllColumnFamilies(FlushOptions(), FlushReason::kShutDown);
     s.PermitUncheckedError();  //**TODO: What to do on error?
@@ -666,6 +668,8 @@ Status DBImpl::CloseHelper() {
   // marker. After this we do a variant of the waiting and unschedule work
   // (to consider: moving all the waiting into CancelAllBackgroundWork(true))
   CancelAllBackgroundWork(false);
+  // Periodic PersistStats writes must finish before unmapping the cursor.
+  UnmapPublishedSeqFile();
 
   // Cancel manual compaction if there's any
   if (HasPendingManualCompaction()) {
@@ -1517,7 +1521,7 @@ Status DBImpl::SetDBOptions(
           new_options.delayed_write_rate);
       table_cache_.get()->SetCapacity(new_options.max_open_files == -1
                                           ? TableCache::kInfiniteCapacity
-                                          : new_options.max_open_files - 10);
+                                          : std::max(0, new_options.max_open_files - 10));
       wal_other_option_changed = mutable_db_options_.wal_bytes_per_sync !=
                                  new_options.wal_bytes_per_sync;
       wal_size_option_changed = mutable_db_options_.max_total_wal_size !=
@@ -2298,7 +2302,6 @@ bool DBImpl::ShouldReferenceSuperVersion(const MergeContext& merge_context) {
              merge_context.GetOperands().size();
 }
 
-ROCKSDB_FLATTEN
 Status DBImpl::GetImpl(const ReadOptions& read_options, const Slice& key,
                        GetImplOptions& get_impl_options) {
 #if defined(ROCKSDB_UNIT_TEST)
@@ -4071,6 +4074,10 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
 
     // LogAndApply will both write the creation in MANIFEST and create
     // ColumnFamilyData object
+    auto pending_memtable = pending_outputs_.end();
+    if (cf_options.memtable_factory->SupportCrashSafe()) {
+      pending_memtable = CaptureCurrentFileNumberInPendingOutputs();
+    }
     {  // write thread
       WriteThread::Writer w;
       write_thread_.EnterUnbatched(&w, &mutex_);
@@ -4087,6 +4094,22 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
       assert(cfd != nullptr);
       std::map<std::string, std::shared_ptr<FSDirectory>> dummy_created_dirs;
       s = cfd->AddDirectories(&dummy_created_dirs);
+      if (s.ok() && immutable_db_options_.memtable_crash_safe_recover) {
+        cfd->PrepareNewMemtableInBackground(*cfd->GetLatestMutableCFOptions());
+        s = RegisterMemTableFiles(cfd);
+        if (!s.ok()) {
+          // CF creation is already committed. Keep its in-memory state valid,
+          // but do not return a writable handle after registration fails.
+          InstallSuperVersionAndScheduleWork(cfd, &sv_context,
+                                             *cfd->GetLatestMutableCFOptions());
+          cfd->set_initialized();
+          error_handler_.SetBGError(s, BackgroundErrorReason::kManifestWrite)
+              .PermitUncheckedError();
+        }
+      }
+    }
+    if (pending_memtable != pending_outputs_.end()) {
+      pending_outputs_.erase(pending_memtable);
     }
     if (s.ok()) {
       auto* cfd =
@@ -5915,6 +5938,12 @@ Status DestroyDB(const std::string& dbname, const Options& options,
         if (!del.ok() && result.ok()) {
           result = del;
         }
+      }
+    }
+    env->DeleteFile(CrashSafePubSeqFileName(dbname)).PermitUncheckedError();
+    for (const auto& fname : filenames) {
+      if (fname.find(".memtab-") != std::string::npos) {
+        env->DeleteFile(dbname + "/" + fname).PermitUncheckedError();
       }
     }
 

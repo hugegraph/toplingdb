@@ -48,7 +48,9 @@ DEFINE_string(benchmarks, "fillrandom",
               "\tfillrandom             -- write N random values\n"
               "\tfillseq                -- write N values in sequential order\n"
               "\treadrandom             -- read N values in random order\n"
+              "\treaduniqrand           -- read all keys in pre-shuffled order\n"
               "\treadseq                -- scan the DB\n"
+              "\treadreverse            -- scan the DB in reverse order\n"
               "\treadwrite              -- 1 thread writes while N - 1 threads "
               "do random\n"
               "\t                          reads\n"
@@ -67,6 +69,15 @@ DEFINE_string(memtablerep, "skiplist",
               "\tName:{json}         -- SidePlugin factory, e.g.\n"
               "\t                      cspp:{\"mem_cap\":\"16G\"} or\n"
               "\t                      OffsetSkipList:{\"mem_cap\":\"16G\"}");
+
+// A file-backed memtable (cspp with convert_to_sst=kFileMmap in the json
+// above) is created through the overload that takes the memtable file path,
+// which is chroot_dir prefixed by the factory, so the json must set
+// chroot_dir to an existing directory. LogRef modes are not supported: this
+// bench has no WAL, so m_ref_to_wal stays kNoLogRef.
+DEFINE_string(memtable_file_path, "",
+              "If non-empty, create the memtable rep through the file-backed "
+              "form, the path is relative to the json's chroot_dir");
 
 DEFINE_int64(bucket_count, 1000000,
              "bucket_count parameter to pass into NewHashSkiplistRepFactory or "
@@ -93,6 +104,11 @@ DEFINE_bool(if_log_bucket_dist_when_flash, true,
             "NewHashLinkListRepFactory");
 
 DEFINE_bool(enable_zero_copy, false, "enable zero copy");
+
+bool g_use_hint = false;
+DEFINE_bool(use_concurrent_insert, false,
+            "Use Insert*Concurrently / Insert*WithHintConcurrently "
+            "(independent of whether hint is used)");
 
 DEFINE_bool(reverse, false, "readseq/scan in reverse order");
 
@@ -134,6 +150,10 @@ bool g_is_topling_memtab = false;
 namespace ROCKSDB_NAMESPACE {
 
 namespace {
+inline void EncodeBigEndian64(char* dst, uint64_t value) {
+  unaligned_save(dst, NativeOfBigEndian64(value));
+}
+
 struct CallbackVerifyArgs {
   bool found;
   bool needs_user_key_cmp;
@@ -199,6 +219,9 @@ class KeyGenerator {
     return std::numeric_limits<uint64_t>::max();
   }
 
+  uint64_t NextUniqRand(uint64_t& next) { return values_[next++]; }
+  bool IsUniqRand() const { return mode_ == UNIQUE_RANDOM; }
+
  private:
   Random64* rand_;
   WriteMode mode_;
@@ -248,11 +271,21 @@ class FillBenchmarkThread : public BenchmarkThread {
       auto internal_key_size = 16;
       uint64_t key = key_gen_->Next();
       char key_buf[8]; // user key
-      EncodeFixed64(key_buf, key);
+      EncodeBigEndian64(key_buf, key);
       uint64_t tag = ++(*sequence_);
       Slice ukey(key_buf, sizeof(key_buf));
       Slice value = generator_.Generate(FLAGS_item_size);
-      table_->InsertKeyValueConcurrently(tag, ukey, value);
+      if (g_use_hint) {
+        if (FLAGS_use_concurrent_insert)
+          table_->InsertKeyValueWithHintConcurrently(tag, ukey, value, &hint_);
+        else
+          table_->InsertKeyValueWithHint(tag, ukey, value, &hint_);
+      } else {
+        if (FLAGS_use_concurrent_insert)
+          table_->InsertKeyValueConcurrently(tag, ukey, value);
+        else
+          table_->InsertKeyValue(tag, ukey, value);
+      }
       *bytes_written_ += internal_key_size + FLAGS_item_size + 1;
     }
     else {
@@ -268,7 +301,7 @@ class FillBenchmarkThread : public BenchmarkThread {
     assert(buf != nullptr);
     char* p = EncodeVarint32(buf, internal_key_size);
     auto key = key_gen_->Next();
-    EncodeFixed64(p, key);
+    EncodeBigEndian64(p, key);
     p += 8;
     EncodeFixed64(p, ++(*sequence_));
     p += 8;
@@ -276,7 +309,17 @@ class FillBenchmarkThread : public BenchmarkThread {
     memcpy(p, bytes.data(), FLAGS_item_size);
     p += FLAGS_item_size;
     assert(p == buf + encoded_len);
-    table_->Insert(handle);
+    if (g_use_hint) {
+      if (FLAGS_use_concurrent_insert)
+        table_->InsertWithHintConcurrently(handle, &hint_);
+      else
+        table_->InsertWithHint(handle, &hint_);
+    } else {
+      if (FLAGS_use_concurrent_insert)
+        table_->InsertConcurrently(handle);
+      else
+        table_->Insert(handle);
+    }
     *bytes_written_ += encoded_len;
   }
 
@@ -284,7 +327,18 @@ class FillBenchmarkThread : public BenchmarkThread {
     for (unsigned int i = 0; i < num_ops_; ++i) {
       FillOne();
     }
+    // SkipList sequential InsertWithHint stores an arena splice; the
+    // default FinishHint is delete[] and is only valid for heap splices
+    // (concurrent InsertWithHint) or Topling token parking.
+    if (hint_ != nullptr &&
+        (g_is_topling_memtab || FLAGS_use_concurrent_insert)) {
+      table_->FinishHint(hint_);
+    }
+    hint_ = nullptr;
   }
+
+ protected:
+  void* hint_ = nullptr;
 };
 
 class ConcurrentFillBenchmarkThread : public FillBenchmarkThread {
@@ -313,13 +367,18 @@ class ConcurrentFillBenchmarkThread : public FillBenchmarkThread {
 
 class ReadBenchmarkThread : public BenchmarkThread {
   ReadOptions read_opt_;
+  uint64_t uniq_idx_;
+  bool is_uniqrand_;
   bool needs_user_key_cmp_;
  public:
   ReadBenchmarkThread(MemTableRep* table, KeyGenerator* key_gen,
                       uint64_t* bytes_written, uint64_t* bytes_read,
+                      uint64_t uniq_idx,
                       uint64_t* sequence, uint64_t num_ops, uint64_t* read_hits)
       : BenchmarkThread(table, key_gen, bytes_written, bytes_read, sequence,
                         num_ops, read_hits) {
+    uniq_idx_ = uniq_idx;
+    is_uniqrand_ = key_gen->IsUniqRand();
     if (FLAGS_enable_zero_copy) {
       read_opt_.StartPin();
     }
@@ -347,10 +406,27 @@ class ReadBenchmarkThread : public BenchmarkThread {
     return false;
   }
 
-  void ReadOne() {
+  static bool callbackPIK(void* arg, const MemTableRep::KeyValuePair&) {
+    auto self = static_cast<ReadBenchmarkThread*>(arg);
+    (*self->bytes_read_) += VarintLength(16) + 16 + FLAGS_item_size;
+    (*self->read_hits_)++;
+    return false;
+  }
+  void ReadOnePIK() {
     char user_key[sizeof(uint64_t)];
-    auto key = key_gen_->Next();
-    EncodeFixed64(user_key, key);
+    auto key = is_uniqrand_ ? key_gen_->NextUniqRand(uniq_idx_) : key_gen_->Next();
+    EncodeBigEndian64(user_key, key);
+    ParsedInternalKey pik(Slice(user_key, sizeof(user_key)), *sequence_, kValueTypeForSeek);
+    table_->GetPIK(read_opt_, pik, this, callbackPIK);
+  }
+
+  void ReadOne() {
+    if (!needs_user_key_cmp_) {
+      return ReadOnePIK();
+    }
+    char user_key[sizeof(uint64_t)];
+    auto key = is_uniqrand_ ? key_gen_->NextUniqRand(uniq_idx_) : key_gen_->Next();
+    EncodeBigEndian64(user_key, key);
     LookupKey lookup_key(Slice(user_key, sizeof(user_key)), *sequence_);
     InternalKeyComparator internal_key_comp(BytewiseComparator());
     CallbackVerifyArgs verify_args;
@@ -416,7 +492,7 @@ class ConcurrentReadBenchmarkThread : public ReadBenchmarkThread {
                                 uint64_t* sequence, uint64_t num_ops,
                                 uint64_t* read_hits,
                                 std::atomic_int* threads_done)
-      : ReadBenchmarkThread(table, key_gen, bytes_written, bytes_read, sequence,
+      : ReadBenchmarkThread(table, key_gen, bytes_written, bytes_read, 0, sequence,
                             num_ops, read_hits) {
     threads_done_ = threads_done;
   }
@@ -457,6 +533,8 @@ class SeqConcurrentReadBenchmarkThread : public SeqReadBenchmarkThread {
 
 class Benchmark {
  public:
+  double random_time = 0;
+
   explicit Benchmark(MemTableRep* table, KeyGenerator* key_gen,
                      uint64_t* sequence, uint32_t num_threads)
       : table_(table),
@@ -474,6 +552,7 @@ class Benchmark {
     StopWatchNano timer(SystemClock::Default().get(), true);
     RunThreads(&threads, &bytes_written, &bytes_read, true, &read_hits);
     auto elapsed_time = static_cast<double>(timer.ElapsedNanos() / 1000);
+    elapsed_time -= random_time;
     std::cout << "Elapsed time: " << static_cast<int>(elapsed_time) << " us"
               << std::endl;
 
@@ -539,9 +618,15 @@ class ReadBenchmark : public Benchmark {
                   uint64_t* bytes_read, bool /*write*/,
                   uint64_t* read_hits) override {
     for (int i = 0; i < FLAGS_num_threads; ++i) {
+      uint64_t uniq_idx = i * num_read_ops_per_thread_;
+      uint64_t num_ops = num_read_ops_per_thread_;
+      if (i + 1 == FLAGS_num_threads) {
+        num_ops = FLAGS_num_operations - uniq_idx;
+      }
       threads->emplace_back(
           ReadBenchmarkThread(table_, key_gen_, bytes_written, bytes_read,
-                              sequence_, num_read_ops_per_thread_, read_hits));
+                              uniq_idx,
+                              sequence_, num_ops, read_hits));
     }
     for (auto& thread : *threads) {
       thread.join();
@@ -684,9 +769,20 @@ int main(int argc, char** argv) {
   uint64_t sequence;
   auto createMemtableRep = [&] {
     sequence = 0;
-    return factory->CreateMemTableRep(key_comp, &arena,
-                                      options.prefix_extractor.get(),
-                                      options.info_log.get());
+    ROCKSDB_NAMESPACE::MemTableRep* rep;
+    if (!FLAGS_memtable_file_path.empty()) {
+      ROCKSDB_NAMESPACE::MutableCFOptions mcfopt(options);
+      rep = factory->CreateMemTableRep(FLAGS_memtable_file_path, mcfopt,
+                                       key_comp, &arena,
+                                       options.prefix_extractor.get(),
+                                       options.info_log.get(), 0);
+    } else {
+      rep = factory->CreateMemTableRep(key_comp, &arena,
+                                       options.prefix_extractor.get(),
+                                       options.info_log.get());
+    }
+    rep->InitSetMemTableAsLogIndex(false);
+    return rep;
   };
   std::unique_ptr<ROCKSDB_NAMESPACE::MemTableRep> memtablerep;
   ROCKSDB_NAMESPACE::Random64 rng(FLAGS_seed);
@@ -702,6 +798,7 @@ int main(int argc, char** argv) {
       name = ROCKSDB_NAMESPACE::Slice(benchmarks, sep - benchmarks);
       benchmarks = sep + 1;
     }
+    g_use_hint = false;
     std::unique_ptr<ROCKSDB_NAMESPACE::Benchmark> benchmark;
     if (name == ROCKSDB_NAMESPACE::Slice("fillseq")) {
       memtablerep.reset(createMemtableRep());
@@ -709,6 +806,7 @@ int main(int argc, char** argv) {
           &rng, ROCKSDB_NAMESPACE::SEQUENTIAL, FLAGS_num_operations));
       benchmark.reset(new ROCKSDB_NAMESPACE::FillBenchmark(
           memtablerep.get(), key_gen.get(), &sequence));
+      g_use_hint = true;
     } else if (name == ROCKSDB_NAMESPACE::Slice("fillrandom")) {
       memtablerep.reset(createMemtableRep());
       key_gen.reset(new ROCKSDB_NAMESPACE::KeyGenerator(
@@ -720,7 +818,14 @@ int main(int argc, char** argv) {
           &rng, ROCKSDB_NAMESPACE::RANDOM, FLAGS_num_operations));
       benchmark.reset(new ROCKSDB_NAMESPACE::ReadBenchmark(
           memtablerep.get(), key_gen.get(), &sequence));
-    } else if (name == ROCKSDB_NAMESPACE::Slice("readseq")) {
+    } else if (name == ROCKSDB_NAMESPACE::Slice("readuniqrand")) {
+      FLAGS_seed++;
+      key_gen.reset(new ROCKSDB_NAMESPACE::KeyGenerator(
+          &rng, ROCKSDB_NAMESPACE::UNIQUE_RANDOM, FLAGS_num_operations));
+      benchmark.reset(new ROCKSDB_NAMESPACE::ReadBenchmark(
+          memtablerep.get(), key_gen.get(), &sequence));
+    } else if (name == ROCKSDB_NAMESPACE::Slice("readseq") ||
+               name == ROCKSDB_NAMESPACE::Slice("readreverse")) {
       key_gen.reset(new ROCKSDB_NAMESPACE::KeyGenerator(
           &rng, ROCKSDB_NAMESPACE::SEQUENTIAL, FLAGS_num_operations));
       benchmark.reset(new ROCKSDB_NAMESPACE::SeqReadBenchmark(memtablerep.get(),
@@ -745,7 +850,29 @@ int main(int argc, char** argv) {
       continue;
     }
     std::cout << "Running " << name.ToString() << std::endl;
+    if (name == ROCKSDB_NAMESPACE::Slice("readrandom")) {
+      auto num_ops = FLAGS_num_operations / FLAGS_num_threads;
+      volatile uint64_t sink = 0;
+      ROCKSDB_NAMESPACE::StopWatchNano timer(ROCKSDB_NAMESPACE::SystemClock::Default().get(), true);
+      for (int i = 0; i < num_ops; i++) {
+        sink = key_gen->Next();
+      }
+      benchmark->random_time = static_cast<double>(timer.ElapsedNanos() / 1000);
+      std::cout << "Random generation time: " << benchmark->random_time << " us" << std::endl;
+      std::cout << "Random generation sink: " << sink << std::endl;
+    }
+    const bool saved_reverse = FLAGS_reverse;
+    FLAGS_reverse = saved_reverse || name == ROCKSDB_NAMESPACE::Slice("readreverse");
     benchmark->Run();
+    FLAGS_reverse = saved_reverse;
+    // approximate memory of the rep itself (arena/mmap), i.e. the working
+    // set the benchmark just walked
+    size_t usage = memtablerep->ApproximateMemoryUsage();
+    std::cout << "ApproximateMemoryUsage: " << usage << " bytes ("
+              << usage / 1048576.0 << " MiB)"
+              << ", arena: " << arena.ApproximateMemoryUsage() << " bytes ("
+              << arena.ApproximateMemoryUsage() / 1048576.0 << " MiB)"
+              << std::endl;
   }
 
   return 0;

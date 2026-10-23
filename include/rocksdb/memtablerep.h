@@ -42,6 +42,7 @@
 #include <unordered_set>
 
 #include "rocksdb/customizable.h"
+#include "rocksdb/enum_reflection.h"
 #include "rocksdb/slice.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -63,6 +64,8 @@ extern const char* EncodeKey(std::string* scratch, const Slice& target);
 
 class MemTableRep : public CacheAlignedNewDelete {
  public:
+  ROCKSDB_ENUM_CLASS_INCLASS(ConvertKind, uint8_t,
+                             kDontConvert, kDumpMem, kFileMmap);
   // KeyComparator provides a means to compare keys, which are internal keys
   // concatenated with values.
   class KeyComparator {
@@ -308,21 +311,49 @@ class MemTableRep : public CacheAlignedNewDelete {
   virtual void FinishHint(void*);
   virtual void InitSetMemTableAsLogIndex(bool) {}
   virtual bool SupportMemTableAsLogIndex() const { return false; }
-  virtual bool SupportConvertToSST() const { return false; }
+  virtual MemTableRep* CreateRangeDelMemTableRep() { return nullptr; }
+  ConvertKind GetConvertKind() const { return m_convert_to_sst; }
+  bool SupportConvertToSST() const {
+    return m_convert_to_sst != ConvertKind::kDontConvert;
+  }
+  bool SupportCrashSafe() const {
+    return m_convert_to_sst == ConvertKind::kFileMmap;
+  }
   virtual Status ConvertToSST(struct FileMetaData*, const struct TableBuilderOptions&);
 
  protected:
+  // Leftover / converted SST visibility: packed tag exists only when
+  // seq <= min(lookup_seq, max_visible_seq). Used by crash-safe MemTableRep.
+  static bool VisibleTag(uint64_t tag, uint64_t lookup_seq,
+                         uint64_t max_visible_seq) {
+    const uint64_t seq = tag >> 8;
+    const uint64_t effective_max =
+        lookup_seq < max_visible_seq ? lookup_seq : max_visible_seq;
+    return seq <= effective_max;
+  }
+
+  static uint64_t CapFindTag(uint64_t find_tag, uint64_t max_visible_seq) {
+    const uint64_t seq = find_tag >> 8;
+    if (seq <= max_visible_seq) {
+      return find_tag;
+    }
+    return (max_visible_seq << 8) | (find_tag & 0xff);
+  }
+
   // When *key is an internal key concatenated with the value, returns the
   // user key.
   virtual Slice UserKey(const char* key) const;
 
   Allocator* allocator_;
+  ConvertKind m_convert_to_sst = ConvertKind::kDontConvert;
 };
 
 // This is the base class for all factories that are used by RocksDB to create
 // new MemTableRep objects
 class MemTableRepFactory : public Customizable {
  public:
+  using ConvertKind = MemTableRep::ConvertKind;
+
   ~MemTableRepFactory() override {}
 
   static const char* Type() { return "MemTableRepFactory"; }
@@ -342,8 +373,10 @@ class MemTableRepFactory : public Customizable {
       uint32_t /* column_family_id */) {
     return CreateMemTableRep(key_cmp, allocator, slice_transform, logger);
   }
+  // The DB supplies the final SST path for a file-backed memtable.
+  // The DB owns the backing file; the Rep must not delete it.
   virtual MemTableRep* CreateMemTableRep(
-      const std::string& /*level0_dir*/,
+      const std::string& /*memtable_file_path*/,
       const MutableCFOptions&,
       const MemTableRep::KeyComparator& key_cmp, Allocator* allocator,
       const SliceTransform* slice_transform, Logger* logger,
@@ -363,6 +396,31 @@ class MemTableRepFactory : public Customizable {
   // false when if the <key,seq> already exists.
   // Default: false
   virtual bool CanHandleDuplicatedKey() const { return false; }
+
+  ConvertKind GetConvertKind() const { return convert_to_sst; }
+  bool SupportConvertToSST() const {
+    return convert_to_sst != ConvertKind::kDontConvert;
+  }
+
+  // Return true if leftover mmap memtables created by this factory can be
+  // RO-loaded after a crash and ConvertToSST during Recover.
+  // Default: false
+  bool SupportCrashSafe() const {
+    return convert_to_sst == ConvertKind::kFileMmap;
+  }
+
+  // Load leftover, cap visible entries, truncate, ConvertToSST. The caller
+  // supplies the visibility bound in meta->fd.largest_seqno; preserve it for
+  // subsequent table readers.
+  // Default: NotSupported.
+  virtual Status RecoverCrashSafeMemTableToSST(
+      const std::string& /*leftover_path*/, struct FileMetaData* /*meta*/,
+      const struct TableBuilderOptions&) {
+    return Status::NotSupported("RecoverCrashSafeMemTableToSST");
+  }
+
+ protected:
+  ConvertKind convert_to_sst = ConvertKind::kDontConvert;
 };
 
 // This uses a skip list to store keys. It is the default.

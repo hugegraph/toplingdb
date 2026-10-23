@@ -78,6 +78,7 @@ class TaskLimiterToken;
 class Version;
 class VersionEdit;
 class VersionSet;
+struct PublishedSeqMmapHeader;
 class WriteCallback;
 struct JobContext;
 struct ExternalSstFileInfo;
@@ -1076,7 +1077,16 @@ class DBImpl : public DB {
   static Status Open(const DBOptions& db_options, const std::string& name,
                      const std::vector<ColumnFamilyDescriptor>& column_families,
                      std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
-                     const bool seq_per_batch, const bool batch_per_txn);
+                     const bool seq_per_batch, const bool batch_per_txn,
+                     bool options_already_updated = false);
+
+  // memtable_crash_safe_recover: if CSPUBSEQ's wal_offset_kind differs
+  // from memtable_as_log_index, open with the sidecar kind, flush, close and
+  // delete CSPUBSEQ. Call before Open() with the same seq/txn flags.
+  static Status PrepareCrashSafeKindForOpen(
+      const DBOptions& db_options, const std::string& name,
+      const std::vector<ColumnFamilyDescriptor>& column_families,
+      bool seq_per_batch, bool batch_per_txn);
 
   static IOStatus CreateAndNewDirectory(
       FileSystem* fs, const std::string& dirname,
@@ -1427,6 +1437,13 @@ class DBImpl : public DB {
     // such a file's absolute path to its parent directory.
     std::unordered_map<std::string, std::string> files_to_delete_;
     bool is_new_db_ = false;
+    // WAL tail cursor for this Recover. RecoverLogFiles reads it from here.
+    bool crash_safe_wal_tail_replay_ = false;
+    uint8_t crash_safe_wal_offset_kind_ = 0;
+    uint64_t crash_safe_wal_number_ = 0;
+    uint64_t crash_safe_wal_offset_ = 0;
+    // WALs numbered below this predate CSPUBSEQ: probe their format.
+    uint64_t crash_safe_probe_wal_below_ = 0;
   };
 
   // Persist options to options file. Must be holding options_mutex_.
@@ -1465,6 +1482,8 @@ class DBImpl : public DB {
 
   void NotifyOnExternalFileIngested(
       ColumnFamilyData* cfd, const ExternalSstFileIngestionJob& ingestion_job);
+
+  bool AllMemtablesSupportConvertToSST() const;
 
   Status FlushAllColumnFamilies(const FlushOptions& flush_options,
                                 FlushReason flush_reason);
@@ -1928,6 +1947,28 @@ class DBImpl : public DB {
                          SequenceNumber* next_sequence, bool read_only,
                          bool* corrupted_log_found,
                          RecoveryContext* recovery_ctx);
+
+  // Kind-prep first pass under allow_2pc: NotSupported if prepared
+  // transactions were recovered, else persist min_log_number_to_keep past
+  // the old-format WALs so the next Open does not replay them.
+  Status RetireWalsForKindPrep();
+
+  // *probe_wal_below: WALs numbered below it have unknown format.
+  Status MapPublishedSeqFile(uint64_t* probe_wal_below);
+  void UnmapPublishedSeqFile();
+  void PersistPublishedSequence(SequenceNumber seq, uint64_t wal_number,
+                                uint64_t wal_offset);
+  void MaybePersistPublishedSequence(SequenceNumber seq,
+                                     const WriteThread::WriteGroup& write_group);
+  void PersistStagedPublishedWal();
+  void StagePublishedWal(SequenceNumber seq, uint64_t wal_number,
+                         uint64_t wal_offset);
+  void AccountPendingMemtableWrites(size_t n);
+  Status RegisterMemTableFiles(ColumnFamilyData* cfd);
+  bool CanConvertLeftoverForCrashSafeRecover(
+      SequenceNumber mmap_pubseq, std::string* fail_reason);
+  Status ConvertLeftoverMemtables(
+      SequenceNumber max_visible_seq, RecoveryContext* recovery_ctx);
 
   // The following two methods are used to flush a memtable to
   // storage. The first one is used at database RecoveryTime (when the
@@ -2741,6 +2782,19 @@ protected:
 
   // It contains the implementations for each periodic task.
   std::map<PeriodicTaskType, const PeriodicTaskFunc> periodic_task_functions_;
+
+  PublishedSeqMmapHeader* pubseq_mmap_ = nullptr;
+  size_t pubseq_mmap_size_ = 0;
+  intptr_t pubseq_fd_ = -1;
+  SequenceNumber staged_pub_seq_ = 0;
+  uint64_t staged_pub_wal_number_ = 0;
+  uint64_t staged_pub_wal_offset_ = 0;
+
+  // Staged WAL cursor shared by unordered_write and pipelined_write.
+  // After this group's WriteWAL, persist the previously staged cursor if
+  // pending_memtable_writes_ == 0, then stage this group's cursor (mmap
+  // trails one WAL).
+  bool staged_pub_valid_ = false;
 
   // When set, we use a separate queue for writes that don't write to memtable.
   // In 2PC these are the writes at Prepare phase.

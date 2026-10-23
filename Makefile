@@ -148,6 +148,13 @@ endif
 include make_config.mk
 PLATFORM_CCFLAGS  := $(filter-out -fno-builtin-memcmp, ${PLATFORM_CCFLAGS})
 PLATFORM_CXXFLAGS := $(filter-out -fno-builtin-memcmp, ${PLATFORM_CXXFLAGS})
+# Nothing in this library is meant to be interposed -- it is the implementation,
+# not a layer someone else overrides. Under default interposition semantics a
+# call to a same-DSO definition still has to go through the PLT anyway, and
+# under -flto it also keeps the inliner from using the whole-program view. The
+# flag has to be on the compile line; adding it to LDFLAGS alone does nothing
+# (measured).
+PLATFORM_CXXFLAGS += -fno-semantic-interposition
 
 # defined in make_config.mk
 ROCKSDB_FULL_VERSION := ${ROCKSDB_MAJOR}.${ROCKSDB_MINOR}.${ROCKSDB_PATCH}
@@ -244,6 +251,10 @@ OPTION_lto := lto-0
 ifeq ($(USE_LTO), 1)
 	ifeq (${DEBUG_LEVEL},0)
 		CXXFLAGS += -flto
+		# Lets a .cc hand the LTO inliner an explicit mandate on a
+		# definition whose callers sit in other translation units (see
+		# table/get_context.cc): GCC defines no macro of its own for -flto.
+		CXXFLAGS += -DTOPLINGDB_HAVE_LTO
 		LDFLAGS += -flto=auto -fuse-linker-plugin
 		OPTION_lto := lto-$(if $(filter 1,${USE_LTO}),1,0)
 	endif
@@ -451,6 +462,9 @@ ifndef WITH_TOPLING_ROCKS
   # default 1
   WITH_TOPLING_ROCKS := 1
 endif
+ifeq ($(filter 0,${DEBUG_LEVEL})$(wildcard sideplugin/topling-rocks/src/table/top_patent_algo.cc),)
+  override WITH_TOPLING_ROCKS := 0
+endif
 
 ifeq (${WITH_TOPLING_ROCKS},1)
 ifneq (,$(wildcard sideplugin/topling-rocks))
@@ -493,6 +507,9 @@ endif
 
 # allow override by env or cmd line
 WITH_CSPP_MEMTABLE ?= 1
+ifeq ($(filter 0,${DEBUG_LEVEL})$(wildcard sideplugin/cspp-memtable/cspp_memtable.cc),)
+  override WITH_CSPP_MEMTABLE := 0
+endif
 
 ifeq (${WITH_CSPP_MEMTABLE}${WITH_TOPLING_ROCKS},10)
   $(error "When WITH_CSPP_MEMTABLE is 1, WITH_TOPLING_ROCKS must be 1 also")
@@ -1883,6 +1900,9 @@ db_bench_rls: $(OBJ_DIR)/tools/db_bench.o $(BENCH_OBJECTS) $(TESTUTIL) $(LIBRARY
 	$(AM_LINK)
 endif
 
+crash_recover_bench: $(OBJ_DIR)/tools/crash_recover_bench.o $(LIBRARY)
+	$(AM_LINK)
+
 trace_analyzer: $(OBJ_DIR)/tools/trace_analyzer.o $(ANALYZE_OBJECTS) $(TOOLS_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
@@ -2068,6 +2088,15 @@ db_dynamic_level_test: $(OBJ_DIR)/db/db_dynamic_level_test.o $(TEST_LIBRARY) $(L
 db_flush_test: $(OBJ_DIR)/db/db_flush_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
+db_memtable_as_log_index_test: $(OBJ_DIR)/db/db_memtable_as_log_index_test.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+db_memtable_convert_test: $(OBJ_DIR)/db/db_memtable_convert_test.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+db_memtable_wal_credit_test: $(OBJ_DIR)/db/db_memtable_wal_credit_test.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
 db_inplace_update_test: $(OBJ_DIR)/db/db_inplace_update_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
@@ -2129,6 +2158,9 @@ db_universal_compaction_test: $(OBJ_DIR)/db/db_universal_compaction_test.o $(TES
 	$(AM_LINK)
 
 db_wal_test: $(OBJ_DIR)/db/db_wal_test.o $(TEST_LIBRARY) $(LIBRARY)
+	$(AM_LINK)
+
+db_cspp_crash_safe_test: $(OBJ_DIR)/db/db_cspp_crash_safe_test.o $(TEST_LIBRARY) $(LIBRARY)
 	$(AM_LINK)
 
 db_io_failure_test: $(OBJ_DIR)/db/db_io_failure_test.o $(TEST_LIBRARY) $(LIBRARY)
@@ -2547,7 +2579,7 @@ ifndef ROCKSDB_USE_LIBRADOS
   AUTO_ALL_EXCLUDE_SRC += utilities/env_mirror_test.cc
 endif
 
-AUTO_ALL_TESTS_SRC := $(shell find * -name '*_test.cc' -not -path 'java/*' -not -path '*/3rdparty/*') ${EXTRA_TESTS_SRC}
+AUTO_ALL_TESTS_SRC := $(shell find -L * -name '*_test.cc' -not -path 'java/*' -not -path '*/3rdparty/*') ${EXTRA_TESTS_SRC}
 AUTO_ALL_TESTS_SRC := $(filter-out ${AUTO_ALL_EXCLUDE_SRC},${AUTO_ALL_TESTS_SRC})
 AUTO_ALL_TESTS_OBJ := $(addprefix $(OBJ_DIR)/,$(AUTO_ALL_TESTS_SRC:%.cc=%.o))
 AUTO_ALL_TESTS_EXE := $(AUTO_ALL_TESTS_OBJ:%.o=%)

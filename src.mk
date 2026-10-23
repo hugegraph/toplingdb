@@ -483,9 +483,13 @@ TEST_MAIN_SOURCES =                                                     \
   db/db_compaction_filter_test.cc                                       \
   db/db_compaction_test.cc                                              \
   db/db_clip_test.cc                                                    \
+  db/db_cspp_crash_safe_test.cc                                         \
   db/db_dynamic_level_test.cc                                           \
   db/db_encryption_test.cc                                              \
   db/db_flush_test.cc                                                   \
+  db/db_memtable_as_log_index_test.cc                                    \
+  db/db_memtable_convert_test.cc                                        \
+  db/db_memtable_wal_credit_test.cc                                     \
   db/db_readonly_with_timestamp_test.cc                                 \
   db/db_with_timestamp_basic_test.cc                                    \
   db/import_column_family_test.cc                                       \

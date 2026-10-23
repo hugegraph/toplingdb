@@ -40,6 +40,7 @@
 #include "util/autovector.h"
 #include "util/cast_util.h"
 #include "util/compression.h"
+#include <terark/util/profiling.hpp>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -467,6 +468,15 @@ ColumnFamilyOptions SanitizeOptions(const ImmutableDBOptions& db_options,
     }
   }
 #endif
+
+  if (result.min_write_buffer_number_to_merge > 1 &&
+      result.memtable_factory->SupportConvertToSST()) {
+    ROCKS_LOG_WARN(db_options.logger,
+                  "ConvertToSST converts each memtable separately; "
+                  "min_write_buffer_number_to_merge > 1 is incompatible "
+                  "and is sanitized to 1");
+    result.min_write_buffer_number_to_merge = 1;
+  }
 
   return result;
 }
@@ -1164,7 +1174,12 @@ uint64_t ColumnFamilyData::GetLiveSstFilesSize() const {
 
 void ColumnFamilyData::PrepareNewMemtableInBackground(
     const MutableCFOptions& mutable_cf_options) {
- #if !defined(ROCKSDB_UNIT_TEST)
+  bool use_cache = true;
+  TEST_SYNC_POINT_CALLBACK(
+      "ColumnFamilyData::PrepareNewMemtableInBackground:UseCache", &use_cache);
+  if (!use_cache) {
+    return;
+  }
   {
     std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
     if (precreated_memtable_list_.full()) {
@@ -1172,11 +1187,13 @@ void ColumnFamilyData::PrepareNewMemtableInBackground(
       return;
     }
   }
-  auto beg = ioptions_.clock->NowNanos();
+  auto beg = terark::qtime::now();
+  uint64_t number = ioptions_.memtable_factory->SupportCrashSafe()
+                  ? dummy_versions_->version_set()->NewFileNumber() : 0;
   auto tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
-                          write_buffer_manager_, 0/*earliest_seq*/, id_);
-  auto end = ioptions_.clock->NowNanos();
-  RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, end - beg);
+                          write_buffer_manager_, 0/*earliest_seq*/, id_, number);
+  auto end = terark::qtime::now();
+  RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, (end - beg).ns());
   {
     std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
     if (LIKELY(!precreated_memtable_list_.full())) {
@@ -1191,36 +1208,98 @@ void ColumnFamilyData::PrepareNewMemtableInBackground(
       "precreated_memtable_list_ is full, discard the newly created memtab");
     delete tab;
   }
- #endif
 }
 
 MemTable* ColumnFamilyData::ConstructNewMemtable(
     const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
   MemTable* tab = nullptr;
- #if !defined(ROCKSDB_UNIT_TEST)
-  {
+  bool use_cache = true;
+  TEST_SYNC_POINT_CALLBACK("ColumnFamilyData::ConstructNewMemtable:UseCache",
+                           &use_cache);
+  if (use_cache) {
     std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
     if (!precreated_memtable_list_.empty()) {
       tab = precreated_memtable_list_.front().release();
       precreated_memtable_list_.pop_front();
     }
   }
- #endif
   if (tab) {
     tab->SetCreationSeq(earliest_seq);
     tab->SetEarliestSequenceNumber(earliest_seq);
   } else {
-  #if !defined(ROCKSDB_UNIT_TEST)
-    auto beg = ioptions_.clock->NowNanos();
-  #endif
+    auto beg = terark::qtime::now();
+    // dummy_versions_ remains alive for the lifetime of this CF, unlike current_.
+    uint64_t number = ioptions_.memtable_factory->SupportCrashSafe()
+                    ? dummy_versions_->version_set()->NewFileNumber() : 0;
     tab = new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
-                      write_buffer_manager_, earliest_seq, id_);
-  #if !defined(ROCKSDB_UNIT_TEST)
-    auto end = ioptions_.clock->NowNanos();
-    RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, end - beg);
-  #endif
+                      write_buffer_manager_, earliest_seq, id_, number);
+    auto end = terark::qtime::now();
+    RecordInHistogram(ioptions_.stats, MEMTAB_CONSTRUCT_NANOS, (end - beg).ns());
   }
   return tab;
+}
+
+MemTable* ColumnFamilyData::PeekPrecreatedMemtable() {
+  std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+  return precreated_memtable_list_.empty()
+             ? nullptr : precreated_memtable_list_.front().get();
+}
+
+void ColumnFamilyData::ApplyMemTableFileEdit(const VersionEdit& edit) {
+  ROCKSDB_ASSERT_EQ(edit.GetColumnFamily(), id_);
+  if (edit.IsColumnFamilyDrop()) {
+    memtable_files_.clear();
+    return;
+  }
+  for (uint64_t number : edit.GetMemTableFileDeletions()) {
+    memtable_files_.erase(number);
+  }
+  for (uint64_t number : edit.GetMemTableFileAdditions()) {
+    memtable_files_.insert(number);
+  }
+}
+
+void ColumnFamilyData::AddMemTableFileEdits(VersionEdit* edit) {
+  if (!ioptions_.memtable_crash_safe_recover) return;
+  std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+  auto add = [&](MemTable* mem) {
+    if (!mem->IsFileRegistered()) {
+      edit->AddMemTableFile(mem->GetFileNumber());
+      edit->SetMemTableFileTracking();
+    }
+  };
+  add(mem_);
+  for (size_t i = 0; i < precreated_memtable_list_.size(); ++i) {
+    add(precreated_memtable_list_[i].get());
+  }
+}
+
+void ColumnFamilyData::PublishRegisteredMemTables() {
+  if (!ioptions_.memtable_crash_safe_recover) return;
+  TEST_SYNC_POINT("FlushJob::MemTableCache:BeforePublish");
+  {
+    std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+    auto publish = [&](MemTable* mem) {
+      if (memtable_files_.count(mem->GetFileNumber())) {
+        mem->MarkFileRegistered();
+      }
+    };
+    publish(mem_);
+    for (size_t i = 0; i < precreated_memtable_list_.size(); ++i) {
+      publish(precreated_memtable_list_[i].get());
+    }
+  }
+  TEST_SYNC_POINT("FlushJob::MemTableCache:AfterPublish");
+}
+
+void ColumnFamilyData::AddMemTableFileNumbers(std::vector<uint64_t>* live) {
+  if (!ioptions_.memtable_factory->SupportCrashSafe()) return;
+  if (mem_ != nullptr) live->push_back(mem_->GetFileNumber());
+  imm_.AddMemTableFileNumbers(live);
+  std::lock_guard<std::mutex> lk(precreated_memtable_mutex_);
+  for (size_t i = 0; i < precreated_memtable_list_.size(); ++i) {
+    live->push_back(precreated_memtable_list_[i]->GetFileNumber());
+  }
 }
 
 void ColumnFamilyData::CreateNewMemtable(
@@ -1473,6 +1552,12 @@ void ColumnFamilyData::ResetThreadLocalSuperVersions() {
 
 Status ColumnFamilyData::ValidateOptions(
     const DBOptions& db_options, const ColumnFamilyOptions& cf_options) {
+  if (db_options.memtable_crash_safe_recover &&
+      !cf_options.memtable_factory->SupportCrashSafe()) {
+    return Status::InvalidArgument(
+        "memtable_crash_safe_recover requires a FileMmap memtable factory",
+        cf_options.memtable_factory->Name());
+  }
   Status s;
   s = CheckCompressionSupported(cf_options);
   if (s.ok() && db_options.allow_concurrent_memtable_write) {

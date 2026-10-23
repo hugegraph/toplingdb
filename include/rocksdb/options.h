@@ -625,6 +625,14 @@ struct DBOptions {
   // on target_file_size_base and target_file_size_multiplier for level-based
   // compaction. For universal-style compaction, you can usually set it to -1.
   //
+  // Value 0 disables SST reader caching and eager SST opening during DB::Open().
+  // Also set skip_stats_update_on_db_open=true to avoid opening SSTs for stats;
+  // reads still open SSTs on demand.
+  // Previously, values below 20 were silently raised to 20, so even 0 caused
+  // SSTs to be opened during DB::Open(). This defeated the user's intent to
+  // open without opening any SSTs and violated the principle of least surprise.
+  // Small nonnegative values are now honored instead of imposing that minimum.
+  //
   // A high value or -1 for this option can cause high memory usage.
   // See BlockBasedTableOptions::cache_usage_options to constrain
   // memory usage in case of block based table format.
@@ -925,9 +933,30 @@ struct DBOptions {
 
   bool memtable_as_log_index = false;
 
+  // Enable crash-safe recovery using file mmap MemTables (CSPP / OffsetSkipList)
+  // and ConvertToSST to reduce WAL replay on the next open.
+  // Only process crashes (kill -9 / _exit) are covered, not power loss.
+  // DeleteRange is not covered.
+  // Reuse leftover MemTable files up to the published sequence, then replay
+  // the WAL tail. All CFs must support crash-safe file mmap MemTables.
+  // Unusable leftovers or cursor metadata, wal_filter, best_efforts_recovery,
+  // and unsupported sequence publication modes fall back to full WAL replay.
+  // Independent of memtable_as_log_index and Flush/Close ConvertToSST.
+  // Requires WAL: disableWAL is ignored; manual_wal_flush and WAL recycling
+  // are disabled, and wal_compression is forced to kNoCompression.
+  // Read-only Open disables this option and warns that full WAL replay may be
+  // very slow with the much larger MemTables encouraged in crash-safe mode.
+  // If a valid saved WAL kind differs from memtable_as_log_index, Open first
+  // recovers and flushes using the old kind, then opens in the requested kind.
+  // TransactionDB requires resolving recovered prepared transactions before
+  // switching kinds.
+  // Default: false. Not dynamically changeable through SetDBOptions().
+  bool memtable_crash_safe_recover = false;
+
   // If true, each WAL file is probed on DB open to auto-detect its on-disk
-  // format, so recovery works even when memtable_as_log_index was changed
-  // between runs.
+  // format. This selects the reader format, not the memtable format. Replaying
+  // a classic WAL directly into log-index memtables returns NotSupported;
+  // reopen with memtable_as_log_index=false and flush before switching.
   //
   // Defaults to false because the probe relies on CRC32 self-consistency
   // rather than a magic number to distinguish the two formats, which carries
@@ -1254,8 +1283,15 @@ struct DBOptions {
   bool avoid_flush_during_recovery = false;
 
   // By default RocksDB will flush all memtables on DB close if there are
-  // unpersisted data (i.e. with WAL disabled) The flush can be skip to speedup
-  // DB close. Unpersisted data WILL BE LOST.
+  // unpersisted data (i.e. with WAL disabled) or all memtables support ConvertToSST.
+  // Upstream RocksDB skips flushing WAL-backed memtables on close:
+  // BuildTable is expensive and can cause a long wait. ConvertToSST is much
+  // cheaper, so when all memtables support it, we also flush (convert) them on close
+  // without that long wait and avoid WAL replay on the next open.
+  // Setting this option to true unconditionally skips all flushes (including
+  // conversion) during DB close. Data is lost only if there is unpersisted data
+  // written with WAL disabled; WAL-backed data is recovered by replaying WAL
+  // on the next open. Skipping conversion does not add a data-loss risk.
   //
   // DEFAULT: false
   //

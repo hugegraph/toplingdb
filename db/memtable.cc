@@ -22,6 +22,7 @@
 #include "db/range_tombstone_fragmenter.h"
 #include "db/read_callback.h"
 #include "db/wide/wide_column_serialization.h"
+#include "file/filename.h"
 #include "logging/logging.h"
 #include "memory/arena.h"
 #include "memory/memory_usage.h"
@@ -72,7 +73,8 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
                    const ImmutableOptions& ioptions,
                    const MutableCFOptions& mutable_cf_options,
                    WriteBufferManager* write_buffer_manager,
-                   SequenceNumber latest_seq, uint32_t column_family_id)
+                   SequenceNumber latest_seq, uint32_t column_family_id,
+                   uint64_t file_number)
     : comparator_(cmp),
       moptions_(ioptions, mutable_cf_options),
       refs_(0),
@@ -86,13 +88,13 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
                  : nullptr,
              mutable_cf_options.memtable_huge_page_size),
       table_(ioptions.memtable_factory->CreateMemTableRep(
-          ioptions.cf_paths[0].path, // level0_dir
+          file_number == 0
+              ? std::string()
+              : TableFileName(ioptions.cf_paths, file_number, 0),
           mutable_cf_options,
           comparator_, &arena_, mutable_cf_options.prefix_extractor.get(),
           ioptions.logger, column_family_id)),
-      range_del_table_(SkipListFactory().CreateMemTableRep(
-          comparator_, &arena_, nullptr /* transform */, ioptions.logger,
-          column_family_id)),
+      range_del_table_(table_->CreateRangeDelMemTableRep()),
       is_range_del_table_empty_(true),
       data_size_(0),
       num_entries_(0),
@@ -105,7 +107,8 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       write_buffer_size_(mutable_cf_options.write_buffer_size),
       flush_in_progress_(false),
       flush_completed_(false),
-      file_number_(0),
+      file_registered_(false),
+      file_number_(file_number),
       first_seqno_(0),
       earliest_seqno_(latest_seq),
       creation_seq_(latest_seq),
@@ -124,6 +127,11 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       approximate_memory_usage_(0),
       memtable_max_range_deletions_(
           mutable_cf_options.memtable_max_range_deletions) {
+  if (nullptr == range_del_table_) {
+    range_del_table_.reset(SkipListFactory().CreateMemTableRep(
+        comparator_, &arena_, nullptr /* transform */, ioptions.logger,
+        column_family_id));
+  }
   needs_user_key_cmp_in_get_ = table_->NeedsUserKeyCompareInGet();
   table_->InitSetMemTableAsLogIndex(moptions_.memtable_as_log_index);
   support_convert_to_sst_ = table_->SupportConvertToSST();
@@ -214,8 +222,10 @@ bool MemTable::ShouldFlushNow() {
   // If arena still have room for new block allocation, we can safely say it
   // shouldn't flush.
   auto allocated_memory = table_->ApproximateMemoryUsage() +
-                          range_del_table_->ApproximateMemoryUsage() +
                           arena_.MemoryAllocatedBytes();
+  if (!is_range_del_table_empty_.load(std::memory_order_relaxed)) {
+    allocated_memory += range_del_table_->ApproximateMemoryUsage();
+  }
 
   approximate_memory_usage_.store(allocated_memory, std::memory_order_relaxed);
 
@@ -603,6 +613,7 @@ FragmentedRangeTombstoneIterator* MemTable::NewRangeTombstoneIterator(
                                            immutable_memtable);
 }
 
+terark_no_inline
 FragmentedRangeTombstoneIterator* MemTable::NewRangeTombstoneIteratorInternal(
     const ReadOptions& read_options, SequenceNumber read_seq,
     bool immutable_memtable) {
@@ -767,9 +778,6 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
   }
   std::unique_ptr<MemTableRep>& table =
       type == kTypeRangeDeletion ? range_del_table_ : table_;
-  if (type == kTypeRangeDeletion) {
-    value = real_value; // range_del_table_ not support memtable_as_log_index
-  }
   const uint64_t tag = PackSequenceAndType(s, type);
   if (kv_prot_info != nullptr) {
     Slice key_slice((char*)memcpy(alloca(key.size_ + 8), key.data_, key.size_),
@@ -784,11 +792,21 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
 
   size_t encoded_len = MemTableRep::EncodeKeyValueSize(key, real_value);
   if (!allow_concurrent) {
-    // Extract prefix for insert with hint.
     if (insert_with_hint_prefix_extractor_ != nullptr &&
+        needs_user_key_cmp_in_get_ && // disable per-prefix hint for Topling
         insert_with_hint_prefix_extractor_->InDomain(key)) {
       Slice prefix = insert_with_hint_prefix_extractor_->Transform(key);
       hint = &insert_hints_[prefix];  // overwrite hint?
+      bool res = table->InsertKeyValueWithHint(tag, key, value, hint);
+      if (UNLIKELY(!res)) {
+        return Status::TryAgain("key+seq exists");
+      }
+    } else if (hint && !needs_user_key_cmp_in_get_ && table == table_) {
+      // Borrow NeedsUserKeyCompareInGet: false on Topling (hint pins the
+      // writer token; pair with FinishHint), true on upstream RocksDB
+      // (ignore caller hint except the prefix-extractor path above).
+      // FinishHint() hands the hint back to table_ only, so range_del_table_
+      // must not receive it
       bool res = table->InsertKeyValueWithHint(tag, key, value, hint);
       if (UNLIKELY(!res)) {
         return Status::TryAgain("key+seq exists");
@@ -826,7 +844,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
       largest_seqno_.store(s, std::memory_order_relaxed);
     }
 
-    if (bloom_filter_) {
+    if (UNLIKELY(nullptr != bloom_filter_)) {
     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
       Slice key_without_ts = StripTimestampFromUserKey(key, ts_sz);
@@ -843,7 +861,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
 
     // The first sequence number inserted into the memtable
     assert(first_seqno_ == 0 || s >= first_seqno_);
-    if (first_seqno_ == 0) {
+    if (UNLIKELY(first_seqno_.load(std::memory_order_relaxed) == 0)) {
       first_seqno_.store(s, std::memory_order_relaxed);
 
       if (earliest_seqno_ == kMaxSequenceNumber) {
@@ -856,10 +874,13 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
     // TODO(yuzhangyu): support updating newest UDT for when `allow_concurrent`
     // is true.
     MaybeUpdateNewestUDT(key); // user key
-    UpdateFlushState();
+    if (!hint || needs_user_key_cmp_in_get_) {
+      UpdateFlushState();
+    }
   } else {
+    // As above, the hint belongs to table_ only
     bool res =
-        (hint == nullptr)
+        (hint == nullptr || table != table_)
             ? table->InsertKeyValueConcurrently(tag, key, value)
             : table->InsertKeyValueWithHintConcurrently(tag, key, value, hint);
     if (UNLIKELY(!res)) {
@@ -882,7 +903,7 @@ Status MemTable::Add(SequenceNumber s, ValueType type,
         post_process_info->largest_seqno = s;
     }
 
-    if (bloom_filter_) {
+    if (UNLIKELY(nullptr != bloom_filter_)) {
     #if defined(TOPLINGDB_WITH_TIMESTAMP)
       size_t ts_sz = GetInternalKeyComparator().user_comparator()->timestamp_size();
       Slice key_without_ts = StripTimestampFromUserKey(key, ts_sz);

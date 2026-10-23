@@ -19,6 +19,8 @@
 #include <utility>
 #include <vector>
 
+#include <terark/util/function.hpp>
+
 #include "block_cache.h"
 #include "cache/cache_entry_roles.h"
 #include "cache/cache_key.h"
@@ -156,7 +158,7 @@ Status ReadAndParseBlockFromFile(
   assert(result);
 
   BlockContents contents;
-  BlockFetcher block_fetcher(
+  TOPLING_PTR_WITH_REF(block_fetcher) = std::make_unique<BlockFetcher>(
       file, prefetch_buffer, footer, options, handle, &contents, ioptions,
       /*do_uncompress*/ maybe_compressed, maybe_compressed,
       TBlocklike::kBlockType, uncompression_dict, cache_options,
@@ -436,6 +438,7 @@ bool IsFeatureSupported(const TableProperties& table_properties,
 
 // Caller has to ensure seqno is not nullptr.
 Status GetGlobalSequenceNumber(const TableProperties& table_properties,
+                               SequenceNumber smallest_seqno,
                                SequenceNumber largest_seqno,
                                SequenceNumber* seqno) {
   const auto& props = table_properties.user_collected_properties;
@@ -452,6 +455,21 @@ Status GetGlobalSequenceNumber(const TableProperties& table_properties,
           "A non-external sst file have global seqno property with value %s",
           seqno_pos->second.c_str());
       return Status::Corruption(msg_buf.data());
+    }
+    // A file whose smallest and largest seqno are equal is one written outside
+    // the DB (an ingested file, whose keys are all at sequence number 0): the
+    // manifest records the number it was given as the file's seqno range, and
+    // reading its keys as that number is what the file means. ToplingDB's own
+    // table formats do the same (TopTableReaderBase::LoadCommonPart); doing it
+    // here as well makes an ingested file read correctly whether or not it
+    // carries the external sst file properties.
+    //
+    // The number must be nonzero: for user-defined timestamps a compaction can
+    // zero a DB-written file's manifest bounds without rewriting its keys
+    // (CompactionIterator::PrepareOutput), so (0, 0) does not mean seqno 0.
+    if (smallest_seqno == largest_seqno && largest_seqno != 0 &&
+                          largest_seqno < kMaxSequenceNumber) {
+      *seqno = largest_seqno;
     }
     return Status::OK();
   }
@@ -579,6 +597,7 @@ Status BlockBasedTable::Open(
     const std::shared_ptr<const SliceTransform>& prefix_extractor,
     const bool prefetch_index_and_filter_in_cache, const bool skip_filters,
     const int level, const bool immortal_table,
+    const SequenceNumber smallest_seqno,
     const SequenceNumber largest_seqno, const bool force_direct_prefetch,
     TailPrefetchStats* tail_prefetch_stats,
     BlockCacheTracer* const block_cache_tracer,
@@ -678,7 +697,8 @@ Status BlockBasedTable::Open(
   // Populates table_properties and some fields that depend on it,
   // such as index_type.
   s = new_table->ReadPropertiesBlock(ro, prefetch_buffer.get(),
-                                     metaindex_iter.get(), largest_seqno);
+                                     metaindex_iter.get(), smallest_seqno,
+                                     largest_seqno);
   if (!s.ok()) {
     return s;
   }
@@ -904,7 +924,8 @@ Status BlockBasedTable::PrefetchTail(
 
 Status BlockBasedTable::ReadPropertiesBlock(
     const ReadOptions& ro, FilePrefetchBuffer* prefetch_buffer,
-    InternalIterator* meta_iter, const SequenceNumber largest_seqno) {
+    InternalIterator* meta_iter, const SequenceNumber smallest_seqno,
+    const SequenceNumber largest_seqno) {
   Status s;
   BlockHandle handle;
   s = FindOptionalMetaBlock(meta_iter, kPropertiesBlockName, &handle);
@@ -976,8 +997,8 @@ Status BlockBasedTable::ReadPropertiesBlock(
     rep_->index_has_first_key =
         rep_->index_type == BlockBasedTableOptions::kBinarySearchWithFirstKey;
 
-    s = GetGlobalSequenceNumber(*(rep_->table_properties), largest_seqno,
-                                &(rep_->global_seqno));
+    s = GetGlobalSequenceNumber(*(rep_->table_properties), smallest_seqno,
+                                largest_seqno, &(rep_->global_seqno));
     if (!s.ok()) {
       ROCKS_LOG_ERROR(rep_->ioptions.logger, "%s", s.ToString().c_str());
     }
@@ -1619,7 +1640,7 @@ BlockBasedTable::MaybeReadBlockAndLoadToCache(
         //
         // It would also cause a memory allocation to be used rather than
         // stack if the compressed block size is < 5KB
-        BlockFetcher block_fetcher(
+        TOPLING_PTR_WITH_REF(block_fetcher) = std::make_unique<BlockFetcher>(
             rep_->file.get(), prefetch_buffer, rep_->footer, ro, handle,
             &tmp_contents, rep_->ioptions, do_uncompress, maybe_compressed,
             TBlocklike::kBlockType, uncompression_dict,

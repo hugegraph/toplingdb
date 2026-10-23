@@ -55,6 +55,10 @@ class MockMemTableRep : public MemTableRep {
 
   bool Contains(const Slice& key) const override { return rep_->Contains(key); }
 
+  void InitSetMemTableAsLogIndex(bool b) override {
+    rep_->InitSetMemTableAsLogIndex(b);
+  }
+
   void Get(const ReadOptions& ro, const LookupKey& k, void* callback_args,
            bool (*callback_func)(void* arg, const KeyValuePair&)) override {
     rep_->Get(ro, k, callback_args, callback_func);
@@ -359,6 +363,30 @@ TEST_F(DBMemTableTest, InsertWithHint) {
   ASSERT_EQ("bar_v1", Get("bar_k1"));
   ASSERT_EQ("bar_v2", Get("bar_k2"));
   ASSERT_EQ("vvv", Get("NotInPrefixDomain"));
+}
+
+TEST_F(DBMemTableTest, ShouldFlushNowWithoutRangeDel) {
+  Options options;
+  options.memtable_as_log_index = false;
+  options.write_buffer_size = 64 * 1024;
+  InternalKeyComparator cmp(BytewiseComparator());
+  auto factory = std::make_shared<SkipListFactory>();
+  options.memtable_factory = factory;
+  ImmutableOptions ioptions(options);
+  WriteBufferManager wb(options.db_write_buffer_size);
+  MemTable* mem = new MemTable(cmp, ioptions, MutableCFOptions(options), &wb,
+                               kMaxSequenceNumber, 0 /* column_family_id */);
+  std::string value(128, 'v');
+  int i = 0;
+  for (; i < 2000; ++i) {
+    ASSERT_OK(mem->Add(i + 1, kTypeValue, "k" + std::to_string(i), value,
+                       nullptr /* kv_prot_info */));
+    if (mem->ShouldFlushNow()) {
+      break;
+    }
+  }
+  ASSERT_LT(i, 2000);
+  delete mem;
 }
 
 TEST_F(DBMemTableTest, ColumnFamilyId) {
