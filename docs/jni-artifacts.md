@@ -1,7 +1,11 @@
 # JNI artifacts for HugeGraph containers
 
 The `build topling-jni` workflow builds Linux amd64 JNI on Ubuntu 24.04 with
-GCC 13. It always uploads a run-specific `topling-jni-linux-amd64-<source SHA>`
+GCC 13. It defaults to `native_features=community`, which consistently sets
+`WITH_TOPLING_ROCKS=0 WITH_CSPP_MEMTABLE=0` in every Make invocation. This builds
+the public runtime without downloading the optional ToplingZip Builder/CSPP
+MemTable trial objects. It always uploads a run-specific
+`topling-jni-linux-amd64-<source SHA>`
 Actions artifact, including when `deploy_maven=false`. The archive contains:
 
 - `rocksdbjni-8.10.2-linux64.jar` (the version follows `build_tools/version.sh`);
@@ -33,9 +37,25 @@ the matching `.sha256` file and verify it before using the JAR:
 sha256sum --check rocksdbjni-8.10.2-linux64.jar.sha256
 ```
 
-The build includes the Topling plugins selected by the normal Makefile, which may
-download precompiled trial components. The build manifest records their revisions;
-it does not extend any trial license. The current native runtime is Linux amd64
+Alternatively, push a `jni-build-*` tag pointing to a reviewed source commit. This
+triggers the same community build and publishes its immutable `jni-<source SHA>`
+release after the JNI checks pass; Maven publication and JMH remain disabled:
+
+```bash
+source_sha="$(git rev-parse HEAD)"
+git tag "jni-build-${source_sha}" "$source_sha"
+git push origin "jni-build-${source_sha}"
+```
+
+The manual `native_features=full` choice enables the normal Makefile's optional
+ToplingZip Builder/CSPP MemTable trial components. Its release uses the distinct
+tag `jni-<source SHA>-full`, so it cannot replace the community artifact. The build
+manifest records the selected feature preset and plugin revisions; it does not
+extend any trial license. Use a configuration matching the selected features:
+community images use public SkipList/BlockBasedTable factories; CSPP configurations
+require an appropriate full artifact.
+
+The current native runtime is Linux amd64
 and requires an AVX2/BMI2-capable CPU, glibc 2.38 or newer, and its native runtime
 dependencies. Use HugeGraph's `prepare-topling.sh` on the final image base to verify
 the JAR checksum, ELF architecture, native dependencies and Java 17 configuration
