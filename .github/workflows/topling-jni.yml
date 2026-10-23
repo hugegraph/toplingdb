@@ -21,6 +21,11 @@ on:
         type: boolean
         description: publish to maven repo
         default: true
+      publish_release:
+        required: false
+        type: boolean
+        description: Publish an immutable JNI release for container builds
+        default: false
       jmh_test:
         required: false
         type: boolean
@@ -35,6 +40,8 @@ jobs:
     env:
       CC: gcc-13
       CXX: g++-13
+      # HugeGraph creates backend column families after opening the database.
+      EXTRA_CXXFLAGS: -DROCKSDB_DYNAMIC_CREATE_CF
       GITHUB_TOKEN: ${{ github.token }}
     permissions:
       contents: read
@@ -129,6 +136,45 @@ jobs:
       - name: Show librocksdbjni dependency
         run: ldd java/target/*.so
 
+      - name: Validate JNI configuration and record provenance
+        env:
+          USE_LTO_INPUT: ${{ inputs.use_lto }}
+        run: |
+          set -euo pipefail
+          version="$(build_tools/version.sh full)"
+          jar="java/target/rocksdbjni-${version}-linux64.jar"
+          bash .github/scripts/test_topling_jni.sh "$jar"
+          mkdir -p jni-artifact
+          cp "$jar" jni-artifact/
+          (
+            cd jni-artifact
+            sha256sum "$(basename "$jar")" > "$(basename "$jar").sha256"
+          )
+          {
+            printf 'source_repository=%s\nsource_revision=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA"
+            printf 'workflow_run=%s/%s/actions/runs/%s\n' \
+              "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            printf 'platform=linux/amd64\ncompiler=%s\n' "$(g++-13 -dumpfullversion)"
+            printf 'flags=DEBUG_LEVEL=0 DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1\n'
+            printf 'flags=STRIP_DEBUG_INFO=1 ROCKSDB_JAR_WITH_DYNAMIC_LIBS=1\n'
+            printf 'extra_cxxflags=%s\n' "$EXTRA_CXXFLAGS"
+            printf 'use_lto=%s\n\n' "$USE_LTO_INPUT"
+            git submodule status --recursive
+            for plugin in sideplugin/*; do
+              if [ -e "$plugin/.git" ]; then
+                printf '%s %s\n' "$plugin" "$(git -C "$plugin" rev-parse HEAD)"
+              fi
+            done
+          } > jni-artifact/build-info.txt
+
+      - name: Upload verified JNI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: topling-jni-linux-amd64-${{ github.sha }}
+          path: jni-artifact/
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Move to Local & Publish rocksjni to GitHub Packages
         run: |
           echo JAVA_HOME = $JAVA_HOME
@@ -193,3 +239,39 @@ jobs:
             -D db.version=${ROCKSDB_JAVA_VERSION} \
             -s $GITHUB_WORKSPACE/settings.xml \
             -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/$GITHUB_REPOSITORY
+
+  publish-release:
+    needs: build
+    if: ${{ inputs.publish_release }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: topling-jni-release-${{ github.sha }}
+      cancel-in-progress: false
+    steps:
+      - name: Download verified JNI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: topling-jni-linux-amd64-${{ github.sha }}
+          path: jni-artifact
+
+      - name: Publish immutable source release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          cd jni-artifact
+          sha256sum --check --strict *.sha256
+          tag="jni-${SOURCE_SHA}"
+          # Existing releases are immutable. Never replace an asset on a retry.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; refusing to replace its JNI payload" >&2
+            exit 1
+          fi
+          gh release create "$tag" --target "$SOURCE_SHA" \
+            --title "Topling JNI ${SOURCE_SHA:0:12} (Linux amd64)" \
+            --notes-file build-info.txt --latest=false \
+            ./*.jar ./*.sha256 build-info.txt
