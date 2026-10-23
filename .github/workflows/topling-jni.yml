@@ -310,7 +310,7 @@ jobs:
             echo "Release $tag already exists; refusing to replace its JNI payload" >&2
             exit 1
           fi
-          gh release create "$tag" --target "$SOURCE_SHA" \
+          gh release create "$tag" --verify-tag --target "$SOURCE_SHA" \
             --title "Topling JNI ${SOURCE_SHA:0:12} (Linux amd64)" \
             --notes-file build-info.txt --latest=false \
             ./*.jar ./*.sha256 build-info.txt

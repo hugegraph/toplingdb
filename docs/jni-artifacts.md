@@ -37,7 +37,12 @@ publishes the same verified payload under the tag `jni-<full source SHA>`:
 https://github.com/hugegraph/toplingdb/releases/download/jni-<full source SHA>/rocksdbjni-8.10.2-linux64.jar
 ```
 
-The job refuses to replace an existing release. Pin the JAR URL and its SHA-256 in
+Create that lightweight release tag before dispatching a publication. The workflow
+token has `contents: write` but cannot create a new tag targeting a commit that
+changes workflow files; pre-creating the tag with the maintainer's normal Git
+credentials lets the publication job use the existing tag without broader token
+permissions. The job verifies that the tag exists and refuses to replace an
+existing release. Pin the JAR URL and its SHA-256 in
 the image build; avoid moving branch URLs and Maven snapshot metadata. Download
 the matching `.sha256` file and verify it before using the JAR:
 
@@ -51,13 +56,16 @@ release after the JNI checks pass; Maven publication and JMH remain disabled:
 
 ```bash
 source_sha="$(git rev-parse HEAD)"
+git tag "jni-${source_sha}" "$source_sha"
 git tag "jni-build-${source_sha}" "$source_sha"
-git push origin "jni-build-${source_sha}"
+git push origin "jni-${source_sha}" "jni-build-${source_sha}"
 ```
 
 The manual `native_features=full` choice enables the normal Makefile's optional
 ToplingZip Builder/CSPP MemTable trial components. Its release uses the distinct
 tag `jni-<source SHA>-full`, so it cannot replace the community artifact. The build
+requires that distinct release tag to be created before a manual publication too.
+The build
 manifest records the selected feature preset and plugin revisions; it does not
 extend any trial license. Use a configuration matching the selected features:
 community images use public SkipList/BlockBasedTable factories; CSPP configurations
