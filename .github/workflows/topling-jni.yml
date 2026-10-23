@@ -54,6 +54,8 @@ jobs:
       WITH_TOPLING_ROCKS: ${{ inputs.native_features == 'full' && '1' || '0' }}
       WITH_CSPP_MEMTABLE: ${{ inputs.native_features == 'full' && '1' || '0' }}
       WITH_TOPLING_DCOMPACT: ${{ inputs.native_features == 'full' && '1' || '0' }}
+      WITH_TOPLINGDB_FS: '0'
+      UPDATE_REPO: '0'
       USE_LTO: ${{ inputs.use_lto || '1' }}
       VERSION_SUFFIX: ${{ github.event_name == 'push' && '-SNAPSHOT' || inputs.version_suffix }}
       DEPLOY_MAVEN: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_maven }}
@@ -109,14 +111,24 @@ jobs:
          ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
          echo nproc = `nproc`
 
-      - name: Git clone SidePlugin(s)
+      - name: Checkout locked community SidePlugins
+        if: ${{ env.NATIVE_FEATURES == 'community' }}
+        run: |
+          python3 -B .github/scripts/test_checkout_jni_sources.py
+          python3 .github/scripts/checkout_jni_sources.py checkout
+
+      - name: Initialize remaining optional SidePlugins
         run: |
           # this will be auto triggerred in normal build, we defined
           # it here is just for seperate steps more clearly.
           # there is no dedicated target for this purpose, so we use `clean`
           # as the target, it need not any `clean` at this point.
           # `clean` is just used for triggers auto git clone
-          make clean
+          make clean UPDATE_REPO=0
+
+      - name: Verify locked community sources before compiling
+        if: ${{ env.NATIVE_FEATURES == 'community' }}
+        run: python3 .github/scripts/checkout_jni_sources.py verify
 
       - name: make depend for Compile Unit Test
         if: ${{ inputs.unit_test }}
@@ -183,7 +195,11 @@ jobs:
             printf 'with_topling_rocks=%s\n' "$WITH_TOPLING_ROCKS"
             printf 'with_cspp_memtable=%s\n' "$WITH_CSPP_MEMTABLE"
             printf 'with_topling_dcompact=%s\n' "$WITH_TOPLING_DCOMPACT"
+            printf 'with_toplingdb_fs=%s\n' "$WITH_TOPLINGDB_FS"
             printf 'use_lto=%s\n\n' "$USE_LTO"
+            if [ "$NATIVE_FEATURES" = community ]; then
+              python3 .github/scripts/checkout_jni_sources.py verify
+            fi
             git submodule status --recursive
             for plugin in sideplugin/*; do
               if [ -e "$plugin/.git" ]; then

@@ -19,7 +19,31 @@ The JAR embeds the selected source repositories' license/notice texts under
 MIT/BSD notices, the vendored Zstd 1.4.5 BSD license, a license checksum inventory,
 and `META-INF/topling-build-info.txt` matching the external build manifest. These
 entries are installed before the JAR's final SHA-256 is calculated. The community
-preset excludes dcompact, whose current source repository has no license grant.
+preset keeps the public CSPP-WBWI integration. It leaves the public optional
+dcompact integration disabled for a smaller runtime; dcompact is separate from
+the proprietary CSPP MemTable and ToplingZip Builder components.
+
+Community plugin revisions are fixed in
+[`community-jni-sources.json`](../.github/community-jni-sources.json) to the source
+set validated by the published `jni-2916f6895c62e535a03985d8e9b0879e64304715` artifact.
+CI checks out those commits before invoking Make, initializes their pinned
+submodules, and verifies clean source revisions before compiling and packaging.
+Tracked changes and unexpected untracked source inputs are rejected; the known
+generated `build/` and `build-ut/` directories are allowed.
+`UPDATE_REPO=0` prevents Make from pulling newer branches; it alone does not stop
+automatic clones of missing repositories, which is why CI prepares every enabled
+public plugin first. The lock includes Boost's gitlink; RapidYAML/c4core are
+vendored within the pinned rockside tree. Build provenance records the lock's
+SHA-256 and every verified revision. A private `topling-core` checkout is rejected
+because the Makefile would select it ahead of the public runtime. Optional
+filesystem integration is explicitly disabled in this container workflow.
+
+To update a community plugin, review its commit and matching licenses, update the
+lock (and the parent gitlink for a submodule), then run the JNI and container
+checks before changing an image's pinned JAR URL/checksum. Pinning the existing
+source set does not replace or alter the already published artifact. Source and
+trial-binary pinning for the optional full feature preset remains separate work;
+it does not use the community lock.
 
 The build enables `ROCKSDB_DYNAMIC_CREATE_CF`, required by HugeGraph backend
 initialization. Before upload, the workflow loads the native JNI, applies a configuration through
@@ -62,7 +86,8 @@ git push origin "jni-${source_sha}" "jni-build-${source_sha}"
 ```
 
 The manual `native_features=full` choice enables the normal Makefile's optional
-ToplingZip Builder/CSPP MemTable trial components. Its release uses the distinct
+ToplingZip Builder/CSPP MemTable trial components and public optional dcompact
+integration. Its release uses the distinct
 tag `jni-<source SHA>-full`, so it cannot replace the community artifact. The build
 requires that distinct release tag to be created before a manual publication too.
 The build

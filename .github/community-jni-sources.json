@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "repositories": [
+    {
+      "path": "sideplugin/rockside",
+      "url": "https://github.com/topling/rockside.git",
+      "commit": "4b745436821d9b19d33653b3f9f89e980ef9cbcf",
+      "kind": "gitlink"
+    },
+    {
+      "path": "sideplugin/topling-zip",
+      "url": "https://github.com/topling/topling-zip.git",
+      "commit": "371ef28bbcbc838a06832ac8c68488df3080f362",
+      "kind": "repository"
+    },
+    {
+      "path": "sideplugin/topling-zip/boost-include",
+      "url": "https://github.com/rockeet/boost-fiber-leipeng",
+      "commit": "ed7ff321d4e9c14b7c1400db57913a1063c6abeb",
+      "kind": "gitlink"
+    },
+    {
+      "path": "sideplugin/cspp-wbwi",
+      "url": "https://github.com/topling/cspp-wbwi",
+      "commit": "4635b0e09010bedb7f6d925847d7dae51d95619c",
+      "kind": "repository"
+    },
+    {
+      "path": "sideplugin/topling-sst",
+      "url": "https://github.com/topling/topling-sst",
+      "commit": "3b14f73740cad623217075b20ccf05880cad8d09",
+      "kind": "repository"
+    },
+    {
+      "path": "sideplugin/topling-zip_table_reader",
+      "url": "https://github.com/topling/topling-zip_table_reader",
+      "commit": "ca2ffb02a66bc87701da900f477ada35bd2ffaed",
+      "kind": "repository"
+    }
+  ]
+}
