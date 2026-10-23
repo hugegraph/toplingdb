@@ -2,7 +2,8 @@
 
 The `build topling-jni` workflow builds Linux amd64 JNI on Ubuntu 24.04 with
 GCC 13. It defaults to `native_features=community`, which consistently sets
-`WITH_TOPLING_ROCKS=0 WITH_CSPP_MEMTABLE=0` in every Make invocation. This builds
+`WITH_TOPLING_ROCKS=0 WITH_CSPP_MEMTABLE=0 WITH_TOPLING_DCOMPACT=0` in every Make invocation.
+This builds
 the public runtime without downloading the optional ToplingZip Builder/CSPP
 MemTable trial objects. It always uploads a run-specific
 `topling-jni-linux-amd64-<source SHA>`
@@ -12,6 +13,13 @@ Actions artifact, including when `deploy_maven=false`. The archive contains:
 - the JAR's SHA-256 checksum file;
 - `build-info.txt`, recording the source revision, build run, compiler, flags and
   the revisions of the SidePlugin repositories used by the build.
+
+The JAR embeds the selected source repositories' license/notice texts under
+`META-INF/licenses/`, preserving their source paths. It also includes source-embedded
+MIT/BSD notices, the vendored Zstd 1.4.5 BSD license, a license checksum inventory,
+and `META-INF/topling-build-info.txt` matching the external build manifest. These
+entries are installed before the JAR's final SHA-256 is calculated. The community
+preset excludes dcompact, whose current source repository has no license grant.
 
 The build enables `ROCKSDB_DYNAMIC_CREATE_CF`, required by HugeGraph backend
 initialization. Before upload, the workflow loads the native JNI, applies a configuration through
