@@ -1,0 +1,33 @@
+name: JNI artifact helper checks
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - '.github/scripts/*jni*'
+      - '.github/community-jni-sources.json'
+      - '.github/workflows/topling-jni.yml'
+      - '.github/workflows/jni-artifact-checks.yml'
+  pull_request:
+    paths:
+      - '.github/scripts/*jni*'
+      - '.github/community-jni-sources.json'
+      - '.github/workflows/topling-jni.yml'
+      - '.github/workflows/jni-artifact-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  helper-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise source locks and publication guards without network or publication
+        run: python3 -B -m unittest discover -s .github/scripts -p 'test_*.py'
+      - name: Check JNI shell syntax
+        run: |
+          for script in .github/scripts/*jni*.sh; do
+            bash -n "$script"
+          done

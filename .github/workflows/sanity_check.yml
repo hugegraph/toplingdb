@@ -39,7 +39,8 @@ jobs:
         #run: VERBOSE_CHECK=1 make check-format
 
     - name: Compare buckify output
-      run: make check-buck-targets
+      # This is the exact Make recipe; metadata checks need no native platform/bootstrap setup.
+      run: bash buckifier/check_buck_targets.sh
 
     - name: Simple source code checks
-      run: make check-sources
+      run: bash build_tools/check-sources.sh

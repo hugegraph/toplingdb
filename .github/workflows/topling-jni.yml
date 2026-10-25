@@ -9,7 +9,7 @@ on:
       native_features:
         required: false
         type: choice
-        description: Community runtime or full runtime with optional trial components
+        description: Community runtime or experimental full runtime (build only)
         default: community
         options: [community, full]
       version_suffix:
@@ -59,6 +59,7 @@ jobs:
       USE_LTO: ${{ inputs.use_lto || '1' }}
       VERSION_SUFFIX: ${{ github.event_name == 'push' && '-SNAPSHOT' || inputs.version_suffix }}
       DEPLOY_MAVEN: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_maven }}
+      PUBLISH_RELEASE: ${{ inputs.publish_release || startsWith(github.ref, 'refs/tags/jni-build-') }}
       GITHUB_TOKEN: ${{ github.token }}
     permissions:
       contents: read
@@ -80,6 +81,11 @@ jobs:
             echo 'version_suffix contains unsupported characters' >&2
             exit 1
           }
+          if [ "$NATIVE_FEATURES" = full ] &&
+             { [ "$DEPLOY_MAVEN" = true ] || [ "$PUBLISH_RELEASE" = true ]; }; then
+            echo 'Full is experimental: set deploy_maven=false and publish_release=false' >&2
+            exit 1
+          fi
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -94,6 +100,9 @@ jobs:
           cache: maven
           server-id: github # Value of the distributionManagement/repository/id field of the pom.xml
           settings-path: ${{ github.workspace }} # location for the settings.xml file
+
+      - name: Check artifact helper regression tests
+        run: python3 -B -m unittest discover -s .github/scripts -p 'test_*.py'
 
       - name: Install Prerequisites
         run: |
@@ -128,7 +137,9 @@ jobs:
 
       - name: Verify locked community sources before compiling
         if: ${{ env.NATIVE_FEATURES == 'community' }}
-        run: python3 .github/scripts/checkout_jni_sources.py verify
+        run: |
+          python3 .github/scripts/checkout_jni_sources.py verify \
+            --receipt build/jni-clean-start.json
 
       - name: make depend for Compile Unit Test
         if: ${{ inputs.unit_test }}
@@ -182,6 +193,7 @@ jobs:
           set -euo pipefail
           version="$(build_tools/version.sh full)"
           jar="java/target/rocksdbjni-${version}-linux64.jar"
+          bash .github/scripts/test_topling_jni.sh "$jar" "$NATIVE_FEATURES"
           mkdir -p jni-artifact
           {
             printf 'source_repository=%s\nsource_revision=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA"
@@ -192,13 +204,22 @@ jobs:
             printf 'flags=STRIP_DEBUG_INFO=1 ROCKSDB_JAR_WITH_DYNAMIC_LIBS=1\n'
             printf 'extra_cxxflags=%s\n' "$EXTRA_CXXFLAGS"
             printf 'native_features=%s\n' "$NATIVE_FEATURES"
+            if [ "$NATIVE_FEATURES" = full ]; then
+              printf 'qualification=experimental_unqualified\n'
+              printf 'verified_integration.dcompact_cmd_registry=passed\n'
+              printf 'qualification.private_cspp_memtable=pending\n'
+              printf 'qualification.private_toplingzip_builder=pending\n'
+            else
+              printf 'qualification=community_runtime_smoke_passed\n'
+            fi
             printf 'with_topling_rocks=%s\n' "$WITH_TOPLING_ROCKS"
             printf 'with_cspp_memtable=%s\n' "$WITH_CSPP_MEMTABLE"
             printf 'with_topling_dcompact=%s\n' "$WITH_TOPLING_DCOMPACT"
             printf 'with_toplingdb_fs=%s\n' "$WITH_TOPLINGDB_FS"
             printf 'use_lto=%s\n\n' "$USE_LTO"
             if [ "$NATIVE_FEATURES" = community ]; then
-              python3 .github/scripts/checkout_jni_sources.py verify
+              python3 .github/scripts/checkout_jni_sources.py verify-built \
+                --receipt build/jni-clean-start.json
             fi
             git submodule status --recursive
             for plugin in sideplugin/*; do
@@ -209,7 +230,7 @@ jobs:
           } > jni-artifact/build-info.txt
           python3 .github/scripts/bundle_jni_licenses.py "$jar" \
             jni-artifact/build-info.txt --native-features "$NATIVE_FEATURES"
-          bash .github/scripts/test_topling_jni.sh "$jar"
+          bash .github/scripts/test_topling_jni.sh "$jar" "$NATIVE_FEATURES"
           cp "$jar" jni-artifact/
           (
             cd jni-artifact
@@ -293,7 +314,9 @@ jobs:
 
   publish-release:
     needs: build
-    if: ${{ inputs.publish_release || startsWith(github.ref, 'refs/tags/jni-build-') }}
+    if: >-
+      ${{ inputs.native_features != 'full' &&
+          (inputs.publish_release || startsWith(github.ref, 'refs/tags/jni-build-')) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -301,6 +324,13 @@ jobs:
       group: topling-jni-release-${{ github.sha }}
       cancel-in-progress: false
     steps:
+      - name: Checkout release validation
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          path: release-source
+
       - name: Download verified JNI artifact
         uses: actions/download-artifact@v4
         with:
@@ -308,25 +338,11 @@ jobs:
           path: jni-artifact
 
       - name: Publish immutable source release
+        working-directory: jni-artifact
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           SOURCE_SHA: ${{ github.sha }}
           NATIVE_FEATURES: ${{ inputs.native_features || 'community' }}
         run: |
-          set -euo pipefail
-          cd jni-artifact
-          sha256sum --check --strict *.sha256
-          tag="jni-${SOURCE_SHA}"
-          if [ "$NATIVE_FEATURES" = full ]; then
-            tag="${tag}-full"
-          fi
-          # Existing releases are immutable. Never replace an asset on a retry.
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release $tag already exists; refusing to replace its JNI payload" >&2
-            exit 1
-          fi
-          gh release create "$tag" --verify-tag --target "$SOURCE_SHA" \
-            --title "Topling JNI ${SOURCE_SHA:0:12} (Linux amd64)" \
-            --notes-file build-info.txt --latest=false \
-            ./*.jar ./*.sha256 build-info.txt
+          bash ../release-source/.github/scripts/publish_jni_release.sh

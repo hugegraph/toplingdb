@@ -116,6 +116,7 @@ cpp_library_wrapper(name="rocksdb_lib", srcs=[
         "env/env_posix.cc",
         "env/file_system.cc",
         "env/file_system_tracer.cc",
+        "env/fs_cat.cc",
         "env/fs_posix.cc",
         "env/fs_remap.cc",
         "env/io_posix.cc",
@@ -181,9 +182,12 @@ cpp_library_wrapper(name="rocksdb_lib", srcs=[
         "sideplugin/rockside/src/topling/builtin_db_open.cc",
         "sideplugin/rockside/src/topling/builtin_plugin_basic.cc",
         "sideplugin/rockside/src/topling/builtin_plugin_misc.cc",
+        "sideplugin/rockside/src/topling/builtin_plugin_more.cc",
         "sideplugin/rockside/src/topling/builtin_table_factory.cc",
+        "sideplugin/rockside/src/topling/show_sys_info.cc",
         "sideplugin/rockside/src/topling/side_plugin_repo.cc",
         "sideplugin/rockside/src/topling/side_plugin_tpl_inst.cc",
+        "sideplugin/rockside/src/topling/sst_list_html_style_css.cc",
         "sideplugin/rockside/src/topling/web/CivetServer.cc",
         "sideplugin/rockside/src/topling/web/json_civetweb.cc",
         "table/adaptive/adaptive_table_factory.cc",
@@ -4784,6 +4788,12 @@ cpp_unittest_wrapper(name="db_compaction_test",
             extra_compiler_flags=[])
 
 
+cpp_unittest_wrapper(name="db_cspp_crash_safe_test",
+            srcs=["db/db_cspp_crash_safe_test.cc"],
+            deps=[":rocksdb_test_lib"],
+            extra_compiler_flags=[])
+
+
 cpp_unittest_wrapper(name="db_dynamic_level_test",
             srcs=["db/db_dynamic_level_test.cc"],
             deps=[":rocksdb_test_lib"],
@@ -4850,8 +4860,26 @@ cpp_unittest_wrapper(name="db_logical_block_size_cache_test",
             extra_compiler_flags=[])
 
 
+cpp_unittest_wrapper(name="db_memtable_as_log_index_test",
+            srcs=["db/db_memtable_as_log_index_test.cc"],
+            deps=[":rocksdb_test_lib"],
+            extra_compiler_flags=[])
+
+
+cpp_unittest_wrapper(name="db_memtable_convert_test",
+            srcs=["db/db_memtable_convert_test.cc"],
+            deps=[":rocksdb_test_lib"],
+            extra_compiler_flags=[])
+
+
 cpp_unittest_wrapper(name="db_memtable_test",
             srcs=["db/db_memtable_test.cc"],
+            deps=[":rocksdb_test_lib"],
+            extra_compiler_flags=[])
+
+
+cpp_unittest_wrapper(name="db_memtable_wal_credit_test",
+            srcs=["db/db_memtable_wal_credit_test.cc"],
             deps=[":rocksdb_test_lib"],
             extra_compiler_flags=[])
 

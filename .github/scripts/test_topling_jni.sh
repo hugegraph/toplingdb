@@ -2,6 +2,11 @@
 # Verify the native configuration entry point used by HugeGraph container builds.
 set -euo pipefail
 jar="$(realpath "${1:?usage: test_topling_jni.sh path/to/rocksdbjni.jar}")"
+features="${2:-community}"
+case "$features" in
+  community | full) ;;
+  *) echo 'Expected community or full JNI feature preset' >&2; exit 1 ;;
+esac
 probe="$(mktemp -d)"
 trap 'rm -rf "$probe"' EXIT
 unzip -p "$jar" librocksdbjni-linux64.so > "$probe/librocksdbjni-linux64.so"
@@ -34,10 +39,18 @@ import org.rocksdb.ColumnFamilyOptions;
 import org.rocksdb.DBOptions;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
+import org.rocksdb.SidePluginRepo;
 
 class ToplingRuntimeProbe {
     public static void main(String[] args) throws Exception {
         RocksDB.loadLibrary();
+        if ("full".equals(args[1])) {
+            try (SidePluginRepo repo = new SidePluginRepo()) {
+                repo.importJson("{\"CompactionExecutorFactory\":{\"probe\":{"
+                        + "\"class\":\"DcompactCmd\",\"params\":{\"cmd\":\"/bin/false\"}}}}");
+            }
+            System.out.println("verified_integration.dcompact_cmd_registry=passed");
+        }
         Path database = Path.of(args[0]);
         byte[] family = "hugegraph-probe".getBytes(StandardCharsets.UTF_8);
         try (Options options = new Options().setCreateIfMissing(true);
@@ -84,5 +97,5 @@ JAVA
 LD_LIBRARY_PATH="$probe${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
 LD_PRELOAD="$probe/librocksdbjni-linux64.so" \
 TOPLINGDB_EASY_MIGRATE_CONF="$probe/probe.yaml" \
-java --add-opens=java.base/java.nio=ALL-UNNAMED --source 11 \
-    --class-path "$jar" "$probe/ToplingRuntimeProbe.java" "$probe/database"
+java -Xmx256m --add-opens=java.base/java.nio=ALL-UNNAMED --source 11 \
+    --class-path "$jar" "$probe/ToplingRuntimeProbe.java" "$probe/database" "$features"
