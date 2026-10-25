@@ -111,8 +111,8 @@ moving branch URLs and Maven snapshot metadata.
 
 Alternatively, push a `jni-build-*` tag pointing to a reviewed source commit. This
 triggers the same community build and publishes its `jni-<source SHA>` release,
-which this workflow refuses to replace. Publication happens
-release after the JNI checks pass; Maven publication and JMH remain disabled:
+which this workflow refuses to replace. Publication happens after the JNI checks
+pass; Maven publication and JMH remain disabled:
 
 ```bash
 source_sha="$(git rev-parse HEAD)"
