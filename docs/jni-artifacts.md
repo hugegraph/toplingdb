@@ -88,17 +88,30 @@ changes workflow files; pre-creating the tag with the maintainer's normal Git
 credentials lets the publication job use the existing tag without broader token
 permissions. The job resolves the remote tag, including annotated tags, and
 requires its commit to equal the build's `SOURCE_SHA` before creating a release.
-`--verify-tag` alone checks existence and cannot establish this match. Existing
-releases are never replaced. Pin the JAR URL and its SHA-256 in
-the image build; avoid moving branch URLs and Maven snapshot metadata. Download
-the matching `.sha256` file and verify it before using the JAR:
+`--verify-tag` alone checks existence and cannot establish this match. This
+workflow never replaces an existing release. That is not repository-enforced
+release immutability: another authorized writer can still change or remove tags
+and assets. A pinned checksum rejects changed bytes, but cannot guarantee that
+the download URL remains available.
+
+Pin the JAR URL and its SHA-256 in reviewed configuration, independently of the
+downloaded files; HugeGraph's `docker/topling-runtime.env` is the consumer's
+reviewed pin. For the approved `jni-2916f6895c62e535a03985d8e9b0879e64304715`
+community artifact, verify the trusted digest directly:
 
 ```bash
-sha256sum --check rocksdbjni-8.10.2-linux64.jar.sha256
+TOPLING_JNI_SHA256='c9066873d5eb38585517c0c4065565897aab96629585731b6fb36d64b81efef2'
+printf '%s  %s\n' "$TOPLING_JNI_SHA256" 'rocksdbjni-8.10.2-linux64.jar' | sha256sum --check
 ```
 
+For another approved artifact, update the URL and digest together through the
+same review process. The sibling `.sha256` file is a convenient transfer check;
+it is not an independent trust anchor when downloaded beside the JAR. Avoid
+moving branch URLs and Maven snapshot metadata.
+
 Alternatively, push a `jni-build-*` tag pointing to a reviewed source commit. This
-triggers the same community build and publishes its immutable `jni-<source SHA>`
+triggers the same community build and publishes its `jni-<source SHA>` release,
+which this workflow refuses to replace. Publication happens
 release after the JNI checks pass; Maven publication and JMH remain disabled:
 
 ```bash

@@ -21,7 +21,7 @@ After download+uncompress or compile, you can run bundled [db_bench.sh](db_bench
 > During compilation, a precompiled ToplingZipTable (90-day trial) may be downloaded automatically. If you need to disable the ZipTable Builder trial, pass `WITH_TOPLING_ROCKS=0 WITH_CSPP_MEMTABLE=0` to `make`; the Makefile requires CSPP to be disabled when Topling Rocks is disabled (or [contact us](mailto:contact@topling.cn)).
 > CSPPMemTable is also distributed this way.
 
-For the HugeGraph fork's verified JNI downloads and immutable container build
+For the HugeGraph fork's verified JNI downloads and pinned container build
 inputs, see [JNI artifacts for HugeGraph containers](docs/jni-artifacts.md).
 
 ## Introduction

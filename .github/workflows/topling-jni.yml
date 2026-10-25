@@ -32,7 +32,7 @@ on:
       publish_release:
         required: false
         type: boolean
-        description: Publish an immutable JNI release for container builds
+        description: Publish a verified JNI release for container builds
         default: false
       jmh_test:
         required: false
@@ -337,7 +337,7 @@ jobs:
           name: topling-jni-linux-amd64-${{ github.sha }}
           path: jni-artifact
 
-      - name: Publish immutable source release
+      - name: Publish verified source release
         working-directory: jni-artifact
         env:
           GH_TOKEN: ${{ github.token }}

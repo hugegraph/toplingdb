@@ -89,7 +89,7 @@ elif args[:2] != ['release', 'create']:
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(creates)
 
-    def test_existing_release_remains_immutable(self):
+    def test_existing_release_is_not_replaced(self):
         result, creates = self.run_release(existing=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refusing to replace", result.stderr)
