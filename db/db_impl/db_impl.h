@@ -1011,7 +1011,8 @@ class DBImpl : public DB {
 
   void InsertRecoveredTransaction(const uint64_t log, const std::string& name,
                                   WriteBatch* batch, SequenceNumber seq,
-                                  size_t batch_cnt, bool unprepared_batch) {
+                                  size_t batch_cnt, bool unprepared_batch,
+                                  uint64_t log_offset) {
     // For WriteUnpreparedTxn, InsertRecoveredTransaction is called multiple
     // times for every unprepared batch encountered during recovery.
     //
@@ -1021,10 +1022,14 @@ class DBImpl : public DB {
     if (rtxn == recovered_transactions_.end()) {
       recovered_transactions_[name] = new RecoveredTransaction(
           log, name, batch, seq, batch_cnt, unprepared_batch);
+      // One registration per transaction, at its first batch: that is the
+      // record a replay of the still unresolved transaction must start at,
+      // and it is the log the recovered transaction resolves on commit or
+      // rollback, which always uses its first batch's log.
+      logs_with_prep_tracker_.MarkLogAsContainingPrepSection(log, log_offset);
     } else {
       rtxn->second->AddBatch(seq, log, batch, batch_cnt, unprepared_batch);
     }
-    logs_with_prep_tracker_.MarkLogAsContainingPrepSection(log);
   }
 
   void DeleteRecoveredTransaction(const std::string& name) {
@@ -1032,10 +1037,9 @@ class DBImpl : public DB {
     assert(it != recovered_transactions_.end());
     auto* trx = it->second;
     recovered_transactions_.erase(it);
-    for (const auto& info : trx->batches_) {
-      logs_with_prep_tracker_.MarkLogAsHavingPrepSectionFlushed(
-          info.second.log_number_);
-    }
+    // Matches the single registration made by InsertRecoveredTransaction.
+    logs_with_prep_tracker_.MarkLogAsHavingPrepSectionFlushed(
+        trx->batches_.begin()->second.log_number_);
     delete trx;
   }
 
@@ -1212,6 +1216,8 @@ class DBImpl : public DB {
   WriteController& TEST_write_controler() { return write_controller_; }
 
   uint64_t TEST_FindMinLogContainingOutstandingPrep();
+  uint64_t TEST_FindMinPendingPos(uint64_t* offset);
+  uint64_t TEST_OutstandingPrep(uint64_t log);
   uint64_t TEST_FindMinPrepLogReferencedByMemTable();
   size_t TEST_PreparedSectionCompletedSize();
   size_t TEST_LogsWithPrepSize();
@@ -1439,9 +1445,12 @@ class DBImpl : public DB {
     bool is_new_db_ = false;
     // WAL tail cursor for this Recover. RecoverLogFiles reads it from here.
     bool crash_safe_wal_tail_replay_ = false;
-    uint8_t crash_safe_wal_offset_kind_ = 0;
     uint64_t crash_safe_wal_number_ = 0;
     uint64_t crash_safe_wal_offset_ = 0;
+    // Published sequence persisted together with the cursor: records whose
+    // first sequence is <= it are already reflected in the recovered
+    // memtables, so their data can be skipped.
+    SequenceNumber crash_safe_pubseq_ = 0;
     // WALs numbered below this predate CSPUBSEQ: probe their format.
     uint64_t crash_safe_probe_wal_below_ = 0;
   };

@@ -2301,6 +2301,7 @@ class MemTableInserter : public WriteBatch::Handler {
     assert(cf_mems_);
     memtable_as_log_index_ = cf_mems->GetImmutableDBOptions()->memtable_as_log_index;
     skip_memtable_data_ = cf_mems->skip_memtable_data_;
+    recovery_log_offset_ = cf_mems->recovery_log_offset_;
   }
   bool memtable_as_log_index() const { return memtable_as_log_index_; }
   void SetBeginPrepareNextPtr(const char* curr) final {
@@ -2315,6 +2316,7 @@ class MemTableInserter : public WriteBatch::Handler {
   const WriteBatch* src_batch_ = nullptr;
   const char* prepare_content_begin_ = nullptr;
   bool skip_memtable_data_ = false;
+  uint64_t recovery_log_offset_ = 0;
 
   ~MemTableInserter() override {
     if (dup_dectector_on_) {
@@ -3170,7 +3172,8 @@ class MemTableInserter : public WriteBatch::Handler {
               : static_cast<size_t>(sequence_ - rebuilding_trx_seq_ + 1);
       db_->InsertRecoveredTransaction(recovering_log_number_, name.ToString(),
                                       rebuilding_trx_, rebuilding_trx_seq_,
-                                      batch_cnt, unprepared_batch_);
+                                      batch_cnt, unprepared_batch_,
+                                      recovery_log_offset_);
       unprepared_batch_ = false;
       rebuilding_trx_ = nullptr;
     } else {
@@ -3225,7 +3228,13 @@ class MemTableInserter : public WriteBatch::Handler {
           // all inserts must reference this trx log number
           log_number_ref_ = batch_info.log_number_;
           ResetProtectionInfo();
+          // The nested Iterate switches src_batch_ to the recovered batch and
+          // leaves it dangling once the transaction is deleted below. Restore
+          // it: the rest of the current log record may still hold a prepare
+          // section (a record can contain a commit followed by a prepare).
+          const WriteBatch* saved_src = src_batch_;
           s = batch_info.batch_->Iterate(this);
+          src_batch_ = saved_src;
           log_number_ref_ = 0;
         }
         // else the values are already inserted before the commit
@@ -3295,7 +3304,11 @@ class MemTableInserter : public WriteBatch::Handler {
               });
           if (s.ok()) {
             ResetProtectionInfo();
+            // See MarkCommit: the nested Iterate switches src_batch_ and the
+            // recovered batch is deleted right after it.
+            const WriteBatch* saved_src = src_batch_;
             s = batch_info.batch_->Iterate(this);
+            src_batch_ = saved_src;
             log_number_ref_ = 0;
           }
         }

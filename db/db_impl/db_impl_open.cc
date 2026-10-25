@@ -1235,8 +1235,7 @@ Status DBImpl::Recover(
       recovery_ctx->crash_safe_wal_tail_replay_ = true;
       recovery_ctx->crash_safe_wal_number_ = mmap_rec.wal_number;
       recovery_ctx->crash_safe_wal_offset_ = mmap_rec.wal_offset;
-      recovery_ctx->crash_safe_wal_offset_kind_ =
-          static_cast<uint8_t>(pubseq_mmap_->wal_offset_kind);
+      recovery_ctx->crash_safe_pubseq_ = mmap_rec.pubseq;
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
                      "Crash-safe recover Convert leftover, WAL tail from "
                      "#%" PRIu64 " offset %" PRIu64 " kind %u seq %" PRIu64,
@@ -1779,8 +1778,8 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
       crash_safe_wal_tail_replay ? recovery_ctx->crash_safe_wal_number_ : 0;
   const uint64_t crash_safe_wal_offset =
       crash_safe_wal_tail_replay ? recovery_ctx->crash_safe_wal_offset_ : 0;
-  const uint8_t crash_safe_wal_offset_kind =
-      crash_safe_wal_tail_replay ? recovery_ctx->crash_safe_wal_offset_kind_ : 0;
+  const SequenceNumber crash_safe_pubseq =
+      crash_safe_wal_tail_replay ? recovery_ctx->crash_safe_pubseq_ : 0;
   const uint64_t crash_safe_probe_wal_below =
       recovery_ctx != nullptr ? recovery_ctx->crash_safe_probe_wal_below_ : 0;
   if (!allow_2pc()) {
@@ -1800,8 +1799,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
     // records after allocating this log number.  So we manually
     // update the file number allocation counter in VersionSet.
     versions_->MarkFileNumberUsed(wal_number);
-    if (crash_safe_wal_tail_replay && !allow_2pc() &&
-        wal_number < crash_safe_wal_number) {
+    if (crash_safe_wal_tail_replay && wal_number < crash_safe_wal_number) {
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
                      "Skipping InsertInto for log #%" PRIu64
                      " before crash-safe WAL cursor #%" PRIu64,
@@ -1837,6 +1835,13 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
         return Status(ios);
       }
     }
+
+    // The sidecar's wal_offset_kind is stamped when the sidecar is created and
+    // is never rewritten, so it can name a different format than the WAL the
+    // cursor points into. The seek below and the position comparison after a
+    // failed seek must both translate the cursor with the format of the file
+    // being replayed.
+    const uint64_t cursor_wal_offset_kind = wal_memtable_format ? 2 : 1;
 
     bool prefix_compare = false;
   reopen_wal:
@@ -1897,9 +1902,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
           break;
         }
       }
-      if (allow_2pc()) {
-        prefix_compare = true;
-      } else if (wal_number == cursor_wal) {
+      if (wal_number == cursor_wal) {
         if (has_udt) {
           ROCKS_LOG_WARN(immutable_db_options_.info_log,
                          "Crash-safe WAL Seek skipped (UDT), "
@@ -1908,7 +1911,7 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
           prefix_compare = true;
         } else {
           const uint64_t record_start = PublishedWalRecordStart(
-              crash_safe_wal_offset, crash_safe_wal_offset_kind);
+              crash_safe_wal_offset, cursor_wal_offset_kind);
           IOStatus seek_s = reader.SeekToFileOffset(record_start);
           TEST_SYNC_POINT_CALLBACK(
               "CrashSafeRecover::SeekToFileOffset:InjectStatus", &seek_s);
@@ -2027,14 +2030,28 @@ Status DBImpl::RecoverLogFiles(const std::vector<uint64_t>& wal_numbers,
         batch_to_use->SetWAL({fmap, wal_number, reader.LastRecordOffset()});
       }
       column_family_memtables_->skip_memtable_data_ = false;
-      if (crash_safe_wal_tail_replay && prefix_compare) {
-        if (wal_number < crash_safe_wal_number) {
-          column_family_memtables_->skip_memtable_data_ = true;
-        } else if (wal_number == crash_safe_wal_number &&
-                   reader.LastRecordOffset() <
-                       PublishedWalRecordStart(crash_safe_wal_offset,
-                                              crash_safe_wal_offset_kind)) {
-          column_family_memtables_->skip_memtable_data_ = true;
+      // Position of the record being replayed: MarkEndPrepare seeds it into
+      // the recovered prepared transaction, so that the next incarnation can
+      // clamp the published WAL cursor to it.
+      column_family_memtables_->recovery_log_offset_ =
+          reader.LastRecordOffset();
+      if (crash_safe_wal_tail_replay) {
+        if (allow_2pc()) {
+          // The data boundary is the published sequence alone, independent of
+          // the position. Markers are still processed while the data is
+          // skipped.
+          column_family_memtables_->skip_memtable_data_ =
+              WriteBatchInternal::Sequence(batch_to_use) <=
+              crash_safe_pubseq;
+        } else if (prefix_compare) {
+          if (wal_number < crash_safe_wal_number) {
+            column_family_memtables_->skip_memtable_data_ = true;
+          } else if (wal_number == crash_safe_wal_number &&
+                     reader.LastRecordOffset() <
+                         PublishedWalRecordStart(crash_safe_wal_offset,
+                                                cursor_wal_offset_kind)) {
+            column_family_memtables_->skip_memtable_data_ = true;
+          }
         }
       }
       status = WriteBatchInternal::InsertInto(
@@ -2368,7 +2385,13 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
   std::unique_ptr<std::list<uint64_t>::iterator> pending_outputs_inserted_elem(
       new std::list<uint64_t>::iterator(
           CaptureCurrentFileNumberInPendingOutputs()));
-  meta.fd = FileDescriptor(versions_->NewFileNumber(), 0, 0);
+  const bool convert_to_sst = mem->SupportConvertToSST();
+  // ConvertToSST turns the memtable's backing file into the SST in place, so it
+  // must keep the number reserved when the memtable was constructed.
+  const uint64_t file_number = mem->SupportCrashSafe()
+                                   ? mem->GetFileNumber()
+                                   : versions_->NewFileNumber();
+  meta.fd = FileDescriptor(file_number, 0, 0);
   ReadOptions ro;
   ro.total_order_seek = true;
   ro.io_activity = Env::IOActivity::kDBOpen;
@@ -2432,17 +2455,44 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
       version->Ref();
       const ReadOptions read_option(Env::IOActivity::kDBOpen);
       uint64_t num_input_entries = 0;
-      s = BuildTable(
-          dbname_, versions_.get(), immutable_db_options_, tboptions,
-          file_options_for_compaction_, read_option, cfd->table_cache(),
-          iter.get(), std::move(range_del_iters), &meta, &blob_file_additions,
-          snapshot_seqs, earliest_write_conflict_snapshot, kMaxSequenceNumber,
-          snapshot_checker, paranoid_file_checks, cfd->internal_stats(), &io_s,
-          io_tracer_, BlobFileCreationReason::kRecovery,
-          empty_seqno_to_time_mapping, &event_logger_, job_id, Env::IO_HIGH,
-          nullptr /* table_properties */, write_hint,
-          nullptr /*full_history_ts_low*/, &blob_callback_, version,
-          &num_input_entries);
+      if (convert_to_sst) {
+        // The cspp/osl memtable builds its own SST and their table factories
+        // have no NewTableBuilder; this is the same substitution FlushJob
+        // makes for a regular flush.
+        tboptions.generate_file_no = [this]() {
+          return versions_->NewFileNumber();
+        };
+        tboptions.add_blob_file = [&blob_file_additions](BlobFileAddition b) {
+          blob_file_additions.push_back(std::move(b));
+        };
+        num_input_entries = mem->num_entries();
+        meta.num_entries = num_input_entries;
+        // FileMetaData counts range deletions, the memtable does not.
+        meta.num_deletions = mem->num_deletes() + mem->num_range_deletes();
+        meta.num_merges = mem->num_merges();
+        meta.num_range_deletions = mem->num_range_deletes();
+        meta.raw_key_size = mem->raw_key_size();
+        meta.raw_value_size = mem->raw_value_size();
+        s = mem->ConvertToSST(&meta, tboptions);
+        if (s.ok()) {
+          meta.fd.smallest_seqno = std::min(mem->GetEarliestSequenceNumber(),
+                                            mem->GetFirstSequenceNumber());
+          meta.fd.largest_seqno = mem->largest_seqno();
+          meta.marked_for_compaction = true;
+        }
+      } else {
+        s = BuildTable(
+            dbname_, versions_.get(), immutable_db_options_, tboptions,
+            file_options_for_compaction_, read_option, cfd->table_cache(),
+            iter.get(), std::move(range_del_iters), &meta, &blob_file_additions,
+            snapshot_seqs, earliest_write_conflict_snapshot, kMaxSequenceNumber,
+            snapshot_checker, paranoid_file_checks, cfd->internal_stats(), &io_s,
+            io_tracer_, BlobFileCreationReason::kRecovery,
+            empty_seqno_to_time_mapping, &event_logger_, job_id, Env::IO_HIGH,
+            nullptr /* table_properties */, write_hint,
+            nullptr /*full_history_ts_low*/, &blob_callback_, version,
+            &num_input_entries);
+      }
       version->Unref();
       LogFlush(immutable_db_options_.info_log);
       ROCKS_LOG_DEBUG(immutable_db_options_.info_log,
