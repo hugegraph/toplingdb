@@ -2,8 +2,16 @@
 name: "build topling-jni"
 
 on:
+  push:
+    tags: ['jni-build-*']
   workflow_dispatch:
     inputs:
+      native_features:
+        required: false
+        type: choice
+        description: Community runtime or experimental full runtime (build only)
+        default: community
+        options: [community, full]
       version_suffix:
         required: false
         default: '-SNAPSHOT'
@@ -21,6 +29,11 @@ on:
         type: boolean
         description: publish to maven repo
         default: true
+      publish_release:
+        required: false
+        type: boolean
+        description: Publish a verified JNI release for container builds
+        default: false
       jmh_test:
         required: false
         type: boolean
@@ -35,12 +48,45 @@ jobs:
     env:
       CC: gcc-13
       CXX: g++-13
+      # HugeGraph creates backend column families after opening the database.
+      EXTRA_CXXFLAGS: -DROCKSDB_DYNAMIC_CREATE_CF
+      NATIVE_FEATURES: ${{ inputs.native_features || 'community' }}
+      WITH_TOPLING_ROCKS: ${{ inputs.native_features == 'full' && '1' || '0' }}
+      WITH_CSPP_MEMTABLE: ${{ inputs.native_features == 'full' && '1' || '0' }}
+      WITH_TOPLING_DCOMPACT: ${{ inputs.native_features == 'full' && '1' || '0' }}
+      WITH_TOPLINGDB_FS: '0'
+      UPDATE_REPO: '0'
+      USE_LTO: ${{ inputs.use_lto || '1' }}
+      VERSION_SUFFIX: ${{ github.event_name == 'push' && '-SNAPSHOT' || inputs.version_suffix }}
+      DEPLOY_MAVEN: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_maven }}
+      PUBLISH_RELEASE: ${{ inputs.publish_release || startsWith(github.ref, 'refs/tags/jni-build-') }}
       GITHUB_TOKEN: ${{ github.token }}
     permissions:
       contents: read
       packages: write
 
     steps:
+      - name: Validate build options
+        run: |
+          set -euo pipefail
+          case "$NATIVE_FEATURES" in
+            community | full) ;;
+            *) echo 'native_features must be community or full' >&2; exit 1 ;;
+          esac
+          case "$USE_LTO" in
+            0 | 1) ;;
+            *) echo 'use_lto must be 0 or 1' >&2; exit 1 ;;
+          esac
+          [[ "$VERSION_SUFFIX" =~ ^[-._a-zA-Z0-9]*$ ]] || {
+            echo 'version_suffix contains unsupported characters' >&2
+            exit 1
+          }
+          if [ "$NATIVE_FEATURES" = full ] &&
+             { [ "$DEPLOY_MAVEN" = true ] || [ "$PUBLISH_RELEASE" = true ]; }; then
+            echo 'Full is experimental: set deploy_maven=false and publish_release=false' >&2
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -54,6 +100,9 @@ jobs:
           cache: maven
           server-id: github # Value of the distributionManagement/repository/id field of the pom.xml
           settings-path: ${{ github.workspace }} # location for the settings.xml file
+
+      - name: Check artifact helper regression tests
+        run: python3 -B -m unittest discover -s .github/scripts -p 'test_*.py'
 
       - name: Install Prerequisites
         run: |
@@ -71,14 +120,26 @@ jobs:
          ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
          echo nproc = `nproc`
 
-      - name: Git clone SidePlugin(s)
+      - name: Checkout locked community SidePlugins
+        if: ${{ env.NATIVE_FEATURES == 'community' }}
+        run: |
+          python3 -B .github/scripts/test_checkout_jni_sources.py
+          python3 .github/scripts/checkout_jni_sources.py checkout
+
+      - name: Initialize remaining optional SidePlugins
         run: |
           # this will be auto triggerred in normal build, we defined
           # it here is just for seperate steps more clearly.
           # there is no dedicated target for this purpose, so we use `clean`
           # as the target, it need not any `clean` at this point.
           # `clean` is just used for triggers auto git clone
-          make clean
+          make clean UPDATE_REPO=0
+
+      - name: Verify locked community sources before compiling
+        if: ${{ env.NATIVE_FEATURES == 'community' }}
+        run: |
+          python3 .github/scripts/checkout_jni_sources.py verify \
+            --receipt build/jni-clean-start.json
 
       - name: make depend for Compile Unit Test
         if: ${{ inputs.unit_test }}
@@ -106,7 +167,6 @@ jobs:
         run: |
           echo JAVA_HOME = $JAVA_HOME
           set -xe
-          env USE_LTO=${{inputs.use_lto}} \
           make depend java/include/java_header_list.mk \
                -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0 \
                DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1 \
@@ -116,12 +176,11 @@ jobs:
         run: |
           echo JAVA_HOME = $JAVA_HOME
           set -xe
-          env USE_LTO=${{inputs.use_lto}} \
           make rocksdbjava -j`nproc` DEBUG_LEVEL=0 UPDATE_REPO=0 \
                DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1 \
                STRIP_DEBUG_INFO=1 ROCKSDB_JAR_WITH_DYNAMIC_LIBS=1
           ROCKSDB_VERSION=`build_tools/version.sh full`
-          ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${{inputs.version_suffix}}
+          ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${VERSION_SUFFIX}
           cd java
           # F\?ROCKSDB_JAVA_VERSION for both flink and normal rocksdbjni
           sed 's/\${F\?ROCKSDB_JAVA_VERSION}/'"${ROCKSDB_JAVA_VERSION}/" pom.xml.template > pom.xml
@@ -129,19 +188,77 @@ jobs:
       - name: Show librocksdbjni dependency
         run: ldd java/target/*.so
 
+      - name: Validate JNI configuration and record provenance
+        run: |
+          set -euo pipefail
+          version="$(build_tools/version.sh full)"
+          jar="java/target/rocksdbjni-${version}-linux64.jar"
+          bash .github/scripts/test_topling_jni.sh "$jar" "$NATIVE_FEATURES"
+          mkdir -p jni-artifact
+          {
+            printf 'source_repository=%s\nsource_revision=%s\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA"
+            printf 'workflow_run=%s/%s/actions/runs/%s\n' \
+              "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            printf 'platform=linux/amd64\ncompiler=%s\n' "$(g++-13 -dumpfullversion)"
+            printf 'flags=DEBUG_LEVEL=0 DISABLE_JEMALLOC=1 TOPLING_USE_DYNAMIC_TLS=1\n'
+            printf 'flags=STRIP_DEBUG_INFO=1 ROCKSDB_JAR_WITH_DYNAMIC_LIBS=1\n'
+            printf 'extra_cxxflags=%s\n' "$EXTRA_CXXFLAGS"
+            printf 'native_features=%s\n' "$NATIVE_FEATURES"
+            if [ "$NATIVE_FEATURES" = full ]; then
+              printf 'qualification=experimental_unqualified\n'
+              printf 'verified_integration.dcompact_cmd_registry=passed\n'
+              printf 'qualification.private_cspp_memtable=pending\n'
+              printf 'qualification.private_toplingzip_builder=pending\n'
+            else
+              printf 'qualification=community_runtime_smoke_passed\n'
+            fi
+            printf 'with_topling_rocks=%s\n' "$WITH_TOPLING_ROCKS"
+            printf 'with_cspp_memtable=%s\n' "$WITH_CSPP_MEMTABLE"
+            printf 'with_topling_dcompact=%s\n' "$WITH_TOPLING_DCOMPACT"
+            printf 'with_toplingdb_fs=%s\n' "$WITH_TOPLINGDB_FS"
+            printf 'use_lto=%s\n\n' "$USE_LTO"
+            if [ "$NATIVE_FEATURES" = community ]; then
+              python3 .github/scripts/checkout_jni_sources.py verify-built \
+                --receipt build/jni-clean-start.json
+            fi
+            git submodule status --recursive
+            for plugin in sideplugin/*; do
+              if [ -e "$plugin/.git" ]; then
+                printf '%s %s\n' "$plugin" "$(git -C "$plugin" rev-parse HEAD)"
+              fi
+            done
+          } > jni-artifact/build-info.txt
+          python3 .github/scripts/bundle_jni_licenses.py "$jar" \
+            jni-artifact/build-info.txt --native-features "$NATIVE_FEATURES"
+          bash .github/scripts/test_topling_jni.sh "$jar" "$NATIVE_FEATURES"
+          cp "$jar" jni-artifact/
+          (
+            cd jni-artifact
+            sha256sum "$(basename "$jar")" > "$(basename "$jar").sha256"
+          )
+
+      - name: Upload verified JNI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: topling-jni-linux-amd64-${{ github.sha }}
+          path: jni-artifact/
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Move to Local & Publish rocksjni to GitHub Packages
+        if: ${{ inputs.deploy_maven || inputs.jmh_test }}
         run: |
           echo JAVA_HOME = $JAVA_HOME
           set -xe
           ROCKSDB_VERSION=`build_tools/version.sh full`
-          ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${{inputs.version_suffix}}
+          ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${VERSION_SUFFIX}
           cd java/target
           mvn install:install-file -ntp -e \
               -DpomFile=../pom.xml \
               -Dfile=rocksdbjni-${ROCKSDB_VERSION}-linux64.jar \
               -Dversion=${ROCKSDB_JAVA_VERSION}
           # TODO: why 'deploy' doesn't include install step here? if we only use deploy, will lack local jar
-          if ${{ inputs.deploy_maven }}; then
+          if [ "$DEPLOY_MAVEN" = true ]; then
             # TODO: what's the pom file for it? add with '-DpomFile=/xx/pom.xml'
             mvn deploy:deploy-file -e -s $GITHUB_WORKSPACE/settings.xml \
                 -DpomFile=../pom.xml \
@@ -152,11 +269,12 @@ jobs:
 
       # for compile jmh.jar to test the performance
       - name: Build SideGetBenchmarks with Maven
+        if: ${{ inputs.deploy_maven || inputs.jmh_test }}
         run: |
           set -xe
           echo ${{github.workspace}} && echo $GITHUB_WORKSPACE
           ROCKSDB_VERSION=`build_tools/version.sh full`
-          ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${{inputs.version_suffix}}
+          ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${VERSION_SUFFIX}
           cd java/jmh && ls -l && pwd
           db_artifactId=`sed -n 's/.*<artifactId>\(f\?rocksdbjni\)<\/artifactId>.*/\1/p' ../pom.xml`
           mvn clean package -e -ntp -f pom.xml \
@@ -168,7 +286,7 @@ jobs:
         run: |
           set -xe
           ROCKSDB_VERSION=`build_tools/version.sh full`
-          ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${{inputs.version_suffix}}
+          ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${VERSION_SUFFIX}
           mkdir -p /dev/shm/db_bench_community
           cd $GITHUB_WORKSPACE/java/jmh
           cp -v $GITHUB_WORKSPACE/sideplugin/rockside/src/topling/web/{style.css,index.html} /dev/shm/db_bench_community
@@ -185,7 +303,7 @@ jobs:
         run: |
           set -xe
           ROCKSDB_VERSION=`build_tools/version.sh full`
-          ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${{inputs.version_suffix}}
+          ROCKSDB_JAVA_VERSION=${ROCKSDB_VERSION}${VERSION_SUFFIX}
           cd $GITHUB_WORKSPACE/java/jmh
           db_artifactId=`sed -n 's/.*<artifactId>\(f\?rocksdbjni\)<\/artifactId>.*/\1/p' ../pom.xml`
           mvn deploy -e -f pom.xml \
@@ -193,3 +311,38 @@ jobs:
             -D db.version=${ROCKSDB_JAVA_VERSION} \
             -s $GITHUB_WORKSPACE/settings.xml \
             -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/$GITHUB_REPOSITORY
+
+  publish-release:
+    needs: build
+    if: >-
+      ${{ inputs.native_features != 'full' &&
+          (inputs.publish_release || startsWith(github.ref, 'refs/tags/jni-build-')) }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: topling-jni-release-${{ github.sha }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout release validation
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          path: release-source
+
+      - name: Download verified JNI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: topling-jni-linux-amd64-${{ github.sha }}
+          path: jni-artifact
+
+      - name: Publish verified source release
+        working-directory: jni-artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          NATIVE_FEATURES: ${{ inputs.native_features || 'community' }}
+        run: |
+          bash ../release-source/.github/scripts/publish_jni_release.sh
